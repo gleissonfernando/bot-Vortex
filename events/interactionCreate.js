@@ -27,16 +27,19 @@ module.exports = {
         const { client, guild, user, member } = interaction;
         const conf = loadJSON(CONFIG_PATH);
 
-        // Bloqueio de Manutenção
+        // Bloqueio de Manutenção VORTEX
         if (conf.MAINTENANCE_MODE && !hasStaffPermission(member)) {
             const maintEmbed = new EmbedBuilder()
                 .setTitle('⚠️ VORTEX | MANUTENÇÃO')
                 .setColor('#FF0055')
-                .setDescription('O bot está em manutenção no momento. Tente novamente mais tarde.')
+                .setDescription('### 🛠️ Sistema em Manutenção\nO bot está passando por atualizações no momento para garantir a melhor experiência possível. Tente novamente mais tarde.')
+                .addFields({ name: '🕒 Previsão', value: 'Em breve', inline: true })
+                .setFooter({ text: 'Vortex Management System • Segurança & Estabilidade' })
                 .setTimestamp();
             
             const maintBtn = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex')
+                new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex'),
+                new ButtonBuilder().setLabel('Status do Sistema').setStyle(ButtonStyle.Link).setURL('https://status.vortex.im').setDisabled(true)
             );
 
             if (interaction.isRepliable()) {

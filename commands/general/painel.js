@@ -70,11 +70,17 @@ module.exports = {
     }
 
     if (customId === 'test_notice') {
-        return interaction.reply({
-            content: '⚠️ **O bot está em manutenção. Tente novamente mais tarde.**',
-            components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex'))],
-            ephemeral: true
-        });
+        const maintEmbed = new EmbedBuilder()
+            .setTitle('⚠️ VORTEX | MANUTENÇÃO')
+            .setColor('#FF0055')
+            .setDescription('O bot está em manutenção no momento. Tente novamente mais tarde.')
+            .setTimestamp();
+        
+        const maintBtn = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex')
+        );
+
+        return interaction.reply({ embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
     }
 
     if (customId === 'reg_role' || customId === 'rem_role') {
@@ -160,10 +166,11 @@ async function renderDashboard(interaction, tab, edit = false) {
   const stats = loadJSON(STATS_PATH);
   const conf = loadJSON(CONFIG_PATH);
   const guild = interaction.guild;
+  const client = interaction.client;
   
   const embed = new EmbedBuilder()
     .setTimestamp()
-    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()}` });
+    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()} • Hoje às ${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}` });
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
@@ -172,10 +179,10 @@ async function renderDashboard(interaction, tab, edit = false) {
     new ButtonBuilder().setCustomId('tab_manutencao').setLabel('🔧 Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
 
-  let rows = [mainRow];
+  const actionRow = new ActionRowBuilder();
 
   if (tab === 'tab_stats') {
-    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || null }).setColor('#7000FF')
+    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
       .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*')
       .addFields(
         { name: '👤 Membros', value: String(guild.memberCount), inline: true },
@@ -183,41 +190,52 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true }
       );
   } else if (tab === 'tab_roles') {
-    embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || null })
+    embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#5865F2')
       .setDescription('### 🔐 Controle de Cargos Staff\n\n' + 
                       'Nesta aba você pode gerenciar os cargos que possuem acesso às funções administrativas do bot.\n\n' +
                       '**👑 Administrador Master:** <@&1497703127074345040>\n\n' +
-                      '*Os cargos registrados têm permissão para usar o /painel e gerenciar o /set. A lista é mantida de forma privada por segurança.*')
-      .setFooter({ text: 'Vortex Management System • Gestão de Acessos' });
+                      '*Os cargos registrados têm permissão para usar o /painel e gerenciar o /set. A lista é mantida de forma privada por segurança.*');
 
-    rows.push(new ActionRowBuilder().addComponents(
+    actionRow.addComponents(
         new ButtonBuilder().setCustomId('reg_role').setLabel('🛡️ Registrar Cargo').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('rem_role').setLabel('❌ Remover Cargo').setStyle(ButtonStyle.Secondary)
-    ));
+    );
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
-    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || null })
+    
+    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
-      .setDescription('### 🔧 Controle de Manutenção\n\n' + 
+      .setDescription('### 🔧 Controle de Manutenção\n' +
+                      'Quando o modo de manutenção está ativo, qualquer interação de usuários comuns com o bot retorna uma mensagem informando que o bot está em manutenção.\n\n' +
                       `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
                       `**👤 Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
                       `**🕒 Tempo:** ${since}\n\n` +
-                      '**🔐 Permissões Master:** <@&1497703127074345040>')
-      .addFields({ name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true });
+                      '**📖 Como Funciona**\n' +
+                      'Ao ativar, usuários sem cargo de staff que tentarem usar o bot receberão uma mensagem automática informando manutenção, com botão para suporte.\n\n' +
+                      '**🔐 Permissões Master**\n' +
+                      'Apenas o cargo <@&1497703127074345040> pode gerenciar este estado.')
+      .addFields(
+          { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true },
+          { name: '⛔ Restritos', value: '`/manutencao` (Geral)', inline: true }
+      )
+      .setImage('https://i.imgur.com/u8VvKqK.png'); // Banner Vortex Maintenance Mode placeholder
 
-    rows.push(new ActionRowBuilder().addComponents(
+    actionRow.addComponents(
       new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('test_notice').setLabel('🧪 Testar Aviso').setStyle(ButtonStyle.Secondary)
-    ));
+    );
   } else if (tab === 'tab_config') {
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF');
-    rows.push(new ActionRowBuilder().addComponents(
+    actionRow.addComponents(
       new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Selecione o Canal de Logs').addChannelTypes(ChannelType.GuildText)
-    ));
+    );
   }
 
-  const options = { embeds: [embed], components: rows, ephemeral: true };
+  let components = [mainRow];
+  if (actionRow.components.length > 0) components.push(actionRow);
+
+  const options = { embeds: [embed], components: components, ephemeral: true };
   if (edit) {
     return interaction.update(options).catch(err => console.log('Erro ao atualizar painel:', err));
   } else {
