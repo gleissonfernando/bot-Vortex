@@ -21,16 +21,13 @@ function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2));
 
 /**
  * Verifica se o membro tem permissão para acessar o painel.
- * Permite se tiver o ID Superior ou qualquer um dos cargos na lista STAFF_ROLES do config.json.
  */
 function hasPanelPermission(member) {
     if (member.roles.cache.has(SUPERIOR_ID)) return true;
-    
     const conf = loadJSON(CONFIG_PATH);
     if (conf.STAFF_ROLES && Array.isArray(conf.STAFF_ROLES)) {
         return conf.STAFF_ROLES.some(roleId => member.roles.cache.has(roleId));
     }
-    
     return false;
 }
 
@@ -55,7 +52,7 @@ module.exports = {
     
     if (interaction.customId === 'toggle_maint') {
       conf.MAINTENANCE_MODE = !conf.MAINTENANCE_MODE;
-      conf.MAINTENANCE_BY = interaction.user.id;
+      conf.MAINTENANCE_BY = String(interaction.user.id);
       conf.MAINTENANCE_SINCE = Date.now();
       saveJSON(CONFIG_PATH, conf);
       return renderDashboard(interaction, 'tab_manutencao', true);
@@ -72,7 +69,7 @@ module.exports = {
 
   async handleSelectMenu(interaction) {
     const data = loadJSON(CONFIG_PATH);
-    if (interaction.customId === 'select_log') data.LOG_CHANNEL = interaction.values[0];
+    if (interaction.customId === 'select_log') data.LOG_CHANNEL = String(interaction.values[0]);
     saveJSON(CONFIG_PATH, data);
     return renderDashboard(interaction, 'tab_config', true);
   }
@@ -85,7 +82,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   
   const embed = new EmbedBuilder()
     .setTimestamp()
-    .setFooter({ text: `Vortex Management System - ${tab === 'tab_manutencao' ? 'Manutenção' : 'Geral'}` });
+    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '')}` });
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
@@ -97,16 +94,16 @@ async function renderDashboard(interaction, tab, edit = false) {
   let rows = [mainRow];
 
   if (tab === 'tab_stats') {
-    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() }).setColor('#7000FF')
+    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || null }).setColor('#7000FF')
       .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*')
       .addFields(
-        { name: '👤 Membros', value: `\`${guild.memberCount}\``, inline: true },
-        { name: '📋 Fichas', value: `\`${(stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)}\``, inline: true },
+        { name: '👤 Membros', value: String(guild.memberCount), inline: true },
+        { name: '📋 Fichas', value: String((stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)), inline: true },
         { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true }
       );
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
-    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() })
+    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || null })
       .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
       .setDescription('### 🔧 Controle de Manutenção\nQuando ativo, interações de usuários comuns são bloqueadas.\n\n' + 
                       `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
