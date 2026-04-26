@@ -12,19 +12,20 @@ function getLogChannelId() {
             if (data.LOG_CHANNEL) return String(data.LOG_CHANNEL);
         }
     } catch (err) {}
-    return config.logsChannelId ? String(config.logsChannelId) : null;
+    // Fallback para o ID fixo que você passou
+    return '1497380031016599603'; 
 }
 
-/**
- * Envia um log profissional estilo VORTEX
- */
 async function sendStaffLog(client, title, description, color = '#7000FF') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
 
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) return;
+        if (!channel) {
+            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado.`);
+            return;
+        }
 
         const embed = new EmbedBuilder()
             .setAuthor({ name: 'VORTEX | LOG SYSTEM', iconURL: client.user.displayAvatarURL() })
@@ -34,13 +35,12 @@ async function sendStaffLog(client, title, description, color = '#7000FF') {
             .setTimestamp()
             .setFooter({ text: 'Vortex Management System • Monitoramento' });
 
-        await channel.send({ embeds: [embed] }).catch(() => {});
-    } catch (error) {}
+        await channel.send({ embeds: [embed] }).catch(err => console.error('[VORTEX LOG] Erro ao enviar:', err.message));
+    } catch (error) {
+        console.error('[VORTEX LOG] Erro fatal:', error.message);
+    }
 }
 
-/**
- * Envia um log de atualização ou status
- */
 async function sendUpdateLog(client, title, description, color = '#00D9FF') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
@@ -61,9 +61,6 @@ async function sendUpdateLog(client, title, description, color = '#00D9FF') {
     } catch (err) {}
 }
 
-/**
- * Notifica erros críticos no canal de logs
- */
 async function notifyError(client, error, context = '') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
