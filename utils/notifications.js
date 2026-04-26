@@ -5,17 +5,28 @@ const config = require('../config/config');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 
+/**
+ * Obtém o ID do canal de logs com prioridade absoluta para o ID fornecido pelo usuário.
+ */
 function getLogChannelId() {
+    // ID fornecido pelo usuário como destino principal
+    const FIXED_LOG_CHANNEL = '1497380031016599603';
+    
     try {
         if (fs.existsSync(CONFIG_PATH)) {
             const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
             if (data.LOG_CHANNEL) return String(data.LOG_CHANNEL);
         }
-    } catch (err) {}
-    // Fallback para o ID fixo que você passou
-    return '1497380031016599603'; 
+    } catch (err) {
+        console.error('[VORTEX LOG] Erro ao ler config.json:', err.message);
+    }
+    
+    return FIXED_LOG_CHANNEL;
 }
 
+/**
+ * Envia um log profissional estilo VORTEX
+ */
 async function sendStaffLog(client, title, description, color = '#7000FF') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
@@ -23,7 +34,7 @@ async function sendStaffLog(client, title, description, color = '#7000FF') {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) {
-            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado.`);
+            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado. Verifique as permissões do bot.`);
             return;
         }
 
@@ -35,12 +46,17 @@ async function sendStaffLog(client, title, description, color = '#7000FF') {
             .setTimestamp()
             .setFooter({ text: 'Vortex Management System • Monitoramento' });
 
-        await channel.send({ embeds: [embed] }).catch(err => console.error('[VORTEX LOG] Erro ao enviar:', err.message));
+        await channel.send({ embeds: [embed] }).catch(err => {
+            console.error(`[VORTEX LOG] Falha ao enviar para o canal ${channelId}:`, err.message);
+        });
     } catch (error) {
-        console.error('[VORTEX LOG] Erro fatal:', error.message);
+        console.error('[VORTEX LOG] Erro fatal na função sendStaffLog:', error.message);
     }
 }
 
+/**
+ * Envia um log de atualização ou status
+ */
 async function sendUpdateLog(client, title, description, color = '#00D9FF') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
@@ -61,6 +77,9 @@ async function sendUpdateLog(client, title, description, color = '#00D9FF') {
     } catch (err) {}
 }
 
+/**
+ * Notifica erros críticos no canal de logs
+ */
 async function notifyError(client, error, context = '') {
     const channelId = getLogChannelId();
     if (!channelId || !client) return;
