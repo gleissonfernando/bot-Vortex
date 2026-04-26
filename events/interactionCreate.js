@@ -148,8 +148,12 @@ module.exports = {
                     const tel = interaction.customId.split('_')[3];
                     const target = await guild.members.fetch(targetId).catch(() => null);
                     if (target) {
-                        await target.roles.remove(config.pendingRoleId).catch(() => {});
-                        await target.roles.add(config.approvedRoleId).catch(() => {});
+                        // IDs fornecidos pelo usuário:
+                        const PENDENTE_ID = '1449514118292967578';
+                        const APROVADO_ID = '1201235607549124639';
+                        
+                        await target.roles.remove(PENDENTE_ID).catch(() => {});
+                        await target.roles.add(APROVADO_ID).catch(() => {});
                         await target.setNickname(`[${tel}] ${target.user.username}`).catch(() => {});
                         
                         try {
