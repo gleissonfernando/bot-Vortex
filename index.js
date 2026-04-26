@@ -73,7 +73,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildMembers
     ]
 });
 
@@ -140,29 +141,33 @@ const registerCommands = async () => {
 
         logger.info(`Registrando ${commandsData.length} slash commands...`);
         
-        // Tenta registrar no servidor específico (Guild) se o ID existir
-        if (config.guildId && config.guildId.length > 10) {
-            try {
-                await rest.put(
-                    Routes.applicationGuildCommands(config.clientId, config.guildId),
-                    { body: commandsData }
-                );
-                logger.info(`Comandos registrados com sucesso no servidor: ${config.guildId}`);
-            } catch (guildError) {
-                logger.warn(`Aviso: Não foi possível registrar comandos no servidor ${config.guildId}. Verifique se o ID está correto.`);
-            }
+        let guildId = config.guildId;
+        // Limpeza de ID caso tenham colocado link de convite
+        if (guildId && guildId.includes('discord.gg')) {
+            const match = guildId.match(/\d+/);
+            guildId = match ? match[0] : null;
         }
 
-        // Registrar globalmente (Sempre recomendado)
-        await rest.put(
-            Routes.applicationCommands(config.clientId),
-            { body: commandsData }
-        );
-        logger.info('Comandos registrados globalmente com sucesso!');
+        // Tenta registrar no servidor específico (Guild)
+        if (guildId && /^\d+$/.test(guildId)) {
+            try {
+                await rest.put(
+                    Routes.applicationGuildCommands(config.clientId, guildId),
+                    { body: commandsData }
+                );
+                logger.info(`Comandos registrados com sucesso no servidor: ${guildId}`);
+            } catch (guildError) {
+                logger.warn(`Falha ao registrar comandos no servidor ${guildId}. Tentando registro global...`);
+                await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
+                logger.info('Comandos registrados globalmente (fallback)');
+            }
+        } else {
+            // Registrar globalmente
+            await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
+            logger.info('Comandos registrados globalmente com sucesso!');
+        }
     } catch (error) {
         logger.error('Erro fatal ao registrar comandos', error);
-        if (error.code === 50001) logger.error('DICA: O bot precisa da permissão "applications.commands" no convite.');
-        if (error.status === 404) logger.error('DICA: Verifique se o DISCORD_CLIENT_ID no seu .env está correto.');
         notifyError(client, error, 'Registro de Comandos');
     }
 };
@@ -170,7 +175,6 @@ const registerCommands = async () => {
 client.once('ready', async () => {
     logger.info(`Bot conectado como ${client.user.tag}`);
     await registerCommands();
-    // Inicia o agendador de mensagens automáticas (bom dia)
     startScheduler(client);
     logger.info('Agendador de mensagens automáticas iniciado.');
 });
@@ -188,7 +192,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 app.get('/health', (req, res) => {
     return res.status(200).json({
         ok: true,
-        service: 'magnatas-bot-api',
+        service: 'vortex-bot-api',
         uptimeMs: getUptimeMs(),
         timestamp: new Date().toISOString()
     });
@@ -250,7 +254,6 @@ app.use((err, req, res, next) => {
 // Login bot + subida da API
 client.login(config.token).catch(err => {
     logger.critical('Erro ao logar o bot', err);
-    // Nota: Aqui o bot ainda não está logado, então notifyError pode falhar se depender do client pronto
     process.exit(1);
 });
 
@@ -258,34 +261,21 @@ app.listen(API_PORT, API_HOST, () => {
     logger.info(`API online em http://${API_HOST}:${API_PORT}`);
 });
 
-// Tratamento de erros não capturados
+// Tratamento de erros não capturados (Blindagem Vortex)
 process.on('unhandledRejection', (reason, promise) => {
     logger.error('Promise rejeitada não tratada', new Error(String(reason)));
-    if (client.isReady()) notifyError(client, reason, 'Unhandled Rejection');
 });
 
 process.on('uncaughtException', (error) => {
     logger.critical('Exceção não capturada', error);
-    if (client.isReady()) {
-        notifyError(client, error, 'Uncaught Exception').then(() => {
-            process.exit(1);
-        }).catch(() => process.exit(1));
-    } else {
-        process.exit(1);
-    }
+    // Não encerra o processo para manter o bot online mesmo com erros menores
 });
 
 process.on('SIGINT', async () => {
-    if (client.isReady()) {
-        await sendUpdateLog(client, 'Bot Desligado', 'O bot foi encerrado via sinal SIGINT (Manual).', '#ED4245');
-    }
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-    if (client.isReady()) {
-        await sendUpdateLog(client, 'Bot Desligado', 'O bot foi encerrado via sinal SIGTERM (Sistema).', '#ED4245');
-    }
     process.exit(0);
 });
 
