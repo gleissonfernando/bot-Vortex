@@ -202,9 +202,40 @@ module.exports = {
                 if (stats.pendentes > 0) stats.pendentes--;
                 saveJSON(STATS_PATH, stats);
 
-                await interaction.reply({ content: isApp ? `✅ <@${targetId}> foi aprovado com sucesso!` : `❌ <@${targetId}> foi reprovado.` });
-                await sendStaffLog(client, isApp ? 'Membro Aprovado' : 'Membro Reprovado', `Staff: <@${user.id}>\nCandidato: <@${targetId}>`, isApp ? '#00FF00' : '#FF0000');
-                setTimeout(() => interaction.channel.delete().catch(() => {}), 10000);
+                const resultEmbed = new EmbedBuilder()
+                    .setColor(isApp ? '#57F287' : '#ED4245')
+                    .setTitle(isApp ? '✅ Solicitação Aprovada' : '❌ Solicitação Reprovada')
+                    .setDescription(
+                        [
+                            `A solicitação do usuário <@${targetId}> foi processada.`,
+                            '',
+                            `**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}`,
+                            `**Staff Responsável:** <@${user.id}>`,
+                            '',
+                            'Este canal será deletado em 5 segundos.'
+                        ].join('\n')
+                    )
+                    .setFooter({
+                        text: isApp ? 'Vortex System • Pedido aprovado' : 'Vortex System • Pedido reprovado'
+                    })
+                    .setTimestamp();
+
+                await interaction.reply({ embeds: [resultEmbed] });
+
+                await sendStaffLog(
+                    client,
+                    isApp ? 'Solicitação aprovada' : 'Solicitação reprovada',
+                    [
+                        `Staff: <@${user.id}>`,
+                        `Usuário: <@${targetId}>`,
+                        `Resultado: ${isApp ? 'Aprovado' : 'Reprovado'}`
+                    ].join('\n'),
+                    isApp ? '#57F287' : '#ED4245'
+                );
+
+                setTimeout(() => {
+                    interaction.channel.delete().catch(() => {});
+                }, 5000);
             }
         }
 
