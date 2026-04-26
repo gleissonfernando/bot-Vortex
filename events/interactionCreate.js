@@ -50,22 +50,6 @@ function updateStats(type) {
     saveJSON(STATS_PATH, stats);
 }
 
-/**
- * Tenta obter a Steam Hex do usuário através das conexões do Discord
- */
-async function getSteamHex(user) {
-    try {
-        // Nota: O bot precisa do intent 'GuildPresences' e o usuário deve ter a conexão pública
-        const fetchUser = await user.fetch(true);
-        // Em bots v14, o acesso direto a conexões via bot é limitado. 
-        // Geralmente requer OAuth2 ou que o usuário tenha a conexão visível no perfil.
-        // Como fallback, retornaremos "Não detectada (Privada)" se não for possível acessar via API simples.
-        return "Detectando via Perfil..."; 
-    } catch (err) {
-        return "Não detectada";
-    }
-}
-
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction) {
@@ -103,14 +87,14 @@ module.exports = {
             return;
         }
 
-        // 3. Select Menu (Removido Steam Hex do Modal para detecção automática)
+        // 3. Select Menu
         if (interaction.isStringSelectMenu() && interaction.customId === 'Vortex_select_tipo') {
             const tipo = interaction.values[0];
             const modal = new ModalBuilder().setCustomId(`Vortex_modal_${tipo}`).setTitle(`Formulário: ${tipo}`);
             const campos = [
                 { id: 'nome_ic', label: 'NOME (IC)', placeholder: 'Seu nome no jogo' },
                 { id: 'id_game', label: 'ID NO GAME', placeholder: 'Seu ID' },
-                { id: 'indicacao', label: 'QUEM TE INDICOU?', placeholder: 'Nick de quem te indicou' },
+                { id: 'indicacao', label: 'QUEM TE INDICOU? (@MENCIONE)', placeholder: 'Mencione com @ ou digite o nome' },
                 { id: 'idade', label: 'SUA IDADE', placeholder: 'Sua idade real' }
             ];
             campos.forEach(c => {
@@ -127,14 +111,18 @@ module.exports = {
             const tipo = interaction.customId.replace('Vortex_modal_', '');
             const nomeIC = interaction.fields.getTextInputValue('nome_ic');
             const idGame = interaction.fields.getTextInputValue('id_game');
-            const indicacao = interaction.fields.getTextInputValue('indicacao');
+            const indicacaoRaw = interaction.fields.getTextInputValue('indicacao');
             const idade = interaction.fields.getTextInputValue('idade');
 
             await interaction.deferReply({ ephemeral: true });
 
-            // Detecção automática de Steam (Simulada via metadados de perfil se disponível)
-            // Nota: Para detecção real de HEX, o usuário precisa ter a conta vinculada e pública.
-            let steamDetected = "Aguardando Sincronização...";
+            // Processar a indicação para suportar menções
+            let indicacaoFormatada = indicacaoRaw;
+            // Se for um ID numérico puro (ex: 123456789), transforma em menção
+            if (/^\d+$/.test(indicacaoRaw.replace(/[<@!>]/g, ''))) {
+                const idMention = indicacaoRaw.replace(/[<@!>]/g, '');
+                indicacaoFormatada = `<@${idMention}>`;
+            }
 
             try {
                 const canal = await guild.channels.create({
@@ -165,8 +153,8 @@ module.exports = {
                     .addFields(
                         { name: '📝 Nome IC:', value: `\`${nomeIC}\``, inline: true },
                         { name: '🎮 ID no game:', value: `\`${idGame}\``, inline: true },
-                        { name: '🔗 Steam Hex:', value: `\`Detectando...\``, inline: true }, // Campo automático
-                        { name: '👥 Indicou:', value: `\`${indicacao}\``, inline: true },
+                        { name: '🔗 Steam Hex:', value: `\`Detectando...\``, inline: true },
+                        { name: '👥 Indicou:', value: indicacaoFormatada, inline: true },
                         { name: '🎂 Idade:', value: `\`${idade}\``, inline: true }
                     )
                     .setFooter({ text: `Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` });
