@@ -130,6 +130,7 @@ async function renderDashboard(interaction, tab, edit = false) {
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tab_roles').setLabel('🛡️ Cargos Staff').setStyle(tab === 'tab_roles' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_config').setLabel('⚙️ Configurações').setStyle(tab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_manutencao').setLabel('🔧 Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
@@ -144,6 +145,19 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: '📋 Fichas', value: String((stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)), inline: true },
         { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true }
       );
+  } else if (tab === 'tab_roles') {
+    embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || null })
+      .setColor('#5865F2')
+      .setDescription('### 🔐 Controle de Cargos Staff\n\n' + 
+                      'Nesta aba você pode gerenciar os cargos que possuem acesso às funções administrativas do bot.\n\n' +
+                      '**👑 Administrador Master:** <@&1497703127074345040>\n\n' +
+                      '*Os cargos registrados abaixo têm permissão para usar o /painel e gerenciar o /set.*')
+      .setFooter({ text: 'Vortex Management System • Gestão de Acessos' });
+
+    rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('reg_role').setLabel('🛡️ Registrar Cargo').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('rem_role').setLabel('❌ Remover Cargo').setStyle(ButtonStyle.Secondary)
+    ));
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
     embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || null })
@@ -152,18 +166,12 @@ async function renderDashboard(interaction, tab, edit = false) {
                       `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
                       `**👤 Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
                       `**🕒 Tempo:** ${since}\n\n` +
-                      '**🔐 Permissões Master:** <@&1497703127074345040>\n' +
-                      '*Os cargos staff cadastrados têm acesso total ao sistema.*')
+                      '**🔐 Permissões Master:** <@&1497703127074345040>')
       .addFields({ name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true });
 
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('test_notice').setLabel('🧪 Testar Aviso').setStyle(ButtonStyle.Secondary)
-    ));
-    
-    rows.push(new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('reg_role').setLabel('🛡️ Registrar Cargo').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('rem_role').setLabel('❌ Remover Cargo').setStyle(ButtonStyle.Secondary)
     ));
   } else if (tab === 'tab_config') {
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF');
