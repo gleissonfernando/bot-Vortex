@@ -35,7 +35,7 @@ function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   } catch {}
-  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null, RECRUITMENT_CATEGORY: null };
+  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null };
 }
 
 function saveConfig(data) {
@@ -56,12 +56,13 @@ module.exports = {
     const { member, user } = interaction;
     const tab = interaction.customId;
 
-    if (['tab_stats', 'tab_roles', 'tab_manutencao', 'tab_config'].includes(tab)) {
+    // Navegação entre abas
+    if (['tab_stats', 'tab_roles', 'tab_config', 'tab_manutencao'].includes(tab)) {
       await renderTab(interaction, tab, true);
       return;
     }
 
-    // Lógica do botão de manutenção (Restrito)
+    // Lógica do botão de manutenção (Restrito ao cargo superior)
     if (interaction.customId === 'toggle_maintenance') {
       if (!member.roles.cache.has(SUPERIOR_ID)) {
         return interaction.reply({ content: '❌ Apenas a Gerência Superior pode alterar o modo de manutenção.', ephemeral: true });
@@ -75,12 +76,21 @@ module.exports = {
       return;
     }
 
-    // Botão de Teste de Sistema (Agora dentro de Manutenção)
+    // Botão de Teste de Sistema (Apenas na aba Manutenção e restrito)
     if (interaction.customId === 'test_system') {
       if (!member.roles.cache.has(SUPERIOR_ID)) {
         return interaction.reply({ content: '❌ Apenas a Gerência Superior pode realizar testes.', ephemeral: true });
       }
-      await interaction.reply({ content: '🧪 **VORTEX | TESTE DE SISTEMA**\n\n🔍 Analisando módulos...\n✅ Conexão Discord API\n✅ Permissões Administrativas\n✅ Banco de Dados JSON\n✅ Fluxo de Logs\n\n✨ **Sistema operando 100%!**', ephemeral: true });
+      await interaction.reply({ 
+        content: '🧪 **VORTEX | TESTE DE SISTEMA**\n\n' +
+                 '🔍 Analisando módulos...\n' +
+                 '✅ Conexão Discord API: Estável\n' +
+                 '✅ Permissões Administrativas: OK\n' +
+                 '✅ Banco de Dados JSON: Acessível\n' +
+                 '✅ Fluxo de Logs: Operacional\n\n' +
+                 '✨ **O sistema está funcionando perfeitamente!**', 
+        ephemeral: true 
+      });
       return;
     }
 
@@ -92,18 +102,16 @@ module.exports = {
       
       const modal = new ModalBuilder()
         .setCustomId('modal_config_channel')
-        .setTitle('Configurar Canal de Texto');
+        .setTitle('Configurar Canal de Logs');
 
       const channelInput = new TextInputBuilder()
         .setCustomId('channel_id_input')
         .setLabel('ID do Canal')
-        .setPlaceholder('Cole o ID do canal onde a mensagem será enviada')
+        .setPlaceholder('Cole o ID do canal onde os logs serão enviados')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      const firstActionRow = new ActionRowBuilder().addComponents(channelInput);
-      modal.addComponents(firstActionRow);
-
+      modal.addComponents(new ActionRowBuilder().addComponents(channelInput));
       await interaction.showModal(modal);
       return;
     }
@@ -112,10 +120,9 @@ module.exports = {
   async handleModal(interaction) {
     if (interaction.customId === 'modal_config_channel') {
       const channelId = interaction.fields.getTextInputValue('channel_id_input');
-      
-      // Validar se o canal existe
       const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
-      if (!channel || channel.type !== ChannelType.GuildText) {
+      
+      if (!channel || !channel.isTextBased()) {
         return interaction.reply({ content: '❌ ID de canal inválido ou o canal não é de texto.', ephemeral: true });
       }
 
@@ -137,7 +144,7 @@ module.exports = {
       const data = loadConfig();
       data.LOG_CHANNEL = channelId;
       saveConfig(data);
-      await interaction.reply({ content: `✅ Canal atualizado via menu: <#${channelId}>`, ephemeral: true });
+      await interaction.reply({ content: `✅ Canal atualizado: <#${channelId}>`, ephemeral: true });
       await renderTab(interaction, 'tab_config', true);
     }
   }
@@ -165,17 +172,8 @@ function buildStatsEmbed(interaction) {
       { name: '✅ Aprovados', value: `\`\`\`diff\n+ ${stats.aprovados}\n\`\`\``, inline: true },
       { name: '❌ Recusados', value: `\`\`\`diff\n- ${stats.recusados}\n\`\`\``, inline: true },
     )
-    .setFooter({ text: 'Vortex Management System' })
+    .setFooter({ text: 'Vortex Management System • Monitoramento' })
     .setTimestamp();
-}
-
-function buildStatsRows() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Primary).setDisabled(true),
-    new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
-  );
 }
 
 // ─── ABA: Cargos ─────────────────────────────────────────────────────────────
@@ -188,16 +186,8 @@ function buildRolesEmbed() {
     .addFields(
       { name: 'Pendente', value: `<@&${config.pendingRoleId}>`, inline: true },
       { name: 'Aprovado', value: `<@&${config.approvedRoleId}>`, inline: true }
-    );
-}
-
-function buildRolesRows() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Primary).setDisabled(true),
-    new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
-  );
+    )
+    .setFooter({ text: 'Vortex Management System' });
 }
 
 // ─── ABA: Configuração ───────────────────────────────────────────────────────
@@ -207,34 +197,11 @@ function buildConfigEmbed() {
   return new EmbedBuilder()
     .setTitle('⚙️ VORTEX | CONFIGURAÇÕES DE CANAIS')
     .setColor(0x3498DB)
-    .setDescription('Escolha como deseja configurar os canais de texto do sistema.\n\n**Opção 1:** Usar o Menu de Rolagem abaixo.\n**Opção 2:** Clicar no botão para inserir o ID manualmente.')
+    .setDescription('Gerencie os canais de texto do sistema.\n\n**Opção 1:** Usar o Menu de Rolagem abaixo.\n**Opção 2:** Clicar no botão para inserir o ID manualmente.')
     .addFields(
       { name: 'Canal de Logs Atual', value: data.LOG_CHANNEL ? `<#${data.LOG_CHANNEL}>` : '`Não configurado`', inline: true }
-    );
-}
-
-function buildConfigRows() {
-  const selectLog = new ChannelSelectMenuBuilder()
-    .setCustomId('select_log_channel_scroll')
-    .setPlaceholder('Selecione um canal (Menu com Rolagem)')
-    .addChannelTypes(ChannelType.GuildText);
-
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Primary).setDisabled(true),
-      new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('open_channel_modal')
-        .setLabel('Configurar por ID (Modal)')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('📝')
-    ),
-    new ActionRowBuilder().addComponents(selectLog)
-  ];
+    )
+    .setFooter({ text: 'Vortex Management System' });
 }
 
 // ─── ABA: Manutenção ─────────────────────────────────────────────────────────
@@ -250,50 +217,72 @@ function buildManutencaoEmbed() {
     .addFields(
       { name: 'Alterado por', value: data.MAINTENANCE_ACTIVATED_BY ? `<@${data.MAINTENANCE_ACTIVATED_BY}>` : 'Ninguém', inline: true },
       { name: 'Data', value: data.MAINTENANCE_ACTIVATED_AT ? new Date(data.MAINTENANCE_ACTIVATED_AT).toLocaleString('pt-BR') : 'N/A', inline: true }
-    );
+    )
+    .setFooter({ text: 'Vortex Management System' });
 }
 
-function buildManutencaoRows() {
-  const data = loadConfig();
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Primary).setDisabled(true)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('toggle_maintenance')
-        .setLabel(data.MAINTENANCE_MODE ? 'Desativar Manutenção' : 'Ativar Manutenção')
-        .setStyle(data.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('test_system')
-        .setLabel('Teste de Sistema')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🧪')
-    )
-  ];
+// ─── Gerador de Botões (Navegação Principal) ─────────────────────────────────
+
+function buildNavigationRows(currentTab) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('tab_stats')
+      .setLabel('Estatísticas')
+      .setStyle(currentTab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(currentTab === 'tab_stats'),
+    new ButtonBuilder()
+      .setCustomId('tab_roles')
+      .setLabel('Cargos Staff')
+      .setStyle(currentTab === 'tab_roles' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(currentTab === 'tab_roles'),
+    new ButtonBuilder()
+      .setCustomId('tab_config')
+      .setLabel('Configurações')
+      .setStyle(currentTab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(currentTab === 'tab_config'),
+    new ButtonBuilder()
+      .setCustomId('tab_manutencao')
+      .setLabel('Manutenção')
+      .setStyle(currentTab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(currentTab === 'tab_manutencao')
+  );
+  return [row];
 }
 
 // ─── Render Principal ─────────────────────────────────────────────────────────
 
 async function renderTab(interaction, tab, edit = false) {
   let embed;
-  let rows = [];
+  let rows = buildNavigationRows(tab);
 
   if (tab === 'tab_stats') {
     embed = buildStatsEmbed(interaction);
-    rows = [buildStatsRows()];
   } else if (tab === 'tab_roles') {
     embed = buildRolesEmbed();
-    rows = [buildRolesRows()];
-  } else if (tab === 'tab_manutencao') {
-    embed = buildManutencaoEmbed();
-    rows = buildManutencaoRows();
   } else if (tab === 'tab_config') {
     embed = buildConfigEmbed();
-    rows = buildConfigRows();
+    // Adicionar botão de modal e menu de rolagem
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('open_channel_modal').setLabel('Configurar por ID (Modal)').setStyle(ButtonStyle.Primary).setEmoji('📝')
+    ));
+    rows.push(new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder().setCustomId('select_log_channel_scroll').setPlaceholder('Selecione um canal (Menu com Rolagem)').addChannelTypes(ChannelType.GuildText)
+    ));
+  } else if (tab === 'tab_manutencao') {
+    embed = buildManutencaoEmbed();
+    const data = loadConfig();
+    // Adicionar botões específicos de manutenção
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('toggle_maintenance')
+        .setLabel(data.MAINTENANCE_MODE ? 'Desativar Manutenção' : 'Ativar Manutenção')
+        .setStyle(data.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('test_system')
+        .setLabel('Testar Sistema')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🧪')
+    ));
   }
 
   const options = { embeds: [embed], components: rows, ephemeral: true };
