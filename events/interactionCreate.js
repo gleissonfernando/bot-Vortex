@@ -74,7 +74,11 @@ module.exports = {
 
         // Sistema de Recrutamento (/set)
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
-            // Limitação de pedidos simultâneos removida conforme solicitado pelo usuário.
+            // Adicionar cargo pendente ao iniciar a solicitação
+            const PENDENTE_ID = '1449514118292967578';
+            if (member) {
+                await member.roles.add(PENDENTE_ID).catch(() => {});
+            }
 
             const select = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
@@ -187,6 +191,7 @@ module.exports = {
                     }
                 } else {
                     const target = await client.users.fetch(targetId).catch(() => null);
+                    // Na reprovação, o cargo pendente (1449514118292967578) é mantido conforme solicitado pelo usuário.
                     if (target) { try { await target.send({ content: `❌ **VORTEX:** Sua solicitação foi **REPROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {} }
                 }
 
