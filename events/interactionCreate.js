@@ -195,6 +195,15 @@ module.exports = {
                             await targetMember.roles.remove(config.pendingRoleId);
                             await targetMember.roles.add(config.approvedRoleId);
                             await targetMember.setNickname(nomeIC);
+                            
+                            // Enviar DM de Aprovação
+                            const approveEmbed = new EmbedBuilder()
+                                .setColor('#57F287')
+                                .setTitle('✅ Solicitação Aprovada!')
+                                .setDescription(`Olá, **${targetMember.user.username}**!\n\nSua solicitação de set na **Vortex** foi aprovada por <@${user.id}>.\n\nSeus cargos foram aplicados e seu nickname foi alterado para \`${nomeIC}\`.\n\nSeja bem-vindo(a)!`)
+                                .setThumbnail(guild.iconURL({ dynamic: true }))
+                                .setTimestamp();
+                            await targetMember.send({ embeds: [approveEmbed] }).catch(() => {});
                         } catch (err) {}
                     }
                     updateStats('aprovado');
@@ -204,6 +213,15 @@ module.exports = {
                         try {
                             if (originalNick === targetMember.user.username) await targetMember.setNickname(null);
                             else await targetMember.setNickname(originalNick);
+
+                            // Enviar DM de Reprovação
+                            const rejectEmbed = new EmbedBuilder()
+                                .setColor('#ED4245')
+                                .setTitle('❌ Solicitação Reprovada')
+                                .setDescription(`Olá, **${targetMember.user.username}**.\n\nInfelizmente sua solicitação de set na **Vortex** foi reprovada após análise da staff.\n\nVocê pode tentar novamente em uma nova oportunidade ou entrar em contato com um moderador para mais detalhes.`)
+                                .setThumbnail(guild.iconURL({ dynamic: true }))
+                                .setTimestamp();
+                            await targetMember.send({ embeds: [rejectEmbed] }).catch(() => {});
                         } catch (err) {}
                     }
                     updateStats('recusado');

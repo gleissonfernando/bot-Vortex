@@ -29,6 +29,21 @@ module.exports = {
                 '#57F287'
             );
 
+            // Enviar mensagem de Boas-vindas via DM
+            try {
+                const welcomeEmbed = new EmbedBuilder()
+                    .setColor('#D4AF37')
+                    .setTitle(`✨ Bem-vindo à Vortex, ${member.user.username}!`)
+                    .setDescription(`Olá! Ficamos felizes em ter você conosco no servidor **${guild.name}**.\n\nPara iniciar seu processo de recrutamento ou solicitar seu set, utilize o comando \`/set\` em um dos canais autorizados.\n\nBoa sorte!`)
+                    .setThumbnail(guild.iconURL({ dynamic: true }))
+                    .setTimestamp();
+
+                await member.send({ embeds: [welcomeEmbed] });
+                logger.info(`Mensagem de boas-vindas enviada via DM para ${member.user.username}`);
+            } catch (dmError) {
+                logger.warn(`Não foi possível enviar DM para ${member.user.username} (DMs fechadas).`);
+            }
+
         } catch (error) {
             logger.error('Erro no evento guildMemberAdd:', error);
         }
