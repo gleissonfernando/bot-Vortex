@@ -3,15 +3,37 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
 
+// Função para carregar config dinâmica do painel
+function getDynamicConfig() {
+    try {
+        const configPath = path.join(__dirname, '..', 'commands', 'config.json');
+        if (fs.existsSync(configPath)) {
+            return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        }
+    } catch (err) {}
+    return {};
+}
+
 /**
  * Envia um log detalhado e visual para o canal de staff (Vortex Style)
  */
 async function sendStaffLog(client, title, description, color = '#2F3136', fields = []) {
     try {
-        const channelId = config.logsChannelId;
+        const dynamicConfig = getDynamicConfig();
+        // Tenta usar o canal configurado no painel, se não houver, usa o fixo do config.js
+        const channelId = dynamicConfig.LOG_CHANNEL || config.logsChannelId;
+        
+        if (!channelId) {
+            console.error('[VORTEX LOG] Nenhum ID de canal de logs configurado.');
+            return;
+        }
+
         const channel = await client.channels.fetch(channelId).catch(() => null);
         
-        if (!channel) return;
+        if (!channel) {
+            console.error(`[VORTEX LOG] Canal de logs (${channelId}) não encontrado.`);
+            return;
+        }
 
         const embed = new EmbedBuilder()
             .setTitle(`📜 VORTEX LOG | ${title.toUpperCase()}`)
@@ -35,9 +57,12 @@ async function sendStaffLog(client, title, description, color = '#2F3136', field
  */
 async function sendUpdateLog(client, title, description, color = '#3498DB') {
     try {
-        const channelId = config.logsChannelId;
-        const channel = await client.channels.fetch(channelId).catch(() => null);
+        const dynamicConfig = getDynamicConfig();
+        const channelId = dynamicConfig.LOG_CHANNEL || config.logsChannelId;
         
+        if (!channelId) return;
+
+        const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
 
         const embed = new EmbedBuilder()
@@ -63,9 +88,12 @@ async function notifyError(client, error, context = '') {
     console.error(`[VORTEX ERRO] ${context}: ${errorMessage}`);
 
     try {
-        const channelId = config.logsChannelId;
-        const channel = await client.channels.fetch(channelId).catch(() => null);
+        const dynamicConfig = getDynamicConfig();
+        const channelId = dynamicConfig.LOG_CHANNEL || config.logsChannelId;
         
+        if (!channelId) return;
+
+        const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
 
         const embed = new EmbedBuilder()

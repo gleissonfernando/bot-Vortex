@@ -171,7 +171,18 @@ module.exports = {
 
                 await canal.send({ content: `<@${user.id}> sua solicitação foi enviada! Aguarde a staff.`, embeds: [embed], components: [row] });
                 await interaction.editReply({ content: `✅ Sua solicitação foi enviada! Veja aqui: <#${canal.id}>` });
-            } catch (err) { console.error(err); }
+
+                // Log de nova solicitação
+                await sendStaffLog(
+                    client,
+                    'Nova Solicitação',
+                    `O usuário <@${user.id}> abriu um novo pedido de recrutamento.\n\n**Tipo:** ${tipo}\n**Canal:** <#${canal.id}>`,
+                    '#3498DB'
+                );
+            } catch (err) { 
+                console.error(err);
+                await notifyError(client, err, 'Criação de Canal de Recrutamento');
+            }
             return;
         }
 
@@ -238,15 +249,18 @@ module.exports = {
                     await interaction.channel.send({ content: `❌ Reprovado por <@${user.id}>` });
                 }
 
-                const logEmbed = new EmbedBuilder()
-                    .setTitle(isApprove ? '✅ Set Aprovado' : '❌ Set Reprovado')
-                    .setColor(isApprove ? '#57F287' : '#ED4245')
-                    .addFields(
+                // Log de Decisão (Aprovar/Reprovar)
+                await sendStaffLog(
+                    client,
+                    isApprove ? 'Set Aprovado' : 'Set Reprovado',
+                    `A solicitação do usuário <@${targetId}> foi processada.`,
+                    isApprove ? '#57F287' : '#ED4245',
+                    [
                         { name: 'Usuário', value: `<@${targetId}>`, inline: true },
                         { name: 'Staff', value: `<@${user.id}>`, inline: true },
                         { name: 'Canal', value: `#${interaction.channel.name}`, inline: true }
-                    ).setTimestamp();
-                await client.channels.cache.get(config.logsChannelId)?.send({ embeds: [logEmbed] });
+                    ]
+                );
 
                 const pedidosAtivos = loadJSON(PEDIDOS_ATIVOS_PATH);
                 delete pedidosAtivos[targetId];
