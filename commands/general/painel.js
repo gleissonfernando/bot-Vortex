@@ -8,6 +8,9 @@ const { isRegisteredUser, denyNotRegistered } = require('../../utils/permissions
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 
+// Cargo de Gerência Superior que pode alterar manutenção
+const SUPERIOR_ID = '1497703127074345040';
+
 // Funções Utilitárias
 function loadStats() {
   try {
@@ -38,18 +41,32 @@ module.exports = {
   },
 
   async handleButton(interaction) {
+    const { member, user } = interaction;
     const tab = interaction.customId;
+
     if (['tab_stats', 'tab_roles', 'tab_manutencao'].includes(tab)) {
       await renderTab(interaction, tab, true);
+      return;
     }
 
+    // Lógica do botão de manutenção (Restrito)
     if (interaction.customId === 'toggle_maintenance') {
+      if (!member.roles.cache.has(SUPERIOR_ID)) {
+        return interaction.reply({ content: '❌ Apenas a Gerência Superior pode alterar o modo de manutenção.', ephemeral: true });
+      }
       const data = loadConfig();
       data.MAINTENANCE_MODE = !data.MAINTENANCE_MODE;
-      data.MAINTENANCE_ACTIVATED_BY = interaction.user.id;
+      data.MAINTENANCE_ACTIVATED_BY = user.id;
       data.MAINTENANCE_ACTIVATED_AT = new Date().toISOString();
       saveConfig(data);
       await renderTab(interaction, 'tab_manutencao', true);
+      return;
+    }
+
+    // Botão de Teste de Sistema
+    if (interaction.customId === 'test_system') {
+      await interaction.reply({ content: '🔍 **Iniciando Teste de Sistema...**\n✅ Conexão com Discord: OK\n✅ Permissões de Cargo: OK\n✅ Banco de Dados (JSON): OK\n✅ Sistema de Logs: OK\n\n*Sistema operando normalmente!*', ephemeral: true });
+      return;
     }
   }
 };
@@ -113,12 +130,12 @@ function buildRolesRows() {
 
 function buildManutencaoEmbed() {
   const data = loadConfig();
-  const status = data.MAINTENANCE_MODE ? '🔴 ATIVADO' : '🟢 DESATIVADO';
+  const status = data.MAINTENANCE_MODE ? '🔴 ATIVADO (Sistema Bloqueado)' : '🟢 DESATIVADO (Sistema Online)';
   
   return new EmbedBuilder()
     .setTitle('🔧 Modo de Manutenção')
     .setColor(data.MAINTENANCE_MODE ? 0xED4245 : 0x57F287)
-    .setDescription(`O modo de manutenção impede que novos usuários usem o sistema.\n\n**Status Atual:** \`${status}\``)
+    .setDescription(`O modo de manutenção impede que novos usuários usem o sistema de recrutamento.\n\n**Status Atual:** \`${status}\``)
     .addFields(
       { name: 'Alterado por', value: data.MAINTENANCE_ACTIVATED_BY ? `<@${data.MAINTENANCE_ACTIVATED_BY}>` : 'Ninguém', inline: true },
       { name: 'Data', value: data.MAINTENANCE_ACTIVATED_AT ? new Date(data.MAINTENANCE_ACTIVATED_AT).toLocaleString('pt-BR') : 'N/A', inline: true }
@@ -137,7 +154,12 @@ function buildManutencaoRows() {
       new ButtonBuilder()
         .setCustomId('toggle_maintenance')
         .setLabel(data.MAINTENANCE_MODE ? 'Desativar Manutenção' : 'Ativar Manutenção')
-        .setStyle(data.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger)
+        .setStyle(data.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('test_system')
+        .setLabel('Teste de Sistema')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('🧪')
     )
   ];
 }

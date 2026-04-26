@@ -70,6 +70,12 @@ module.exports = {
 
         // 2. Iniciar Recrutamento
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
+            // Verificar Modo de Manutenção
+            const configData = loadJSON(path.join(__dirname, '..', 'commands', 'config.json'));
+            if (configData.MAINTENANCE_MODE && !member.roles.cache.has('1497703127074345040')) {
+                return interaction.reply({ content: '⚠️ **Sistema em Manutenção.**\nO sistema de recrutamento está temporariamente desativado para ajustes. Tente novamente mais tarde.', ephemeral: true });
+            }
+
             const pedidosAtivos = loadJSON(PEDIDOS_ATIVOS_PATH);
             if (pedidosAtivos[user.id]) {
                 return interaction.reply({ content: '❌ Você já possui uma solicitação em andamento.', ephemeral: true });
