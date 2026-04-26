@@ -118,9 +118,27 @@ module.exports = {
                 new ButtonBuilder().setCustomId('Vortex_del').setLabel('Apagar').setEmoji('🗑️').setStyle(ButtonStyle.Secondary)
             );
 
-            await canal.send({ content: `<@${user.id}> aguarde a staff analisar sua ficha.`, embeds: [embed], components: [buttons] });
-            await interaction.editReply(`✅ Sua solicitação foi enviada com sucesso em <#${canal.id}>`);
-            
+            await canal.send({
+                content: `<@${user.id}> aguarde a análise da staff.`,
+                embeds: [embed],
+                components: [buttons]
+            });
+
+            const successEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('✅ Solicitação enviada com sucesso')
+                .setDescription(
+                    [
+                        'Sua solicitação foi enviada para análise.',
+                        '',
+                        `Canal criado: <#${canal.id}>`
+                    ].join('\n')
+                )
+                .setFooter({ text: 'Vortex System • Solicitação registrada' })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [successEmbed] });
+
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             pedidosAtivos[user.id] = canal.id;
             saveJSON(PEDIDOS_PATH, pedidosAtivos);
@@ -128,17 +146,32 @@ module.exports = {
             const stats = loadJSON(STATS_PATH);
             stats.pendentes = (stats.pendentes || 0) + 1;
             saveJSON(STATS_PATH, stats);
-            await sendStaffLog(client, 'Novo Recrutamento', `<@${user.id}> abriu um pedido de \`${tipo}\` em <#${canal.id}>`, '#5865F2');
+
+            await sendStaffLog(
+                client,
+                'Novo pedido de set',
+                [
+                    `Usuário: <@${user.id}>`,
+                    `Tipo: ${tipo}`,
+                    `Canal: <#${canal.id}>`
+                ].join('\n'),
+                '#3498DB'
+            );
+            return;
         }
 
         if (interaction.isButton()) {
             if (interaction.customId === 'Vortex_del') {
-                if (member.roles.cache.has(SUPERIOR_ID)) return interaction.channel.delete();
-                return interaction.reply({ content: '❌ Apenas a Gerência Superior pode apagar este canal.', ephemeral: true });
+                if (!member.roles.cache.has(SUPERIOR_ID)) {
+                    return interaction.reply({ content: '❌ Você não tem permissão para executar esta ação.', ephemeral: true });
+                }
+                return interaction.channel.delete().catch(() => {});
             }
 
             if (interaction.customId.startsWith('Vortex_app_') || interaction.customId.startsWith('Vortex_rej_')) {
-                if (!member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Você não tem permissão para aprovar ou reprovar.', ephemeral: true });
+                if (!member.roles.cache.has(SUPERIOR_ID)) {
+                    return interaction.reply({ content: '❌ Você não tem permissão para executar esta ação.', ephemeral: true });
+                }
                 
                 const isApp = interaction.customId.startsWith('Vortex_app_');
                 const targetId = interaction.customId.split('_')[2];
