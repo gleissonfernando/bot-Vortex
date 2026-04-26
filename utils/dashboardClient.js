@@ -26,7 +26,7 @@ async function sendLogToDashboard(payload = {}) {
             userId,
             userName,
             color = 0x5865F2,
-            footer = 'Bot Size',
+            footer = 'Bot Vortex',
             imageUrl,
             fields = []
         } = payload;

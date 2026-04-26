@@ -12,7 +12,7 @@ module.exports = {
             await sendUpdateLog(
                 client, 
                 'Bot Ligado', 
-                'O bot da **Size** foi iniciado com sucesso e está operacional.', 
+                'O bot da **Vortex** foi iniciado com sucesso e está operacional.', 
                 '#57F287'
             );
         } catch (error) {
