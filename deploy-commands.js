@@ -3,11 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config();
 
-const token = process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN;
-const clientId = process.env.VITE_DISCORD_CLIENT_ID || process.env.DISCORD_CLIENT_ID;
+const config = require('./config/config');
+const token = config.token;
+const clientId = config.clientId;
 
 if (!token || !clientId) {
-    console.error('❌ Erro: DISCORD_TOKEN ou DISCORD_CLIENT_ID não encontrados no .env');
+    console.error('❌ Erro: DISCORD_TOKEN ou DISCORD_CLIENT_ID não encontrados no .env ou config.js');
     process.exit(1);
 }
 
