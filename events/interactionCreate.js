@@ -94,6 +94,7 @@ module.exports = {
             const campos = [
                 { id: 'nome_ic', label: 'NOME (IC)', placeholder: 'Seu nome no jogo' },
                 { id: 'id_game', label: 'ID NO GAME', placeholder: 'Seu ID' },
+                { id: 'steam_hex', label: 'STEAM HEX', placeholder: 'Ex: steam:110000100000000' },
                 { id: 'indicacao', label: 'QUEM TE INDICOU?', placeholder: 'Nick de quem te indicou' },
                 { id: 'idade', label: 'SUA IDADE', placeholder: 'Sua idade real' }
             ];
@@ -106,11 +107,12 @@ module.exports = {
             return;
         }
 
-        // 4. Envio do Modal (Melhoria Visual)
+        // 4. Envio do Modal
         if (interaction.isModalSubmit() && interaction.customId.startsWith('Vortex_modal_')) {
             const tipo = interaction.customId.replace('Vortex_modal_', '');
             const nomeIC = interaction.fields.getTextInputValue('nome_ic');
             const idGame = interaction.fields.getTextInputValue('id_game');
+            const steamHex = interaction.fields.getTextInputValue('steam_hex');
             const indicacao = interaction.fields.getTextInputValue('indicacao');
             const idade = interaction.fields.getTextInputValue('idade');
 
@@ -145,8 +147,9 @@ module.exports = {
                     .addFields(
                         { name: '📝 Nome IC:', value: `\`${nomeIC}\``, inline: true },
                         { name: '🎮 ID no game:', value: `\`${idGame}\``, inline: true },
+                        { name: '🔗 Steam Hex:', value: `\`${steamHex}\``, inline: true },
                         { name: '👥 Indicou:', value: `\`${indicacao}\``, inline: true },
-                        { name: '🎂 Idade:', value: `\`${idade}\``, inline: false }
+                        { name: '🎂 Idade:', value: `\`${idade}\``, inline: true }
                     )
                     .setFooter({ text: `Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` });
 
@@ -162,9 +165,8 @@ module.exports = {
             return;
         }
 
-        // 5. Botões (Aprovar / Reprovar / Apagar)
+        // 5. Botões
         if (interaction.isButton()) {
-            // Botão de Apagar Canal (Restrito ao cargo específico)
             if (interaction.customId === 'Vortex_delete_channel') {
                 if (!member.roles.cache.has('1497703127074345040')) {
                     return interaction.reply({ content: '❌ Apenas a Gerência Superior pode apagar este canal manualmente.', ephemeral: true });
@@ -196,7 +198,6 @@ module.exports = {
                             await targetMember.roles.add(config.approvedRoleId);
                             await targetMember.setNickname(nomeIC);
                             
-                            // Enviar DM de Aprovação
                             const approveEmbed = new EmbedBuilder()
                                 .setColor('#57F287')
                                 .setTitle('✅ Solicitação Aprovada!')
@@ -214,11 +215,10 @@ module.exports = {
                             if (originalNick === targetMember.user.username) await targetMember.setNickname(null);
                             else await targetMember.setNickname(originalNick);
 
-                            // Enviar DM de Reprovação
                             const rejectEmbed = new EmbedBuilder()
                                 .setColor('#ED4245')
                                 .setTitle('❌ Solicitação Reprovada')
-                                .setDescription(`Olá, **${targetMember.user.username}**.\n\nInfelizmente sua solicitação de set na **Vortex** foi reprovada após análise da staff.\n\nVocê pode tentar novamente em uma nova oportunidade ou entrar em contato com um moderador para mais detalhes.`)
+                                .setDescription(`Olá, **${targetMember.user.username}**.\n\nInfelizmente sua solicitação de set na **Vortex** foi reprovada após análise da staff.`)
                                 .setThumbnail(guild.iconURL({ dynamic: true }))
                                 .setTimestamp();
                             await targetMember.send({ embeds: [rejectEmbed] }).catch(() => {});
@@ -228,7 +228,6 @@ module.exports = {
                     await interaction.channel.send({ content: `❌ Reprovado por <@${user.id}>` });
                 }
 
-                // Log
                 const logEmbed = new EmbedBuilder()
                     .setTitle(isApprove ? '✅ Set Aprovado' : '❌ Set Reprovado')
                     .setColor(isApprove ? '#57F287' : '#ED4245')
@@ -250,7 +249,6 @@ module.exports = {
             }
         }
 
-        // Outras interações do painel
         const painelCommand = client.commands.get('painel');
         if (interaction.isButton() && painelCommand?.handleButton) await painelCommand.handleButton(interaction);
         if (interaction.isModalSubmit() && painelCommand?.handleModal) await painelCommand.handleModal(interaction);
