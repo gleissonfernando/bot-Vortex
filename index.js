@@ -19,7 +19,8 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences
     ]
 });
 
@@ -56,27 +57,41 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-// Registro de Comandos (Blindado)
+// Registro de Comandos (Blindagem Anti-404)
 const registerCommands = async () => {
     const commandsData = client.commands.map(cmd => cmd.data.toJSON());
+    if (!config.token || !config.clientId) return console.error('[VORTEX] Token ou ClientID ausentes.');
+
     const rest = new REST({ version: '10' }).setToken(config.token);
 
     try {
         let guildId = config.guildId;
+        
+        // Limpeza de Guild ID (Remove links de convite e caracteres não numéricos)
         if (guildId && (guildId.includes('discord.gg') || !/^\d+$/.test(guildId))) {
             const match = guildId.match(/\d+/);
             guildId = match ? match[0] : null;
         }
 
-        console.log('Registrando comandos...');
-        if (guildId) {
-            await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body: commandsData })
-                .then(() => console.log('Comandos registrados no servidor.'))
-                .catch(() => rest.put(Routes.applicationCommands(config.clientId), { body: commandsData }));
+        console.log('[VORTEX] Iniciando registro de comandos...');
+        
+        if (guildId && /^\d+$/.test(guildId)) {
+            try {
+                await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body: commandsData });
+                console.log(`[VORTEX] Comandos registrados no servidor: ${guildId}`);
+            } catch (err) {
+                console.warn(`[VORTEX] Falha no servidor ${guildId}. Tentando registro global...`);
+                await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
+                console.log('[VORTEX] Comandos registrados globalmente (fallback).');
+            }
         } else {
             await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
+            console.log('[VORTEX] Comandos registrados globalmente.');
         }
-    } catch (error) { console.error('Erro no registro:', error.message); }
+    } catch (error) { 
+        console.error('[VORTEX] Erro fatal no registro:', error.message);
+        // Não envia notifyError aqui para evitar loop se o erro for no registro
+    }
 };
 
 client.once('ready', async () => {
@@ -84,17 +99,16 @@ client.once('ready', async () => {
     await registerCommands();
 });
 
-// Blindagem contra Erros (Expected a string primitive fix)
+// Blindagem contra Crashes
 process.on('unhandledRejection', (reason) => {
-    console.error('Rejeição não tratada:', reason);
+    console.error('[VORTEX CRITICAL] Rejeição não tratada:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Exceção não capturada:', error.message);
-    // Impede o bot de desligar
+    console.error('[VORTEX CRITICAL] Exceção não capturada:', error.message);
 });
 
-client.login(config.token).catch(console.error);
-app.listen(API_PORT, API_HOST, () => console.log(`API Vortex: ${API_PORT}`));
+client.login(config.token).catch(err => console.error('[VORTEX] Falha no Login:', err.message));
+app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));
 
 module.exports = { client };
