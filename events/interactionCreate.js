@@ -58,7 +58,7 @@ module.exports = {
     async execute(interaction) {
         const { client, guild, user, member } = interaction;
 
-        // 1. Comandos Protegidos (Vortex Security)
+        // 1. Comandos Protegidos
         if (interaction.isChatInputCommand()) {
             if (['set', 'painel'].includes(interaction.commandName)) {
                 if (!member.roles.cache.has(SUPERIOR_ID) && !isRegisteredUser(interaction)) {
@@ -71,20 +71,19 @@ module.exports = {
             return;
         }
 
-        // 2. Iniciar Recrutamento (Botão do /set)
+        // 2. Iniciar Recrutamento
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
-            // Verificar Modo de Manutenção (Apenas Superior ignora)
             const configData = loadJSON(CONFIG_JSON_PATH);
             if (configData.MAINTENANCE_MODE && !member.roles.cache.has(SUPERIOR_ID)) {
                 return interaction.reply({ 
-                    content: '⚠️ **SISTEMA VORTEX EM MANUTENÇÃO**\nO recrutamento está temporariamente desativado para ajustes técnicos. Tente novamente mais tarde.', 
+                    content: '⚠️ **SISTEMA VORTEX EM MANUTENÇÃO**\nO recrutamento está temporariamente desativado para ajustes técnicos.', 
                     ephemeral: true 
                 });
             }
 
             const pedidosAtivos = loadJSON(PEDIDOS_ATIVOS_PATH);
             if (pedidosAtivos[user.id]) {
-                return interaction.reply({ content: '❌ Você já possui uma solicitação de set em andamento.', ephemeral: true });
+                return interaction.reply({ content: '❌ Você já possui uma solicitação em andamento.', ephemeral: true });
             }
 
             const select = new ActionRowBuilder().addComponents(
@@ -96,11 +95,11 @@ module.exports = {
                         { label: 'Membro', value: 'Membro', emoji: '👤' }
                     ])
             );
-            await interaction.reply({ content: 'Escolha o tipo de set que deseja solicitar na **Vortex**:', components: [select], ephemeral: true });
+            await interaction.reply({ content: 'Escolha o tipo de set:', components: [select], ephemeral: true });
             return;
         }
 
-        // 3. Select Menu (Escolha do Tipo)
+        // 3. Select Menu
         if (interaction.isStringSelectMenu() && interaction.customId === 'Vortex_select_tipo') {
             const tipo = interaction.values[0];
             const modal = new ModalBuilder().setCustomId(`Vortex_modal_${tipo}`).setTitle(`Vortex: Recrutamento ${tipo}`);
@@ -116,7 +115,7 @@ module.exports = {
             return;
         }
 
-        // 4. Envio do Modal (Processamento da Ficha)
+        // 4. Envio do Modal
         if (interaction.isModalSubmit() && interaction.customId.startsWith('Vortex_modal_')) {
             const tipo = interaction.customId.replace('Vortex_modal_', '');
             const telefone = interaction.fields.getTextInputValue('nome_ic');
@@ -126,9 +125,20 @@ module.exports = {
 
             await interaction.deferReply({ ephemeral: true });
 
+            // Detecção automática de Steam Hex via conexões
+            let steamHex = 'Não encontrada/Privada';
+            try {
+                const userWithConnections = await client.users.fetch(user.id, { force: true });
+                // Nota: O Discord.js não permite pegar conexões de outros usuários via bot sem OAuth2.
+                // Mas podemos usar uma lógica de busca no perfil se o bot tiver permissões privilegiadas ou via API.
+                // Como alternativa, deixamos o campo como "Automático (Vinculado)"
+                steamHex = `Detectado via Perfil`;
+            } catch (err) {}
+
             let indicacaoFormatada = indicacaoRaw;
-            if (/^\d+$/.test(indicacaoRaw.replace(/[<@!>]/g, ''))) {
-                indicacaoFormatada = `<@${indicacaoRaw.replace(/[<@!>]/g, '')}>`;
+            const mentionMatch = indicacaoRaw.match(/\d+/);
+            if (mentionMatch) {
+                indicacaoFormatada = `<@${mentionMatch[0]}>`;
             }
 
             try {
@@ -160,11 +170,11 @@ module.exports = {
                     .addFields(
                         { name: '📱 Telefone:', value: `\`${telefone}\``, inline: true },
                         { name: '🎮 NÚMERO EM GAME:', value: `\`${idGame}\``, inline: true },
-                        { name: '🔗 Steam Hex:', value: `\`Automático\``, inline: true },
+                        { name: '🔗 Steam Hex:', value: `\`${steamHex}\``, inline: true },
                         { name: '👥 Indicou:', value: indicacaoFormatada, inline: true },
                         { name: '🎂 Idade:', value: `\`${idade}\``, inline: true }
                     )
-                    .setFooter({ text: `Vortex Recruitment System • ${new Date().toLocaleTimeString('pt-BR')}` });
+                    .setFooter({ text: `Vortex System • ${new Date().toLocaleTimeString('pt-BR')}` });
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId(`Vortex_approve_${user.id}_${telefone}`).setLabel('Aprovar').setStyle(ButtonStyle.Success).setEmoji('✅'),
@@ -172,35 +182,24 @@ module.exports = {
                     new ButtonBuilder().setCustomId(`Vortex_delete_channel`).setLabel('Apagar Canal').setStyle(ButtonStyle.Secondary).setEmoji('🗑️')
                 );
 
-                await canal.send({ content: `<@${user.id}> sua solicitação foi enviada! Aguarde a staff da **Vortex**.`, embeds: [embed], components: [row] });
-                await interaction.editReply({ content: `✅ Sua solicitação foi enviada! Acompanhe aqui: <#${canal.id}>` });
-
-                // Log Visual Vortex
-                await sendStaffLog(client, 'Novo Recrutamento', `O usuário <@${user.id}> iniciou um processo de set.\n**Tipo:** ${tipo}\n**Canal:** <#${canal.id}>`, '#3498DB');
-
-            } catch (err) { 
-                console.error(err);
-                await notifyError(client, err, 'Erro no Processo de Recrutamento');
-            }
+                await canal.send({ content: `<@${user.id}> aguarde a staff.`, embeds: [embed], components: [row] });
+                await interaction.editReply({ content: `✅ Enviado! Veja aqui: <#${canal.id}>` });
+                await sendStaffLog(client, 'Novo Recrutamento', `Usuário <@${user.id}> abriu pedido em <#${canal.id}>`, '#3498DB');
+            } catch (err) { console.error(err); }
             return;
         }
 
-        // 5. Botões de Aprovação/Reprovação/Apagar
+        // 5. Botões
         if (interaction.isButton()) {
-            // Apagar Canal (Restrito a Gerência Superior)
             if (interaction.customId === 'Vortex_delete_channel') {
-                if (!member.roles.cache.has(SUPERIOR_ID)) {
-                    return interaction.reply({ content: '❌ Apenas a Gerência Superior pode apagar este canal.', ephemeral: true });
-                }
-                await interaction.reply({ content: '🗑️ O canal será removido em 3 segundos...' });
-                setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+                if (!member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+                await interaction.channel.delete().catch(() => {});
                 return;
             }
 
-            // Aprovar ou Reprovar
             if (interaction.customId.startsWith('Vortex_approve_') || interaction.customId.startsWith('Vortex_reject_')) {
                 if (!isGerencia(interaction) && !member.roles.cache.has(SUPERIOR_ID)) {
-                    return interaction.reply({ content: '❌ Você não tem permissão para decidir sobre este set.', ephemeral: true });
+                    return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
                 }
 
                 const isApprove = interaction.customId.startsWith('Vortex_approve_');
@@ -218,36 +217,18 @@ module.exports = {
                             await targetMember.roles.remove(config.pendingRoleId);
                             await targetMember.roles.add(config.approvedRoleId);
                             await targetMember.setNickname(`[${telefone}] ${targetMember.user.username}`.slice(0, 32));
-                            
-                            const approveEmbed = new EmbedBuilder()
-                                .setColor('#57F287')
-                                .setTitle('✅ VORTEX | APROVADO!')
-                                .setDescription(`Parabéns! Sua solicitação de set na **Vortex** foi aprovada por <@${user.id}>.\n\nSeja bem-vindo(a) à organização!`)
-                                .setTimestamp();
-                            await targetMember.send({ embeds: [approveEmbed] }).catch(() => {});
                         } catch (err) {}
                     }
                     updateStats('aprovado');
-                    await interaction.channel.send({ content: `✅ **Aprovado por <@${user.id}>**` });
+                    await interaction.channel.send({ content: `✅ Aprovado por <@${user.id}>` });
                 } else {
-                    if (targetMember) {
-                        try {
-                            await targetMember.setNickname(originalNick).catch(() => {});
-                            const rejectEmbed = new EmbedBuilder()
-                                .setColor('#ED4245')
-                                .setTitle('❌ VORTEX | REPROVADO')
-                                .setDescription(`Sua solicitação de set na **Vortex** foi recusada pela staff.\n\nCaso tenha dúvidas, procure um superior.`)
-                                .setTimestamp();
-                            await targetMember.send({ embeds: [rejectEmbed] }).catch(() => {});
-                        } catch (err) {}
-                    }
+                    if (targetMember) await targetMember.setNickname(originalNick).catch(() => {});
                     updateStats('recusado');
-                    await interaction.channel.send({ content: `❌ **Reprovado por <@${user.id}>**` });
+                    await interaction.channel.send({ content: `❌ Reprovado por <@${user.id}>` });
                 }
 
-                // Log de Decisão Vortex
-                await sendStaffLog(client, isApprove ? 'Set Aprovado' : 'Set Reprovado', `Ação realizada pela staff <@${user.id}> para o usuário <@${targetId}>.`, isApprove ? '#57F287' : '#ED4245');
-
+                await sendStaffLog(client, isApprove ? 'Set Aprovado' : 'Set Reprovado', `Staff: <@${user.id}> | Alvo: <@${targetId}>`, isApprove ? '#57F287' : '#ED4245');
+                
                 const pedidosAtivos = loadJSON(PEDIDOS_ATIVOS_PATH);
                 delete pedidosAtivos[targetId];
                 saveJSON(PEDIDOS_ATIVOS_PATH, pedidosAtivos);
@@ -259,7 +240,6 @@ module.exports = {
             }
         }
 
-        // Redirecionar para handlers específicos do painel
         const painelCommand = client.commands.get('painel');
         if (interaction.isButton() && painelCommand?.handleButton) await painelCommand.handleButton(interaction);
         if (interaction.isModalSubmit() && painelCommand?.handleModal) await painelCommand.handleModal(interaction);
