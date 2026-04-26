@@ -1,4 +1,16 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { 
+  SlashCommandBuilder, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  ModalBuilder, 
+  TextInputBuilder, 
+  TextInputStyle,
+  ChannelSelectMenuBuilder, 
+  ChannelType, 
+  PermissionFlagsBits 
+} = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const config = require('../../config/config');
@@ -8,7 +20,7 @@ const { isRegisteredUser, denyNotRegistered } = require('../../utils/permissions
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 
-// Cargo de Gerência Superior que pode alterar manutenção
+// Cargo de Gerência Superior
 const SUPERIOR_ID = '1497703127074345040';
 
 // Funções Utilitárias
@@ -23,7 +35,7 @@ function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   } catch {}
-  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null };
+  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null, RECRUITMENT_CATEGORY: null };
 }
 
 function saveConfig(data) {
@@ -49,6 +61,7 @@ module.exports = {
       return;
     }
 
+    // Lógica do botão de manutenção (Restrito)
     if (interaction.customId === 'toggle_maintenance') {
       if (!member.roles.cache.has(SUPERIOR_ID)) {
         return interaction.reply({ content: '❌ Apenas a Gerência Superior pode alterar o modo de manutenção.', ephemeral: true });
@@ -62,14 +75,61 @@ module.exports = {
       return;
     }
 
+    // Botão de Teste de Sistema (Agora dentro de Manutenção)
     if (interaction.customId === 'test_system') {
-      await interaction.reply({ content: '🔍 **Iniciando Teste de Sistema...**\n✅ Conexão com Discord: OK\n✅ Permissões de Cargo: OK\n✅ Banco de Dados (JSON): OK\n✅ Sistema de Logs: OK\n\n*Sistema operando normalmente!*', ephemeral: true });
+      if (!member.roles.cache.has(SUPERIOR_ID)) {
+        return interaction.reply({ content: '❌ Apenas a Gerência Superior pode realizar testes.', ephemeral: true });
+      }
+      await interaction.reply({ content: '🧪 **VORTEX | TESTE DE SISTEMA**\n\n🔍 Analisando módulos...\n✅ Conexão Discord API\n✅ Permissões Administrativas\n✅ Banco de Dados JSON\n✅ Fluxo de Logs\n\n✨ **Sistema operando 100%!**', ephemeral: true });
+      return;
+    }
+
+    // Botão para abrir Modal de Configuração de Canal
+    if (interaction.customId === 'open_channel_modal') {
+      if (!member.roles.cache.has(SUPERIOR_ID)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      
+      const modal = new ModalBuilder()
+        .setCustomId('modal_config_channel')
+        .setTitle('Configurar Canal de Texto');
+
+      const channelInput = new TextInputBuilder()
+        .setCustomId('channel_id_input')
+        .setLabel('ID do Canal')
+        .setPlaceholder('Cole o ID do canal onde a mensagem será enviada')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const firstActionRow = new ActionRowBuilder().addComponents(channelInput);
+      modal.addComponents(firstActionRow);
+
+      await interaction.showModal(modal);
       return;
     }
   },
 
+  async handleModal(interaction) {
+    if (interaction.customId === 'modal_config_channel') {
+      const channelId = interaction.fields.getTextInputValue('channel_id_input');
+      
+      // Validar se o canal existe
+      const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+      if (!channel || channel.type !== ChannelType.GuildText) {
+        return interaction.reply({ content: '❌ ID de canal inválido ou o canal não é de texto.', ephemeral: true });
+      }
+
+      const data = loadConfig();
+      data.LOG_CHANNEL = channelId;
+      saveConfig(data);
+
+      await interaction.reply({ content: `✅ Canal de logs configurado com sucesso: <#${channelId}>`, ephemeral: true });
+      await renderTab(interaction, 'tab_config', true);
+    }
+  },
+
   async handleSelectMenu(interaction) {
-    if (interaction.customId === 'select_log_channel') {
+    if (interaction.customId === 'select_log_channel_scroll') {
       if (!interaction.member.roles.cache.has(SUPERIOR_ID)) {
         return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
       }
@@ -77,7 +137,7 @@ module.exports = {
       const data = loadConfig();
       data.LOG_CHANNEL = channelId;
       saveConfig(data);
-      await interaction.reply({ content: `✅ Canal de logs atualizado para <#${channelId}>`, ephemeral: true });
+      await interaction.reply({ content: `✅ Canal atualizado via menu: <#${channelId}>`, ephemeral: true });
       await renderTab(interaction, 'tab_config', true);
     }
   }
@@ -91,7 +151,7 @@ function buildStatsEmbed(interaction) {
   const memberCount = interaction.guild.memberCount;
 
   return new EmbedBuilder()
-    .setTitle('📊  Painel de Controle — Central de Estatísticas')
+    .setTitle('📊 VORTEX | CENTRAL DE ESTATÍSTICAS')
     .setColor(0x5865F2)
     .setThumbnail('https://cdn-icons-png.flaticon.com/512/1162/1162456.png')
     .setDescription(
@@ -105,7 +165,7 @@ function buildStatsEmbed(interaction) {
       { name: '✅ Aprovados', value: `\`\`\`diff\n+ ${stats.aprovados}\n\`\`\``, inline: true },
       { name: '❌ Recusados', value: `\`\`\`diff\n- ${stats.recusados}\n\`\`\``, inline: true },
     )
-    .setFooter({ text: 'Vortex Management System • Monitoramento' })
+    .setFooter({ text: 'Vortex Management System' })
     .setTimestamp();
 }
 
@@ -122,9 +182,9 @@ function buildStatsRows() {
 
 function buildRolesEmbed() {
   return new EmbedBuilder()
-    .setTitle('🛡️ Configuração de Cargos')
+    .setTitle('🛡️ VORTEX | CONFIGURAÇÃO DE CARGOS')
     .setColor(0xFEE75C)
-    .setDescription('Visualize e gerencie os cargos principais do sistema.')
+    .setDescription('Visualize os cargos principais vinculados ao sistema Vortex.')
     .addFields(
       { name: 'Pendente', value: `<@&${config.pendingRoleId}>`, inline: true },
       { name: 'Aprovado', value: `<@&${config.approvedRoleId}>`, inline: true }
@@ -140,14 +200,14 @@ function buildRolesRows() {
   );
 }
 
-// ─── ABA: Configuração (Seleção de Canais com Rolagem) ────────────────────────
+// ─── ABA: Configuração ───────────────────────────────────────────────────────
 
 function buildConfigEmbed() {
   const data = loadConfig();
   return new EmbedBuilder()
-    .setTitle('⚙️ Configurações do Sistema')
+    .setTitle('⚙️ VORTEX | CONFIGURAÇÕES DE CANAIS')
     .setColor(0x3498DB)
-    .setDescription('Utilize os menus abaixo para selecionar os canais do sistema. Os menus permitem rolagem automática por todos os canais do servidor.')
+    .setDescription('Escolha como deseja configurar os canais de texto do sistema.\n\n**Opção 1:** Usar o Menu de Rolagem abaixo.\n**Opção 2:** Clicar no botão para inserir o ID manualmente.')
     .addFields(
       { name: 'Canal de Logs Atual', value: data.LOG_CHANNEL ? `<#${data.LOG_CHANNEL}>` : '`Não configurado`', inline: true }
     );
@@ -155,8 +215,8 @@ function buildConfigEmbed() {
 
 function buildConfigRows() {
   const selectLog = new ChannelSelectMenuBuilder()
-    .setCustomId('select_log_channel')
-    .setPlaceholder('Selecione o canal de logs (Rolagem disponível)')
+    .setCustomId('select_log_channel_scroll')
+    .setPlaceholder('Selecione um canal (Menu com Rolagem)')
     .addChannelTypes(ChannelType.GuildText);
 
   return [
@@ -165,6 +225,13 @@ function buildConfigRows() {
       new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Primary).setDisabled(true),
       new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('open_channel_modal')
+        .setLabel('Configurar por ID (Modal)')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📝')
     ),
     new ActionRowBuilder().addComponents(selectLog)
   ];
@@ -177,9 +244,9 @@ function buildManutencaoEmbed() {
   const status = data.MAINTENANCE_MODE ? '🔴 ATIVADO (Sistema Bloqueado)' : '🟢 DESATIVADO (Sistema Online)';
   
   return new EmbedBuilder()
-    .setTitle('🔧 Modo de Manutenção')
+    .setTitle('🔧 VORTEX | MODO DE MANUTENÇÃO')
     .setColor(data.MAINTENANCE_MODE ? 0xED4245 : 0x57F287)
-    .setDescription(`O modo de manutenção impede que novos usuários usem o sistema de recrutamento.\n\n**Status Atual:** \`${status}\``)
+    .setDescription(`O modo de manutenção bloqueia o acesso de usuários comuns ao sistema.\n\n**Status Atual:** \`${status}\``)
     .addFields(
       { name: 'Alterado por', value: data.MAINTENANCE_ACTIVATED_BY ? `<@${data.MAINTENANCE_ACTIVATED_BY}>` : 'Ninguém', inline: true },
       { name: 'Data', value: data.MAINTENANCE_ACTIVATED_AT ? new Date(data.MAINTENANCE_ACTIVATED_AT).toLocaleString('pt-BR') : 'N/A', inline: true }
