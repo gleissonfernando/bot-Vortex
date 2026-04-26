@@ -151,7 +151,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription('### 🔐 Controle de Cargos Staff\n\n' + 
                       'Nesta aba você pode gerenciar os cargos que possuem acesso às funções administrativas do bot.\n\n' +
                       '**👑 Administrador Master:** <@&1497703127074345040>\n\n' +
-                      '*Os cargos registrados abaixo têm permissão para usar o /painel e gerenciar o /set.*')
+                      '*Os cargos registrados têm permissão para usar o /painel e gerenciar o /set. A lista é mantida de forma privada por segurança.*')
       .setFooter({ text: 'Vortex Management System • Gestão de Acessos' });
 
     rows.push(new ActionRowBuilder().addComponents(

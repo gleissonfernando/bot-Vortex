@@ -71,10 +71,7 @@ module.exports = {
 
         // Sistema de Recrutamento (/set)
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
-            const pedidosAtivos = loadJSON(PEDIDOS_PATH);
-            if (pedidosAtivos[user.id] && !hasStaffPermission(member)) {
-                return interaction.reply({ content: '❌ Você já possui uma solicitação em andamento.', ephemeral: true });
-            }
+            // Limitação de pedidos simultâneos removida conforme solicitado pelo usuário.
 
             const select = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
