@@ -80,6 +80,14 @@ module.exports = {
                 await member.roles.add(PENDENTE_ID).catch(() => {});
             }
 
+            // Log de Início de Solicitação
+            await sendVortexLog(client, {
+                title: 'Início de Recrutamento',
+                description: `O usuário <@${user.id}> clicou para iniciar uma solicitação de set.\n\n**Usuário:** \`${user.tag}\`\n**ID:** \`${user.id}\`\n**Status:** Cargo Pendente Atribuído`,
+                color: '#7000FF',
+                type: 'RECRUTAMENTO'
+            });
+
             const select = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
                     { label: 'Morador', value: 'Morador', emoji: '🏠' },
