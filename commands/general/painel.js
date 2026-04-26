@@ -5,7 +5,8 @@ const {
   ButtonBuilder, 
   ButtonStyle, 
   ChannelSelectMenuBuilder, 
-  ChannelType 
+  ChannelType,
+  PermissionFlagsBits
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +22,7 @@ function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2));
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
-    .setDescription('VORTEX MANAGEMENT SYSTEM - Dashboard'),
+    .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
     if (!interaction.member.roles.cache.has(SUPERIOR_ID)) {
@@ -33,13 +34,24 @@ module.exports = {
   async handleButton(interaction) {
     if (!interaction.member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
+    const conf = loadJSON(CONFIG_PATH);
+
     if (interaction.customId.startsWith('tab_')) return renderDashboard(interaction, interaction.customId, true);
     
     if (interaction.customId === 'toggle_maint') {
-      const data = loadJSON(CONFIG_PATH);
-      data.MAINTENANCE_MODE = !data.MAINTENANCE_MODE;
-      saveJSON(CONFIG_PATH, data);
+      conf.MAINTENANCE_MODE = !conf.MAINTENANCE_MODE;
+      conf.MAINTENANCE_BY = interaction.user.id;
+      conf.MAINTENANCE_SINCE = Date.now();
+      saveJSON(CONFIG_PATH, conf);
       return renderDashboard(interaction, 'tab_manutencao', true);
+    }
+
+    if (interaction.customId === 'test_notice') {
+        return interaction.reply({
+            content: '⚠️ **O bot está em manutenção. Tente novamente mais tarde.**',
+            components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex'))],
+            ephemeral: true
+        });
     }
   },
 
@@ -56,13 +68,9 @@ async function renderDashboard(interaction, tab, edit = false) {
   const conf = loadJSON(CONFIG_PATH);
   const guild = interaction.guild;
   
-  // Cálculo de usuários online (precisa de Presence Intent ativa)
-  const onlineMembers = guild.members.cache.filter(m => m.presence?.status && m.presence.status !== 'offline').size || 'N/A';
-  
   const embed = new EmbedBuilder()
-    .setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() })
     .setTimestamp()
-    .setFooter({ text: 'Vortex Management System' });
+    .setFooter({ text: `Vortex Management System - ${tab === 'tab_manutencao' ? 'Manutenção' : 'Geral'}` });
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
@@ -74,36 +82,42 @@ async function renderDashboard(interaction, tab, edit = false) {
   let rows = [mainRow];
 
   if (tab === 'tab_stats') {
-    embed.setColor('#7000FF') // Roxo Neon
+    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() }).setColor('#7000FF')
       .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*')
       .addFields(
-        { name: '👤 Membros no servidor', value: `\`${guild.memberCount}\``, inline: true },
-        { name: '🟢 Usuários online', value: `\`${onlineMembers}\``, inline: true },
-        { name: '📋 Total de fichas', value: `\`${(stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)}\``, inline: true },
-        { name: '\u200B', value: '### 📌 Status das Solicitações' },
-        { name: '⏳ Pendentes', value: `\`${stats.pendentes || 0}\``, inline: true },
-        { name: '✅ Aprovadas', value: `\`${stats.aprovados || 0}\``, inline: true },
-        { name: '❌ Recusadas', value: `\`${stats.recusados || 0}\``, inline: true },
-        { name: '\u200B', value: '### 🛡️ Informações do Sistema' },
-        { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true },
-        { name: 'Cargo Staff', value: `<@&${SUPERIOR_ID}>`, inline: true },
-        { name: 'Servidor', value: `\`${guild.name}\``, inline: true }
+        { name: '👤 Membros', value: `\`${guild.memberCount}\``, inline: true },
+        { name: '📋 Fichas', value: `\`${(stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)}\``, inline: true },
+        { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true }
       );
-  } else if (tab === 'tab_config') {
-    embed.setTitle('⚙️ CONFIGURAÇÕES DO SISTEMA').setColor('#00D9FF') // Azul Neon
-      .setDescription('Ajuste os canais de operação da Vortex.');
-    rows.push(new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Selecione o Canal de Logs').addChannelTypes(ChannelType.GuildText)
-    ));
   } else if (tab === 'tab_manutencao') {
-    embed.setTitle('🔧 MODO DE MANUTENÇÃO').setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#57F287')
-      .setDescription(`Status Atual: **${conf.MAINTENANCE_MODE ? 'ATIVADO' : 'DESATIVADO'}**\n\nQuando ativado, usuários comuns não podem abrir solicitações.`);
+    const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
+    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() })
+      .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
+      .setDescription('### 🔧 Controle de Manutenção\nQuando ativo, interações de usuários comuns são bloqueadas.\n\n' + 
+                      `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
+                      `**👤 Quem ativou:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
+                      `**🕒 Tempo:** ${since}\n\n` +
+                      '**📖 Como Funciona:** Usuários sem cargo staff receberão um aviso de manutenção com botão para suporte.')
+      .addFields(
+        { name: '🔐 Permissões', value: `<@&${SUPERIOR_ID}>`, inline: true },
+        { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true }
+      )
+      .setImage('https://i.imgur.com/your-vortex-banner.png'); // Placeholder para o banner
+
     rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? 'Desativar Manutenção' : 'Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('test_notice').setLabel('🧪 Testar Aviso').setStyle(ButtonStyle.Secondary)
     ));
-  } else if (tab === 'tab_logs') {
-    embed.setTitle('📁 REGISTROS DE APROVAÇÃO').setColor('#FFFFFF')
-      .setDescription('Histórico recente de atividades do sistema.');
+    
+    rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('reg_role').setLabel('🛡️ Registrar Cargo').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('rem_role').setLabel('❌ Remover Cargo').setStyle(ButtonStyle.Secondary)
+    ));
+  } else if (tab === 'tab_config') {
+    embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF');
+    rows.push(new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Canal de Logs').addChannelTypes(ChannelType.GuildText)
+    ));
   }
 
   const options = { embeds: [embed], components: rows, ephemeral: true };

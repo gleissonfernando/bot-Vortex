@@ -15,6 +15,25 @@ module.exports = {
     name: 'interactionCreate',
     async execute(interaction) {
         const { client, guild, user, member } = interaction;
+        const conf = loadJSON(CONFIG_PATH);
+
+        // Lógica Global de Manutenção
+        if (conf.MAINTENANCE_MODE && !member.roles.cache.has(SUPERIOR_ID)) {
+            const maintEmbed = new EmbedBuilder()
+                .setTitle('⚠️ VORTEX | MANUTENÇÃO')
+                .setColor('#FF0055')
+                .setDescription('O bot está em manutenção no momento. Tente novamente mais tarde.')
+                .setTimestamp();
+            
+            const maintBtn = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex')
+            );
+
+            if (interaction.isRepliable()) {
+                return interaction.reply({ embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
+            }
+            return;
+        }
 
         if (interaction.isChatInputCommand()) {
             const cmd = client.commands.get(interaction.commandName);
@@ -23,10 +42,6 @@ module.exports = {
         }
 
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
-            const conf = loadJSON(CONFIG_PATH);
-            if (conf.MAINTENANCE_MODE && !member.roles.cache.has(SUPERIOR_ID)) {
-                return interaction.reply({ content: '⚠️ **VORTEX | MANUTENÇÃO**\nO sistema está em manutenção no momento.', ephemeral: true });
-            }
             const select = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
                     { label: 'Morador', value: 'Morador', emoji: '🏠' },
@@ -88,7 +103,6 @@ module.exports = {
             stats.pendentes = (stats.pendentes || 0) + 1;
             saveJSON(STATS_PATH, stats);
             await sendStaffLog(client, 'Novo Set', `<@${user.id}> abriu pedido em <#${canal.id}>`, '#3498DB');
-            return;
         }
 
         if (interaction.isButton()) {
