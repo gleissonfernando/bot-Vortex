@@ -434,7 +434,9 @@ async function renderTab(interaction, tab, edit = false) {
 }
 
 function canUsePanel(interaction) {
-  return isGerencia(interaction);
+  const { isRegisteredUser } = require('../../utils/permissions');
+  // O /painel só abre para: usuários autorizados no sistema ou com cargo staff/admin
+  return isRegisteredUser(interaction) || isGerencia(interaction);
 }
 
 // ─── Função para construir a mensagem de Bom Dia ──────────────────────────────
@@ -469,11 +471,8 @@ module.exports = {
 
   async execute(interaction) {
     if (!canUsePanel(interaction)) {
-      await interaction.reply({
-        content: '❌ **Acesso Negado:** Apenas a Staff autorizada pode acessar o painel de controle.',
-        ephemeral: true
-      });
-      return;
+      const { denyNotRegistered } = require('../../utils/permissions');
+      return denyNotRegistered(interaction);
     }
     await renderTab(interaction, 'tab_stats', false);
   },

@@ -8,6 +8,7 @@ const {
 } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const { isRegisteredUser, denyNotRegistered } = require('../../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,20 +16,16 @@ module.exports = {
         .setDescription('🎯 Abre o sistema de recrutamento Vortex'),
 
     async execute(interaction) {
-        // Nome do arquivo de banner
+        // 1. Verificar autorização
+        if (!isRegisteredUser(interaction)) {
+            return denyNotRegistered(interaction);
+        }
+
         const fileName = 'IMG_4234.png';
         const bannerPath = path.join(__dirname, '../../foto/', fileName);
 
-        if (!fs.existsSync(bannerPath)) {
-            await interaction.reply({
-                content: `❌ **Erro:** Banner oficial não encontrado. Por favor, verifique a pasta \`foto\`.`,
-                ephemeral: true
-            });
-            return;
-        }
-
         const embed = new EmbedBuilder()
-            .setColor('#D4AF37') // Cor Dourada para combinar com a logo
+            .setColor('#D4AF37')
             .setAuthor({
                 name: 'Vortex MANAGEMENT • RECRUTAMENTO',
                 iconURL: interaction.guild.iconURL({ dynamic: true })
@@ -36,68 +33,44 @@ module.exports = {
             .setTitle('✨ Seja bem-vindo à nossa seletiva!')
             .setDescription(
                 '### 📋 Informações Importantes\n' +
-                'Olá, **candidato**! Você está prestes a iniciar o processo de recrutamento oficial da **Vortex**. Buscamos membros comprometidos e prontos para somar com nossa equipe.\n\n' +
+                'Olá, **candidato**! Você está prestes a iniciar o processo de recrutamento oficial da **Vortex**.\n\n' +
                 '**📌 Requisitos Básicos:**\n' +
                 '> • Ter microfone de boa qualidade\n' +
                 '> • Respeitar as regras da organização\n' +
                 '> • Disponibilidade e compromisso'
             )
-            .setImage(`attachment://${fileName}`)
             .addFields(
                 {
                     name: '🚀 Como funciona?',
                     value: '`1.` Clique no botão abaixo para iniciar\n' +
-                           '`2.` Preencha o formulário com seus dados\n' +
-                           '`3.` Aguarde a análise da nossa Staff',
+                           '`2.` Selecione o tipo de set (Morador ou Membro)\n' +
+                           '`3.` Preencha o formulário e aguarde a Staff',
                     inline: false
-                },
-                {
-                    name: '⏳ Tempo de Resposta',
-                    value: '> 📥 **Análise:** Até 24h\n> 📬 **Resultado:** Via DM',
-                    inline: true
-                },
-                {
-                    name: '🛡️ Segurança',
-                    value: '> 🔒 Dados Protegidos\n> ✅ Sistema Oficial',
-                    inline: true
                 }
             )
             .setFooter({
-                text: '© 2026 Vortex Recruitment System • Qualidade & Compromisso',
+                text: '© 2026 Vortex Recruitment System',
                 iconURL: interaction.guild.iconURL({ dynamic: true })
             })
             .setTimestamp();
 
+        if (fs.existsSync(bannerPath)) {
+            embed.setImage(`attachment://${fileName}`);
+        }
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('Vortex_set_start')
-                .setLabel('Iniciar Recrutamento')
-                .setEmoji('🎮')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('Vortex_set_info')
-                .setLabel('Ver Regras')
-                .setEmoji('📜')
-                .setStyle(ButtonStyle.Secondary)
+                .setLabel('Pedir Set / Recrutamento')
+                .setEmoji('📝')
+                .setStyle(ButtonStyle.Success)
         );
 
-        const bannerAttachment = new AttachmentBuilder(bannerPath);
-
-        try {
-            await interaction.reply({
-                embeds: [embed],
-                components: [row],
-                files: [bannerAttachment]
-            });
-        } catch (error) {
-            console.error('[set] Erro ao enviar embed de recrutamento:', error);
-
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: '❌ **Erro:** Não foi possível carregar o sistema de recrutamento.',
-                    ephemeral: true
-                });
-            }
+        const options = { embeds: [embed], components: [row] };
+        if (fs.existsSync(bannerPath)) {
+            options.files = [new AttachmentBuilder(bannerPath)];
         }
+
+        await interaction.reply(options);
     }
 };
