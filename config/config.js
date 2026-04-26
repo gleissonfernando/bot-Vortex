@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
     token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN,
     clientId: process.env.VITE_DISCORD_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '',
-    guildId: process.env.VITE_DISCORD_GUILD_ID || process.env.DISCORD_GUILD_ID || '',
+    guildId: process.env.VITE_DISCORD_GUILD_ID || process.env.DISCORD_GUILD_ID || '1201193356810780773',
     
     // IDs Fixos Vortex
     pendingRoleId: '1449514118292967578',
