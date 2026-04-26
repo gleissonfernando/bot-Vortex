@@ -41,7 +41,6 @@ module.exports = {
     return renderDashboard(interaction, 'tab_stats');
   },
 
-  // Handler para Botões
   async handleButton(interaction) {
     if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
@@ -86,7 +85,6 @@ module.exports = {
     }
   },
 
-  // Handler para Select Menus
   async handleSelectMenu(interaction) {
     if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
@@ -98,7 +96,6 @@ module.exports = {
     }
   },
 
-  // Handler para Modais
   async handleModal(interaction) {
     if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
@@ -155,7 +152,8 @@ async function renderDashboard(interaction, tab, edit = false) {
                       `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
                       `**👤 Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
                       `**🕒 Tempo:** ${since}\n\n` +
-                      '**🔐 Permissões Master:** <@&1497703127074345040>')
+                      '**🔐 Permissões Master:** <@&1497703127074345040>\n' +
+                      '*Os cargos staff cadastrados têm acesso total ao sistema.*')
       .addFields({ name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true });
 
     rows.push(new ActionRowBuilder().addComponents(
