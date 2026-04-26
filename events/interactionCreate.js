@@ -12,9 +12,6 @@ const SUPERIOR_ID = '1497703127074345040';
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
-/**
- * Verifica se o membro tem permissão de Staff.
- */
 function hasStaffPermission(member) {
     if (member.roles.cache.has(SUPERIOR_ID)) return true;
     const conf = loadJSON(CONFIG_PATH);
@@ -30,7 +27,7 @@ module.exports = {
         const { client, guild, user, member } = interaction;
         const conf = loadJSON(CONFIG_PATH);
 
-        // Lógica Global de Manutenção
+        // Bloqueio de Manutenção
         if (conf.MAINTENANCE_MODE && !hasStaffPermission(member)) {
             const maintEmbed = new EmbedBuilder()
                 .setTitle('⚠️ VORTEX | MANUTENÇÃO')
@@ -48,19 +45,23 @@ module.exports = {
             return;
         }
 
+        // Slash Commands
         if (interaction.isChatInputCommand()) {
             const cmd = client.commands.get(interaction.commandName);
             if (cmd) await cmd.execute(interaction);
             return;
         }
 
-        // Delegar interações do painel
+        // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.includes('tab_') || ['toggle_maint', 'test_notice', 'reg_role', 'rem_role'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || ['toggle_maint', 'test_notice', 'reg_role', 'rem_role'].includes(interaction.customId))) {
                 return await painel.handleButton(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
+                return await painel.handleSelectMenu(interaction);
+            }
+            if (interaction.isChannelSelectMenu() && interaction.customId === 'select_log') {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isModalSubmit() && (interaction.customId === 'modal_reg_role' || interaction.customId === 'modal_rem_role')) {
@@ -68,6 +69,7 @@ module.exports = {
             }
         }
 
+        // Sistema de Recrutamento (/set)
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             if (pedidosAtivos[user.id] && !hasStaffPermission(member)) {
@@ -153,6 +155,7 @@ module.exports = {
             return;
         }
 
+        // Botões de Recrutamento (Aprovar/Reprovar/Apagar)
         if (interaction.isButton()) {
             if (interaction.customId === 'Vortex_del') {
                 if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });

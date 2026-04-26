@@ -6,14 +6,12 @@ const {
   ButtonStyle, 
   ChannelSelectMenuBuilder, 
   ChannelType,
-  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const config = require('../../config/config');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -22,11 +20,6 @@ const SUPERIOR_ID = '1497703127074345040';
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
-/**
- * Verifica se o membro tem permissão de Staff.
- * Cargo Superior (1497703127074345040) tem acesso total.
- * Cargos cadastrados em STAFF_ROLES no config.json também ganham acesso.
- */
 function hasStaffPermission(member) {
     if (member.roles.cache.has(SUPERIOR_ID)) return true;
     const conf = loadJSON(CONFIG_PATH);
@@ -45,17 +38,21 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) {
       return interaction.reply({ content: '❌ Você não tem acesso a este painel.', ephemeral: true });
     }
-    await renderDashboard(interaction, 'tab_stats');
+    return renderDashboard(interaction, 'tab_stats');
   },
 
+  // Handler para Botões
   async handleButton(interaction) {
     if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
+    const customId = interaction.customId;
     const conf = loadJSON(CONFIG_PATH);
 
-    if (interaction.customId.startsWith('tab_')) return renderDashboard(interaction, interaction.customId, true);
+    if (customId.startsWith('tab_')) {
+      return renderDashboard(interaction, customId, true);
+    }
     
-    if (interaction.customId === 'toggle_maint') {
+    if (customId === 'toggle_maint') {
       conf.MAINTENANCE_MODE = !conf.MAINTENANCE_MODE;
       conf.MAINTENANCE_BY = String(interaction.user.id);
       conf.MAINTENANCE_SINCE = Date.now();
@@ -63,7 +60,7 @@ module.exports = {
       return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
-    if (interaction.customId === 'test_notice') {
+    if (customId === 'test_notice') {
         return interaction.reply({
             content: '⚠️ **O bot está em manutenção. Tente novamente mais tarde.**',
             components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex'))],
@@ -71,10 +68,10 @@ module.exports = {
         });
     }
 
-    if (interaction.customId === 'reg_role' || interaction.customId === 'rem_role') {
+    if (customId === 'reg_role' || customId === 'rem_role') {
         const modal = new ModalBuilder()
-            .setCustomId(interaction.customId === 'reg_role' ? 'modal_reg_role' : 'modal_rem_role')
-            .setTitle(interaction.customId === 'reg_role' ? 'Registrar Cargo Staff' : 'Remover Cargo Staff');
+            .setCustomId(customId === 'reg_role' ? 'modal_reg_role' : 'modal_rem_role')
+            .setTitle(customId === 'reg_role' ? 'Registrar Cargo Staff' : 'Remover Cargo Staff');
         
         modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder()
@@ -89,14 +86,22 @@ module.exports = {
     }
   },
 
+  // Handler para Select Menus
   async handleSelectMenu(interaction) {
+    if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    
     const data = loadJSON(CONFIG_PATH);
-    if (interaction.customId === 'select_log') data.LOG_CHANNEL = String(interaction.values[0]);
-    saveJSON(CONFIG_PATH, data);
-    return renderDashboard(interaction, 'tab_config', true);
+    if (interaction.customId === 'select_log') {
+        data.LOG_CHANNEL = String(interaction.values[0]);
+        saveJSON(CONFIG_PATH, data);
+        return renderDashboard(interaction, 'tab_config', true);
+    }
   },
 
+  // Handler para Modais
   async handleModal(interaction) {
+    if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    
     const data = loadJSON(CONFIG_PATH);
     if (!data.STAFF_ROLES) data.STAFF_ROLES = [];
     const roleId = interaction.fields.getTextInputValue('role_id');
@@ -105,18 +110,16 @@ module.exports = {
         if (!data.STAFF_ROLES.includes(roleId)) {
             data.STAFF_ROLES.push(roleId);
             saveJSON(CONFIG_PATH, data);
-            await interaction.reply({ content: `✅ Cargo <@&${roleId}> registrado como Staff com sucesso!`, ephemeral: true });
+            await interaction.reply({ content: `✅ Cargo <@&${roleId}> registrado como Staff!`, ephemeral: true });
         } else {
             await interaction.reply({ content: '❌ Este cargo já está registrado.', ephemeral: true });
         }
     } else if (interaction.customId === 'modal_rem_role') {
         data.STAFF_ROLES = data.STAFF_ROLES.filter(id => id !== roleId);
         saveJSON(CONFIG_PATH, data);
-        await interaction.reply({ content: `✅ Cargo <@&${roleId}> removido da lista Staff.`, ephemeral: true });
+        await interaction.reply({ content: `✅ Cargo <@&${roleId}> removido da Staff.`, ephemeral: true });
     }
-  },
-  
-  hasStaffPermission // Exportar para uso no interactionCreate
+  }
 };
 
 async function renderDashboard(interaction, tab, edit = false) {
@@ -126,13 +129,12 @@ async function renderDashboard(interaction, tab, edit = false) {
   
   const embed = new EmbedBuilder()
     .setTimestamp()
-    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '')}` });
+    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()}` });
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_config').setLabel('⚙️ Configurações').setStyle(tab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('🔧 Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tab_logs').setLabel('📁 Registros').setStyle(tab === 'tab_logs' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('🔧 Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
 
   let rows = [mainRow];
@@ -149,15 +151,12 @@ async function renderDashboard(interaction, tab, edit = false) {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
     embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || null })
       .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
-      .setDescription('### 🔧 Controle de Manutenção\nQuando ativo, interações de usuários comuns são bloqueadas.\n\n' + 
+      .setDescription('### 🔧 Controle de Manutenção\n\n' + 
                       `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
-                      `**👤 Quem ativou:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
+                      `**👤 Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
                       `**🕒 Tempo:** ${since}\n\n` +
-                      '**📖 Como Funciona:** Usuários sem cargo staff receberão um aviso de manutenção com botão para suporte.')
-      .addFields(
-        { name: '🔐 Permissões Master', value: `<@&${SUPERIOR_ID}>`, inline: true },
-        { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true }
-      );
+                      '**🔐 Permissões Master:** <@&1497703127074345040>')
+      .addFields({ name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true });
 
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
@@ -171,10 +170,14 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_config') {
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF');
     rows.push(new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Canal de Logs').addChannelTypes(ChannelType.GuildText)
+      new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Selecione o Canal de Logs').addChannelTypes(ChannelType.GuildText)
     ));
   }
 
   const options = { embeds: [embed], components: rows, ephemeral: true };
-  edit ? await interaction.update(options) : await interaction.reply(options);
+  if (edit) {
+    return interaction.update(options).catch(err => console.log('Erro ao atualizar painel:', err));
+  } else {
+    return interaction.reply(options).catch(err => console.log('Erro ao enviar painel:', err));
+  }
 }
