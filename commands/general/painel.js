@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const config = require('../../config/config');
@@ -23,7 +23,7 @@ function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   } catch {}
-  return { STAFF_ROLES: [], MAINTENANCE_MODE: false };
+  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null };
 }
 
 function saveConfig(data) {
@@ -44,12 +44,11 @@ module.exports = {
     const { member, user } = interaction;
     const tab = interaction.customId;
 
-    if (['tab_stats', 'tab_roles', 'tab_manutencao'].includes(tab)) {
+    if (['tab_stats', 'tab_roles', 'tab_manutencao', 'tab_config'].includes(tab)) {
       await renderTab(interaction, tab, true);
       return;
     }
 
-    // Lógica do botão de manutenção (Restrito)
     if (interaction.customId === 'toggle_maintenance') {
       if (!member.roles.cache.has(SUPERIOR_ID)) {
         return interaction.reply({ content: '❌ Apenas a Gerência Superior pode alterar o modo de manutenção.', ephemeral: true });
@@ -63,10 +62,23 @@ module.exports = {
       return;
     }
 
-    // Botão de Teste de Sistema
     if (interaction.customId === 'test_system') {
       await interaction.reply({ content: '🔍 **Iniciando Teste de Sistema...**\n✅ Conexão com Discord: OK\n✅ Permissões de Cargo: OK\n✅ Banco de Dados (JSON): OK\n✅ Sistema de Logs: OK\n\n*Sistema operando normalmente!*', ephemeral: true });
       return;
+    }
+  },
+
+  async handleSelectMenu(interaction) {
+    if (interaction.customId === 'select_log_channel') {
+      if (!interaction.member.roles.cache.has(SUPERIOR_ID)) {
+        return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+      }
+      const channelId = interaction.values[0];
+      const data = loadConfig();
+      data.LOG_CHANNEL = channelId;
+      saveConfig(data);
+      await interaction.reply({ content: `✅ Canal de logs atualizado para <#${channelId}>`, ephemeral: true });
+      await renderTab(interaction, 'tab_config', true);
     }
   }
 };
@@ -101,6 +113,7 @@ function buildStatsRows() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Primary).setDisabled(true),
     new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
   );
 }
@@ -122,8 +135,39 @@ function buildRolesRows() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Primary).setDisabled(true),
+    new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
   );
+}
+
+// ─── ABA: Configuração (Seleção de Canais com Rolagem) ────────────────────────
+
+function buildConfigEmbed() {
+  const data = loadConfig();
+  return new EmbedBuilder()
+    .setTitle('⚙️ Configurações do Sistema')
+    .setColor(0x3498DB)
+    .setDescription('Utilize os menus abaixo para selecionar os canais do sistema. Os menus permitem rolagem automática por todos os canais do servidor.')
+    .addFields(
+      { name: 'Canal de Logs Atual', value: data.LOG_CHANNEL ? `<#${data.LOG_CHANNEL}>` : '`Não configurado`', inline: true }
+    );
+}
+
+function buildConfigRows() {
+  const selectLog = new ChannelSelectMenuBuilder()
+    .setCustomId('select_log_channel')
+    .setPlaceholder('Selecione o canal de logs (Rolagem disponível)')
+    .addChannelTypes(ChannelType.GuildText);
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Primary).setDisabled(true),
+      new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(selectLog)
+  ];
 }
 
 // ─── ABA: Manutenção ─────────────────────────────────────────────────────────
@@ -148,6 +192,7 @@ function buildManutencaoRows() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('tab_config').setLabel('Configuração').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(ButtonStyle.Primary).setDisabled(true)
     ),
     new ActionRowBuilder().addComponents(
@@ -179,13 +224,20 @@ async function renderTab(interaction, tab, edit = false) {
   } else if (tab === 'tab_manutencao') {
     embed = buildManutencaoEmbed();
     rows = buildManutencaoRows();
+  } else if (tab === 'tab_config') {
+    embed = buildConfigEmbed();
+    rows = buildConfigRows();
   }
 
   const options = { embeds: [embed], components: rows, ephemeral: true };
   
-  if (edit) {
-    await interaction.update(options);
-  } else {
-    await interaction.reply(options);
+  try {
+    if (edit) {
+      await interaction.update(options);
+    } else {
+      await interaction.reply(options);
+    }
+  } catch (err) {
+    console.error('Erro ao renderizar aba:', err);
   }
 }
