@@ -98,7 +98,7 @@ module.exports = {
             const tipo = interaction.values[0];
             const modal = new ModalBuilder().setCustomId(`Vortex_modal_${tipo}`).setTitle(`Formulário: ${tipo}`);
             const campos = [
-                { id: 'nome_ic', label: 'NOME (IC)', placeholder: 'Seu nome no jogo' },
+                { id: 'nome_ic', label: 'NÚMERO DE TELEFONE', placeholder: 'Seu número de telefone no jogo' },
                 { id: 'id_game', label: 'NÚMERO EM GAME', placeholder: 'Seu ID/Número' },
                 { id: 'indicacao', label: 'QUEM TE INDICOU? (@MENCIONE)', placeholder: 'Mencione com @ ou digite o nome' },
                 { id: 'idade', label: 'SUA IDADE', placeholder: 'Sua idade real' }
@@ -155,7 +155,7 @@ module.exports = {
                     .setTitle('📋 Nova solicitação de set')
                     .setDescription(`👤 **Usuário:** <@${user.id}>\n🆔 **Discord ID:** \`${user.id}\`\n📌 **Tipo:** \`${tipo}\``)
                     .addFields(
-                        { name: '📝 Nome IC:', value: `\`${nomeIC}\``, inline: true },
+                        { name: '📱 Telefone:', value: `\`${nomeIC}\``, inline: true },
                         { name: '🎮 NÚMERO EM GAME:', value: `\`${idGame}\``, inline: true },
                         { name: '🔗 Steam Hex:', value: `\`Detectando...\``, inline: true },
                         { name: '👥 Indicou:', value: indicacaoFormatada, inline: true },
