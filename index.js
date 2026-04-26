@@ -133,20 +133,36 @@ const registerCommands = async () => {
     const rest = new REST({ version: '10' }).setToken(config.token);
 
     try {
-        logger.info(`Registrando ${commandsData.length} slash commands...`);
-        if (config.guildId) {
-            await rest.put(
-                Routes.applicationGuildCommands(config.clientId, config.guildId),
-                { body: commandsData }
-            );
+        if (!config.clientId) {
+            logger.error('ERRO: clientId não configurado. Não é possível registrar comandos.');
+            return;
         }
+
+        logger.info(`Registrando ${commandsData.length} slash commands...`);
+        
+        // Tenta registrar no servidor específico (Guild) se o ID existir
+        if (config.guildId && config.guildId.length > 10) {
+            try {
+                await rest.put(
+                    Routes.applicationGuildCommands(config.clientId, config.guildId),
+                    { body: commandsData }
+                );
+                logger.info(`Comandos registrados com sucesso no servidor: ${config.guildId}`);
+            } catch (guildError) {
+                logger.warn(`Aviso: Não foi possível registrar comandos no servidor ${config.guildId}. Verifique se o ID está correto.`);
+            }
+        }
+
+        // Registrar globalmente (Sempre recomendado)
         await rest.put(
             Routes.applicationCommands(config.clientId),
             { body: commandsData }
         );
-        logger.info('Comandos registrados com sucesso!');
+        logger.info('Comandos registrados globalmente com sucesso!');
     } catch (error) {
-        logger.error('Erro ao registrar comandos', error);
+        logger.error('Erro fatal ao registrar comandos', error);
+        if (error.code === 50001) logger.error('DICA: O bot precisa da permissão "applications.commands" no convite.');
+        if (error.status === 404) logger.error('DICA: Verifique se o DISCORD_CLIENT_ID no seu .env está correto.');
         notifyError(client, error, 'Registro de Comandos');
     }
 };
