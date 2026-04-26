@@ -43,7 +43,6 @@ module.exports = {
         }
 
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
-            // Trava de Pedidos Ativos (Ignorada para Gerência Superior)
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             if (pedidosAtivos[user.id] && !member.roles.cache.has(SUPERIOR_ID)) {
                 return interaction.reply({ content: '❌ Você já possui uma solicitação em andamento.', ephemeral: true });
@@ -77,16 +76,6 @@ module.exports = {
             const ind = interaction.fields.getTextInputValue('ind');
             const idade = interaction.fields.getTextInputValue('idade');
 
-            // Detecção de Steam Hex via Conexões
-            let steamHex = 'Não encontrada';
-            try {
-                const targetMember = await guild.members.fetch(user.id);
-                if (targetMember.presence?.activities) {
-                    const steamAct = targetMember.presence.activities.find(a => a.name === 'Steam');
-                    if (steamAct && steamAct.applicationId) steamHex = `ID: ${steamAct.applicationId}`;
-                }
-            } catch {}
-
             const canal = await guild.channels.create({
                 name: `set-${user.username}`,
                 parent: config.recruitmentCategoryId,
@@ -99,29 +88,39 @@ module.exports = {
             });
 
             const embed = new EmbedBuilder()
-                .setAuthor({ name: 'VORTEX | NOVO RECRUTAMENTO', iconURL: user.displayAvatarURL() })
-                .setColor('#7000FF')
-                .setDescription(`👤 **Candidato:** <@${user.id}>\n📌 **Tipo:** \`${tipo}\``)
+                .setColor('#5865F2')
+                .setTitle('📋 Nova Solicitação de Set')
+                .setDescription(
+                    [
+                        `Uma nova solicitação de set foi aberta por <@${user.id}>.`,
+                        '',
+                        'A staff deve analisar os dados abaixo e aprovar ou reprovar o pedido.'
+                    ].join('\n')
+                )
+                .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
                 .addFields(
+                    { name: '👤 Usuário', value: `<@${user.id}>`, inline: true },
+                    { name: '🆔 Discord ID', value: `\`${user.id}\``, inline: true },
+                    { name: '📌 Tipo de Set', value: `\`${tipo}\``, inline: true },
                     { name: '📱 Telefone', value: `\`${tel}\``, inline: true },
                     { name: '🎮 ID Game', value: `\`${idG}\``, inline: true },
-                    { name: '🔗 Steam Hex', value: `\`${steamHex}\``, inline: true },
-                    { name: '👥 Indicou', value: ind.includes('@') ? ind : `\`${ind}\``, inline: true },
-                    { name: '🎂 Idade', value: `\`${idade}\``, inline: true }
+                    { name: '🎂 Idade', value: `\`${idade}\``, inline: true },
+                    { name: '👥 Indicação', value: ind.includes('@') ? ind : `\`${ind}\``, inline: true },
+                    { name: '🔗 Steam Hex', value: '`Automático`', inline: true },
+                    { name: '📊 Status', value: '`Aguardando análise`', inline: true }
                 )
-                .setFooter({ text: 'Vortex Management System • Ficha de Análise' })
+                .setFooter({ text: 'Vortex System • Aguardando análise da staff' })
                 .setTimestamp();
 
-            const btn = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`Vortex_app_${user.id}_${tel}`).setLabel('Aprovar').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`Vortex_rej_${user.id}`).setLabel('Reprovar').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId(`Vortex_del`).setLabel('Apagar Canal').setStyle(ButtonStyle.Secondary)
+            const buttons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`Vortex_app_${user.id}_${tel}`).setLabel('Aprovar').setEmoji('✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`Vortex_rej_${user.id}`).setLabel('Reprovar').setEmoji('❌').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('Vortex_del').setLabel('Apagar').setEmoji('🗑️').setStyle(ButtonStyle.Secondary)
             );
 
-            await canal.send({ content: `<@${user.id}> aguarde a staff analisar sua ficha.`, embeds: [embed], components: [btn] });
+            await canal.send({ content: `<@${user.id}> aguarde a staff analisar sua ficha.`, embeds: [embed], components: [buttons] });
             await interaction.editReply(`✅ Sua solicitação foi enviada com sucesso em <#${canal.id}>`);
             
-            // Registrar Pedido Ativo
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             pedidosAtivos[user.id] = canal.id;
             saveJSON(PEDIDOS_PATH, pedidosAtivos);
@@ -129,7 +128,7 @@ module.exports = {
             const stats = loadJSON(STATS_PATH);
             stats.pendentes = (stats.pendentes || 0) + 1;
             saveJSON(STATS_PATH, stats);
-            await sendStaffLog(client, 'Novo Recrutamento', `<@${user.id}> abriu um pedido de \`${tipo}\` em <#${canal.id}>`, '#7000FF');
+            await sendStaffLog(client, 'Novo Recrutamento', `<@${user.id}> abriu um pedido de \`${tipo}\` em <#${canal.id}>`, '#5865F2');
         }
 
         if (interaction.isButton()) {
@@ -148,28 +147,18 @@ module.exports = {
                     const tel = interaction.customId.split('_')[3];
                     const target = await guild.members.fetch(targetId).catch(() => null);
                     if (target) {
-                        // IDs fornecidos pelo usuário:
                         const PENDENTE_ID = '1449514118292967578';
                         const APROVADO_ID = '1201235607549124639';
-                        
                         await target.roles.remove(PENDENTE_ID).catch(() => {});
                         await target.roles.add(APROVADO_ID).catch(() => {});
                         await target.setNickname(`[${tel}] ${target.user.username}`).catch(() => {});
-                        
-                        try {
-                            await target.send({ content: `✅ **VORTEX:** Parabéns! Sua solicitação de set foi **APROVADA** por <@${user.id}>.` }).catch(() => {});
-                        } catch {}
+                        try { await target.send({ content: `✅ **VORTEX:** Parabéns! Sua solicitação de set foi **APROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {}
                     }
                 } else {
                     const target = await client.users.fetch(targetId).catch(() => null);
-                    if (target) {
-                        try {
-                            await target.send({ content: `❌ **VORTEX:** Sua solicitação de set foi **REPROVADA** por <@${user.id}>.` }).catch(() => {});
-                        } catch {}
-                    }
+                    if (target) { try { await target.send({ content: `❌ **VORTEX:** Sua solicitação de set foi **REPROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {} }
                 }
 
-                // Limpar Pedido Ativo
                 const pedidosAtivos = loadJSON(PEDIDOS_PATH);
                 delete pedidosAtivos[targetId];
                 saveJSON(PEDIDOS_PATH, pedidosAtivos);
@@ -182,7 +171,6 @@ module.exports = {
 
                 await interaction.reply({ content: isApp ? `✅ <@${targetId}> foi aprovado com sucesso!` : `❌ <@${targetId}> foi reprovado.` });
                 await sendStaffLog(client, isApp ? 'Membro Aprovado' : 'Membro Reprovado', `Staff: <@${user.id}>\nCandidato: <@${targetId}>`, isApp ? '#00FF00' : '#FF0000');
-                
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 10000);
             }
         }
