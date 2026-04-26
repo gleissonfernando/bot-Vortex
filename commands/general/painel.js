@@ -23,11 +23,11 @@ function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } ca
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
 /**
- * Verifica se o membro tem permissão para acessar o painel.
+ * Verifica se o membro tem permissão de Staff.
  * Cargo Superior (1497703127074345040) tem acesso total.
  * Cargos cadastrados em STAFF_ROLES no config.json também ganham acesso.
  */
-function hasPanelPermission(member) {
+function hasStaffPermission(member) {
     if (member.roles.cache.has(SUPERIOR_ID)) return true;
     const conf = loadJSON(CONFIG_PATH);
     if (conf.STAFF_ROLES && Array.isArray(conf.STAFF_ROLES)) {
@@ -42,14 +42,14 @@ module.exports = {
     .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
-    if (!hasPanelPermission(interaction.member)) {
+    if (!hasStaffPermission(interaction.member)) {
       return interaction.reply({ content: '❌ Você não tem acesso a este painel.', ephemeral: true });
     }
     await renderDashboard(interaction, 'tab_stats');
   },
 
   async handleButton(interaction) {
-    if (!hasPanelPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    if (!hasStaffPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
     const conf = loadJSON(CONFIG_PATH);
 
@@ -114,10 +114,9 @@ module.exports = {
         saveJSON(CONFIG_PATH, data);
         await interaction.reply({ content: `✅ Cargo <@&${roleId}> removido da lista Staff.`, ephemeral: true });
     }
-    
-    // Atualiza o painel se possível ou apenas finaliza
-    return;
-  }
+  },
+  
+  hasStaffPermission // Exportar para uso no interactionCreate
 };
 
 async function renderDashboard(interaction, tab, edit = false) {

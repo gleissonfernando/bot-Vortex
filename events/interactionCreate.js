@@ -12,6 +12,18 @@ const SUPERIOR_ID = '1497703127074345040';
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
+/**
+ * Verifica se o membro tem permissão de Staff.
+ */
+function hasStaffPermission(member) {
+    if (member.roles.cache.has(SUPERIOR_ID)) return true;
+    const conf = loadJSON(CONFIG_PATH);
+    if (conf.STAFF_ROLES && Array.isArray(conf.STAFF_ROLES)) {
+        return conf.STAFF_ROLES.some(roleId => member.roles.cache.has(roleId));
+    }
+    return false;
+}
+
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction) {
@@ -19,7 +31,7 @@ module.exports = {
         const conf = loadJSON(CONFIG_PATH);
 
         // Lógica Global de Manutenção
-        if (conf.MAINTENANCE_MODE && !member.roles.cache.has(SUPERIOR_ID)) {
+        if (conf.MAINTENANCE_MODE && !hasStaffPermission(member)) {
             const maintEmbed = new EmbedBuilder()
                 .setTitle('⚠️ VORTEX | MANUTENÇÃO')
                 .setColor('#FF0055')
@@ -42,10 +54,10 @@ module.exports = {
             return;
         }
 
-        // Delegar interações do painel (botões, menus e modais)
+        // Delegar interações do painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && interaction.customId.includes('tab_') || ['toggle_maint', 'test_notice', 'reg_role', 'rem_role'].includes(interaction.customId)) {
+            if (interaction.isButton() && (interaction.customId.includes('tab_') || ['toggle_maint', 'test_notice', 'reg_role', 'rem_role'].includes(interaction.customId))) {
                 return await painel.handleButton(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
@@ -58,7 +70,7 @@ module.exports = {
 
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
-            if (pedidosAtivos[user.id] && !member.roles.cache.has(SUPERIOR_ID)) {
+            if (pedidosAtivos[user.id] && !hasStaffPermission(member)) {
                 return interaction.reply({ content: '❌ Você já possui uma solicitação em andamento.', ephemeral: true });
             }
 
@@ -104,13 +116,7 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle('📋 Nova Solicitação de Set')
-                .setDescription(
-                    [
-                        `Uma nova solicitação de set foi aberta por <@${user.id}>.`,
-                        '',
-                        'A staff deve analisar os dados abaixo e aprovar ou reprovar o pedido.'
-                    ].join('\n')
-                )
+                .setDescription(`Uma nova solicitação de set foi aberta por <@${user.id}>.\n\nA staff deve analisar os dados abaixo e aprovar ou reprovar o pedido.`)
                 .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
                 .addFields(
                     { name: '👤 Usuário', value: `<@${user.id}>`, inline: true },
@@ -132,26 +138,8 @@ module.exports = {
                 new ButtonBuilder().setCustomId('Vortex_del').setLabel('Apagar').setEmoji('🗑️').setStyle(ButtonStyle.Secondary)
             );
 
-            await canal.send({
-                content: `<@${user.id}> aguarde a análise da staff.`,
-                embeds: [embed],
-                components: [buttons]
-            });
-
-            const successEmbed = new EmbedBuilder()
-                .setColor('#57F287')
-                .setTitle('✅ Solicitação enviada com sucesso')
-                .setDescription(
-                    [
-                        'Sua solicitação foi enviada para análise.',
-                        '',
-                        `Canal criado: <#${canal.id}>`
-                    ].join('\n')
-                )
-                .setFooter({ text: 'Vortex System • Solicitação registrada' })
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [successEmbed] });
+            await canal.send({ content: `<@${user.id}> aguarde a análise da staff.`, embeds: [embed], components: [buttons] });
+            await interaction.editReply({ embeds: [new EmbedBuilder().setColor('#57F287').setTitle('✅ Solicitação enviada com sucesso').setDescription(`Canal criado: <#${canal.id}>`)] });
 
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             pedidosAtivos[user.id] = canal.id;
@@ -161,31 +149,18 @@ module.exports = {
             stats.pendentes = (stats.pendentes || 0) + 1;
             saveJSON(STATS_PATH, stats);
 
-            await sendStaffLog(
-                client,
-                'Novo pedido de set',
-                [
-                    `Usuário: <@${user.id}>`,
-                    `Tipo: ${tipo}`,
-                    `Canal: <#${canal.id}>`
-                ].join('\n'),
-                '#3498DB'
-            );
+            await sendStaffLog(client, 'Novo pedido de set', `Usuário: <@${user.id}>\nTipo: ${tipo}\nCanal: <#${canal.id}>`, '#3498DB');
             return;
         }
 
         if (interaction.isButton()) {
             if (interaction.customId === 'Vortex_del') {
-                if (!member.roles.cache.has(SUPERIOR_ID)) {
-                    return interaction.reply({ content: '❌ Você não tem permissão para executar esta ação.', ephemeral: true });
-                }
+                if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
                 return interaction.channel.delete().catch(() => {});
             }
 
             if (interaction.customId.startsWith('Vortex_app_') || interaction.customId.startsWith('Vortex_rej_')) {
-                if (!member.roles.cache.has(SUPERIOR_ID)) {
-                    return interaction.reply({ content: '❌ Você não tem permissão para executar esta ação.', ephemeral: true });
-                }
+                if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
                 
                 const isApp = interaction.customId.startsWith('Vortex_app_');
                 const targetId = interaction.customId.split('_')[2];
@@ -199,11 +174,11 @@ module.exports = {
                         await target.roles.remove(PENDENTE_ID).catch(() => {});
                         await target.roles.add(APROVADO_ID).catch(() => {});
                         await target.setNickname(`[${tel}] ${target.user.username}`).catch(() => {});
-                        try { await target.send({ content: `✅ **VORTEX:** Parabéns! Sua solicitação de set foi **APROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {}
+                        try { await target.send({ content: `✅ **VORTEX:** Sua solicitação foi **APROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {}
                     }
                 } else {
                     const target = await client.users.fetch(targetId).catch(() => null);
-                    if (target) { try { await target.send({ content: `❌ **VORTEX:** Sua solicitação de set foi **REPROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {} }
+                    if (target) { try { await target.send({ content: `❌ **VORTEX:** Sua solicitação foi **REPROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {} }
                 }
 
                 const pedidosAtivos = loadJSON(PEDIDOS_PATH);
@@ -219,37 +194,12 @@ module.exports = {
                 const resultEmbed = new EmbedBuilder()
                     .setColor(isApp ? '#57F287' : '#ED4245')
                     .setTitle(isApp ? '✅ Solicitação Aprovada' : '❌ Solicitação Reprovada')
-                    .setDescription(
-                        [
-                            `A solicitação do usuário <@${targetId}> foi processada.`,
-                            '',
-                            `**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}`,
-                            `**Staff Responsável:** <@${user.id}>`,
-                            '',
-                            'Este canal será deletado em 5 segundos.'
-                        ].join('\n')
-                    )
-                    .setFooter({
-                        text: isApp ? 'Vortex System • Pedido aprovado' : 'Vortex System • Pedido reprovado'
-                    })
+                    .setDescription(`Usuário: <@${targetId}>\nResultado: ${isApp ? 'Aprovado' : 'Reprovado'}\nStaff: <@${user.id}>\n\nCanal deletado em 5s.`)
                     .setTimestamp();
 
                 await interaction.reply({ embeds: [resultEmbed] });
-
-                await sendStaffLog(
-                    client,
-                    isApp ? 'Solicitação aprovada' : 'Solicitação reprovada',
-                    [
-                        `Staff: <@${user.id}>`,
-                        `Usuário: <@${targetId}>`,
-                        `Resultado: ${isApp ? 'Aprovado' : 'Reprovado'}`
-                    ].join('\n'),
-                    isApp ? '#57F287' : '#ED4245'
-                );
-
-                setTimeout(() => {
-                    interaction.channel.delete().catch(() => {});
-                }, 5000);
+                await sendStaffLog(client, isApp ? 'Aprovação' : 'Reprovação', `Staff: <@${user.id}>\nCandidato: <@${targetId}>`, isApp ? '#00FF00' : '#FF0000');
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
             }
         }
     }
