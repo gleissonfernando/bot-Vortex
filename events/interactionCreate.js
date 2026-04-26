@@ -93,7 +93,7 @@ module.exports = {
             const modal = new ModalBuilder().setCustomId(`Vortex_modal_${tipo}`).setTitle(`Formulário: ${tipo}`);
             const campos = [
                 { id: 'nome_ic', label: 'NOME (IC)', placeholder: 'Seu nome no jogo' },
-                { id: 'id_game', label: 'ID NO GAME', placeholder: 'Seu ID' },
+                { id: 'id_game', label: 'NÚMERO EM GAME', placeholder: 'Seu ID/Número' },
                 { id: 'indicacao', label: 'QUEM TE INDICOU? (@MENCIONE)', placeholder: 'Mencione com @ ou digite o nome' },
                 { id: 'idade', label: 'SUA IDADE', placeholder: 'Sua idade real' }
             ];
@@ -116,9 +116,7 @@ module.exports = {
 
             await interaction.deferReply({ ephemeral: true });
 
-            // Processar a indicação para suportar menções
             let indicacaoFormatada = indicacaoRaw;
-            // Se for um ID numérico puro (ex: 123456789), transforma em menção
             if (/^\d+$/.test(indicacaoRaw.replace(/[<@!>]/g, ''))) {
                 const idMention = indicacaoRaw.replace(/[<@!>]/g, '');
                 indicacaoFormatada = `<@${idMention}>`;
@@ -152,7 +150,7 @@ module.exports = {
                     .setDescription(`👤 **Usuário:** <@${user.id}>\n🆔 **Discord ID:** \`${user.id}\`\n📌 **Tipo:** \`${tipo}\``)
                     .addFields(
                         { name: '📝 Nome IC:', value: `\`${nomeIC}\``, inline: true },
-                        { name: '🎮 ID no game:', value: `\`${idGame}\``, inline: true },
+                        { name: '🎮 NÚMERO EM GAME:', value: `\`${idGame}\``, inline: true },
                         { name: '🔗 Steam Hex:', value: `\`Detectando...\``, inline: true },
                         { name: '👥 Indicou:', value: indicacaoFormatada, inline: true },
                         { name: '🎂 Idade:', value: `\`${idade}\``, inline: true }
