@@ -14,123 +14,90 @@ const {
 const fs = require('fs');
 const path = require('path');
 const config = require('../../config/config');
-const { isRegisteredUser, denyNotRegistered } = require('../../utils/permissions');
 
-// Caminhos dos arquivos de dados
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
-
-// Cargo de Gerência Superior
 const SUPERIOR_ID = '1497703127074345040';
 
-function loadStats() {
-  try {
-    if (fs.existsSync(STATS_PATH)) return JSON.parse(fs.readFileSync(STATS_PATH, 'utf8'));
-  } catch {}
-  return { pendentes: 0, aprovados: 0, recusados: 0 };
-}
-
-function loadConfig() {
-  try {
-    if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  } catch {}
-  return { STAFF_ROLES: [], MAINTENANCE_MODE: false, LOG_CHANNEL: null };
-}
-
-function saveConfig(data) {
-  try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2)); } catch {}
-}
+function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
+function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
-    .setDescription('Abre o painel de controle do sistema Vortex'),
+    .setDescription('Painel de Controle Vortex'),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(SUPERIOR_ID) && !isRegisteredUser(interaction)) {
-        return interaction.reply({ content: '❌ Acesso negado.', ephemeral: true });
+    if (!interaction.member.roles.cache.has(SUPERIOR_ID)) {
+      return interaction.reply({ content: '❌ Acesso restrito à Gerência Superior Vortex.', ephemeral: true });
     }
     await renderTab(interaction, 'tab_stats');
   },
 
   async handleButton(interaction) {
-    const { member, user } = interaction;
-    const tab = interaction.customId;
-
-    if (['tab_stats', 'tab_roles', 'tab_config', 'tab_manutencao'].includes(tab)) {
-      await renderTab(interaction, tab, true);
-      return;
-    }
-
+    if (interaction.customId.startsWith('tab_')) return renderTab(interaction, interaction.customId, true);
+    
     if (interaction.customId === 'toggle_maintenance') {
-      if (!member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-      const data = loadConfig();
+      const data = loadJSON(CONFIG_PATH);
       data.MAINTENANCE_MODE = !data.MAINTENANCE_MODE;
-      data.MAINTENANCE_ACTIVATED_BY = user.id;
-      data.MAINTENANCE_ACTIVATED_AT = new Date().toISOString();
-      saveConfig(data);
-      await renderTab(interaction, 'tab_manutencao', true);
-      return;
+      data.MAINTENANCE_BY = interaction.user.id;
+      saveJSON(CONFIG_PATH, data);
+      return renderTab(interaction, 'tab_manutencao', true);
     }
 
     if (interaction.customId === 'test_system') {
-      if (!member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-      await interaction.reply({ content: '🧪 **VORTEX | TESTE DE SISTEMA**\n\n✅ Discord API: OK\n✅ Banco de Dados: OK\n✅ Sistema de Logs: OK\n\n✨ **Operacional!**', ephemeral: true });
-      return;
+      return interaction.reply({ 
+        embeds: [new EmbedBuilder().setTitle('🧪 VORTEX | DIAGNÓSTICO').setColor('#5865F2').setDescription('✅ **API:** Online\n✅ **DB:** Sincronizado\n✅ **Logs:** Ativos\n\nSistema 100% estável.')],
+        ephemeral: true 
+      });
     }
   },
 
   async handleSelectMenu(interaction) {
-    if (!interaction.member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-    const data = loadConfig();
-    if (interaction.customId === 'select_log_channel') data.LOG_CHANNEL = interaction.values[0];
-    saveConfig(data);
-    await renderTab(interaction, 'tab_config', true);
+    const data = loadJSON(CONFIG_PATH);
+    if (interaction.customId === 'select_log') data.LOG_CHANNEL = interaction.values[0];
+    if (interaction.customId === 'select_call') data.CALL_CHANNEL = interaction.values[0];
+    saveJSON(CONFIG_PATH, data);
+    return renderTab(interaction, 'tab_config', true);
   }
 };
 
-function buildStatsEmbed(interaction) {
-  const stats = loadStats();
-  const memberCount = interaction.guild.memberCount;
-  return new EmbedBuilder()
-    .setTitle('📊 VORTEX | ESTATÍSTICAS')
-    .setColor(0x5865F2)
-    .setDescription(`> **Membros no Servidor:** \`${memberCount}\`\n> **Total de Fichas:** \`${stats.pendentes + stats.aprovados + stats.recusados}\``)
-    .addFields(
-      { name: '🕐 Pendentes', value: `\`${stats.pendentes}\``, inline: true },
-      { name: '✅ Aprovados', value: `\`${stats.aprovados}\``, inline: true },
-      { name: '❌ Recusados', value: `\`${stats.recusados}\``, inline: true }
-    )
-    .setTimestamp();
-}
-
 async function renderTab(interaction, tab, edit = false) {
-  let embed;
-  let rows = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(tab === 'tab_stats'),
-      new ButtonBuilder().setCustomId('tab_roles').setLabel('Cargos Staff').setStyle(tab === 'tab_roles' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(tab === 'tab_roles'),
-      new ButtonBuilder().setCustomId('tab_config').setLabel('Configurações').setStyle(tab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(tab === 'tab_config'),
-      new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(tab === 'tab_manutencao')
-    )
-  ];
+  const stats = loadJSON(STATS_PATH);
+  const conf = loadJSON(CONFIG_PATH);
+  const embed = new EmbedBuilder().setTimestamp().setFooter({ text: 'Vortex Management System' });
+  let rows = [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('tab_stats').setLabel('Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tab_config').setLabel('Configurações').setStyle(tab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  )];
 
-  if (tab === 'tab_stats') embed = buildStatsEmbed(interaction);
-  else if (tab === 'tab_roles') {
-    embed = new EmbedBuilder().setTitle('🛡️ VORTEX | CARGOS').setColor(0xFEE75C).setDescription(`<@&${config.pendingRoleId}>\n<@&${config.approvedRoleId}>`);
+  if (tab === 'tab_stats') {
+    embed.setTitle('📊 VORTEX | DASHBOARD').setColor('#5865F2')
+      .setDescription(`### 📈 Resumo do Servidor\n> **Membros:** \`${interaction.guild.memberCount}\`\n> **Total Fichas:** \`${(stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)}\``)
+      .addFields(
+        { name: '🕐 Pendentes', value: `\`${stats.pendentes || 0}\``, inline: true },
+        { name: '✅ Aprovados', value: `\`${stats.aprovados || 0}\``, inline: true },
+        { name: '❌ Recusados', value: `\`${stats.recusados || 0}\``, inline: true }
+      );
   } else if (tab === 'tab_config') {
-    embed = new EmbedBuilder().setTitle('⚙️ CONFIGURAÇÕES').setColor(0x3498DB).setDescription('Selecione o canal de logs abaixo.');
-    rows.push(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId('select_log_channel').setPlaceholder('Canal de Logs').addChannelTypes(ChannelType.GuildText)));
+    embed.setTitle('⚙️ VORTEX | CONFIGURAÇÕES').setColor('#3498DB')
+      .setDescription('Selecione os canais oficiais do sistema nos menus abaixo.')
+      .addFields(
+        { name: 'Logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não definido`', inline: true },
+        { name: 'Call', value: conf.CALL_CHANNEL ? `<#${conf.CALL_CHANNEL}>` : '`Não definido`', inline: true }
+      );
+    rows.push(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Canal de Logs').addChannelTypes(ChannelType.GuildText)));
+    rows.push(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId('select_call').setPlaceholder('Call de Recrutamento').addChannelTypes(ChannelType.GuildVoice)));
   } else if (tab === 'tab_manutencao') {
-    const data = loadConfig();
-    embed = new EmbedBuilder().setTitle('🔧 MANUTENÇÃO').setColor(data.MAINTENANCE_MODE ? 0xED4245 : 0x57F287).setDescription(`Status: ${data.MAINTENANCE_MODE ? 'Ativado' : 'Desativado'}`);
+    embed.setTitle('🔧 VORTEX | MANUTENÇÃO').setColor(conf.MAINTENANCE_MODE ? '#ED4245' : '#57F287')
+      .setDescription(`O modo manutenção bloqueia o recrutamento para usuários.\n\n**Status:** \`${conf.MAINTENANCE_MODE ? '🔴 ATIVADO' : '🟢 DESATIVADO'}\``);
     rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('toggle_maintenance').setLabel('Alternar').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_maintenance').setLabel(conf.MAINTENANCE_MODE ? 'Desativar' : 'Ativar').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('test_system').setLabel('Testar Sistema').setStyle(ButtonStyle.Secondary).setEmoji('🧪')
     ));
   }
 
-  const options = { embeds: [embed], components: rows, ephemeral: true };
-  if (edit) await interaction.update(options);
-  else await interaction.reply(options);
+  const opt = { embeds: [embed], components: rows, ephemeral: true };
+  edit ? await interaction.update(opt) : await interaction.reply(opt);
 }
