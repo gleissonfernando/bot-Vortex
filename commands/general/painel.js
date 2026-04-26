@@ -6,7 +6,10 @@ const {
   ButtonStyle, 
   ChannelSelectMenuBuilder, 
   ChannelType,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +24,8 @@ function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2));
 
 /**
  * Verifica se o membro tem permissão para acessar o painel.
+ * Cargo Superior (1497703127074345040) tem acesso total.
+ * Cargos cadastrados em STAFF_ROLES no config.json também ganham acesso.
  */
 function hasPanelPermission(member) {
     if (member.roles.cache.has(SUPERIOR_ID)) return true;
@@ -65,6 +70,23 @@ module.exports = {
             ephemeral: true
         });
     }
+
+    if (interaction.customId === 'reg_role' || interaction.customId === 'rem_role') {
+        const modal = new ModalBuilder()
+            .setCustomId(interaction.customId === 'reg_role' ? 'modal_reg_role' : 'modal_rem_role')
+            .setTitle(interaction.customId === 'reg_role' ? 'Registrar Cargo Staff' : 'Remover Cargo Staff');
+        
+        modal.addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('role_id')
+                .setLabel('ID DO CARGO')
+                .setPlaceholder('Cole o ID do cargo aqui')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+        ));
+        
+        return interaction.showModal(modal);
+    }
   },
 
   async handleSelectMenu(interaction) {
@@ -72,6 +94,29 @@ module.exports = {
     if (interaction.customId === 'select_log') data.LOG_CHANNEL = String(interaction.values[0]);
     saveJSON(CONFIG_PATH, data);
     return renderDashboard(interaction, 'tab_config', true);
+  },
+
+  async handleModal(interaction) {
+    const data = loadJSON(CONFIG_PATH);
+    if (!data.STAFF_ROLES) data.STAFF_ROLES = [];
+    const roleId = interaction.fields.getTextInputValue('role_id');
+
+    if (interaction.customId === 'modal_reg_role') {
+        if (!data.STAFF_ROLES.includes(roleId)) {
+            data.STAFF_ROLES.push(roleId);
+            saveJSON(CONFIG_PATH, data);
+            await interaction.reply({ content: `✅ Cargo <@&${roleId}> registrado como Staff com sucesso!`, ephemeral: true });
+        } else {
+            await interaction.reply({ content: '❌ Este cargo já está registrado.', ephemeral: true });
+        }
+    } else if (interaction.customId === 'modal_rem_role') {
+        data.STAFF_ROLES = data.STAFF_ROLES.filter(id => id !== roleId);
+        saveJSON(CONFIG_PATH, data);
+        await interaction.reply({ content: `✅ Cargo <@&${roleId}> removido da lista Staff.`, ephemeral: true });
+    }
+    
+    // Atualiza o painel se possível ou apenas finaliza
+    return;
   }
 };
 
@@ -111,7 +156,7 @@ async function renderDashboard(interaction, tab, edit = false) {
                       `**🕒 Tempo:** ${since}\n\n` +
                       '**📖 Como Funciona:** Usuários sem cargo staff receberão um aviso de manutenção com botão para suporte.')
       .addFields(
-        { name: '🔐 Permissões', value: `<@&${SUPERIOR_ID}>`, inline: true },
+        { name: '🔐 Permissões Master', value: `<@&${SUPERIOR_ID}>`, inline: true },
         { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true }
       );
 

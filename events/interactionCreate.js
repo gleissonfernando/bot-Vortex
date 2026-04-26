@@ -42,6 +42,20 @@ module.exports = {
             return;
         }
 
+        // Delegar interações do painel (botões, menus e modais)
+        const painel = client.commands.get('painel');
+        if (painel) {
+            if (interaction.isButton() && interaction.customId.includes('tab_') || ['toggle_maint', 'test_notice', 'reg_role', 'rem_role'].includes(interaction.customId)) {
+                return await painel.handleButton(interaction);
+            }
+            if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
+                return await painel.handleSelectMenu(interaction);
+            }
+            if (interaction.isModalSubmit() && (interaction.customId === 'modal_reg_role' || interaction.customId === 'modal_rem_role')) {
+                return await painel.handleModal(interaction);
+            }
+        }
+
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             if (pedidosAtivos[user.id] && !member.roles.cache.has(SUPERIOR_ID)) {
@@ -237,12 +251,6 @@ module.exports = {
                     interaction.channel.delete().catch(() => {});
                 }, 5000);
             }
-        }
-
-        const painel = client.commands.get('painel');
-        if (painel) {
-            if (interaction.isButton()) await painel.handleButton(interaction);
-            if (interaction.isStringSelectMenu()) await painel.handleSelectMenu(interaction);
         }
     }
 };
