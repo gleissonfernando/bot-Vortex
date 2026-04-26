@@ -76,7 +76,7 @@ async function logGuildEvent(guildId, options) {
       userId:   userId   || undefined,
       userName: userName || undefined,
       color:    TYPE_COLORS[type] || 0x5865F2,
-      footer:   'Magnatas.gg • Bot',
+      footer:   'Vortex Management System • Bot',
       imageUrl: imageUrl || undefined,
       fields,
     }).catch(() => {}); // Silencia erros — painel pode estar offline

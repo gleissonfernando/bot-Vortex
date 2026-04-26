@@ -73,7 +73,7 @@ module.exports = {
                     { name: 'ID', value: member.id, inline: true },
                     { name: 'Membros Totais', value: guild.memberCount.toString(), inline: true }
                 )
-                .setFooter({ text: `Magnatas.gg • ${new Date().toLocaleDateString('pt-BR')}` })
+                .setFooter({ text: `Vortex Management System • ${new Date().toLocaleDateString('pt-BR')}` })
                 .setTimestamp();
 
             // 8. Enviar mensagem
