@@ -2,7 +2,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedB
 const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
-const { sendStaffLog } = require('../utils/notifications');
+const { sendVortexLog, notifyError } = require('../utils/notifications');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -148,7 +148,13 @@ module.exports = {
             stats.pendentes = (stats.pendentes || 0) + 1;
             saveJSON(STATS_PATH, stats);
 
-            await sendStaffLog(client, 'Novo pedido de set', `Usuário: <@${user.id}>\nTipo: ${tipo}\nCanal: <#${canal.id}>`, '#3498DB');
+            await sendVortexLog(client, {
+                title: 'Novo Pedido de Set',
+                description: `O usuário <@${user.id}> abriu um novo pedido de set.\n\n**Tipo:** ${tipo}\n**Canal:** <#${canal.id}>`,
+                color: '#3498DB',
+                type: 'RECRUTAMENTO',
+                userId: user.id
+            });
             return;
         }
 
@@ -198,7 +204,15 @@ module.exports = {
                     .setTimestamp();
 
                 await interaction.reply({ embeds: [resultEmbed] });
-                await sendStaffLog(client, isApp ? 'Aprovação' : 'Reprovação', `Staff: <@${user.id}>\nCandidato: <@${targetId}>`, isApp ? '#00FF00' : '#FF0000');
+                
+                await sendVortexLog(client, {
+                    title: isApp ? 'Solicitação Aprovada' : 'Solicitação Reprovada',
+                    description: `**Staff:** <@${user.id}>\n**Candidato:** <@${targetId}>\n**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}`,
+                    color: isApp ? '#57F287' : '#FF0055',
+                    type: 'RECRUTAMENTO',
+                    userId: user.id // Log para o staff que realizou a ação
+                });
+
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
             }
         }

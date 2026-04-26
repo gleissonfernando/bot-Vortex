@@ -12,6 +12,7 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { sendVortexLog } = require('../../utils/notifications');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -56,6 +57,15 @@ module.exports = {
       conf.MAINTENANCE_BY = String(interaction.user.id);
       conf.MAINTENANCE_SINCE = Date.now();
       saveJSON(CONFIG_PATH, conf);
+      
+      await sendVortexLog(interaction.client, {
+          title: 'Modo Manutenção Alterado',
+          description: `O modo manutenção foi **${conf.MAINTENANCE_MODE ? 'ATIVADO' : 'DESATIVADO'}** por <@${interaction.user.id}>.`,
+          color: conf.MAINTENANCE_MODE ? '#FF0055' : '#57F287',
+          type: 'MANUTENÇÃO',
+          userId: interaction.user.id
+      });
+
       return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
@@ -92,6 +102,15 @@ module.exports = {
     if (interaction.customId === 'select_log') {
         data.LOG_CHANNEL = String(interaction.values[0]);
         saveJSON(CONFIG_PATH, data);
+        
+        await sendVortexLog(interaction.client, {
+            title: 'Canal de Logs Alterado',
+            description: `O canal de logs foi alterado para <#${data.LOG_CHANNEL}> por <@${interaction.user.id}>.`,
+            color: '#00D9FF',
+            type: 'CONFIGURAÇÃO',
+            userId: interaction.user.id
+        });
+
         return renderDashboard(interaction, 'tab_config', true);
     }
   },
@@ -107,6 +126,15 @@ module.exports = {
         if (!data.STAFF_ROLES.includes(roleId)) {
             data.STAFF_ROLES.push(roleId);
             saveJSON(CONFIG_PATH, data);
+            
+            await sendVortexLog(interaction.client, {
+                title: 'Cargo Staff Adicionado',
+                description: `O cargo <@&${roleId}> foi adicionado à lista de Staff por <@${interaction.user.id}>.`,
+                color: '#57F287',
+                type: 'SEGURANÇA',
+                userId: interaction.user.id
+            });
+
             await interaction.reply({ content: `✅ Cargo <@&${roleId}> registrado como Staff!`, ephemeral: true });
         } else {
             await interaction.reply({ content: '❌ Este cargo já está registrado.', ephemeral: true });
@@ -114,6 +142,15 @@ module.exports = {
     } else if (interaction.customId === 'modal_rem_role') {
         data.STAFF_ROLES = data.STAFF_ROLES.filter(id => id !== roleId);
         saveJSON(CONFIG_PATH, data);
+        
+        await sendVortexLog(interaction.client, {
+            title: 'Cargo Staff Removido',
+            description: `O cargo <@&${roleId}> foi removido da lista de Staff por <@${interaction.user.id}>.`,
+            color: '#FF0055',
+            type: 'SEGURANÇA',
+            userId: interaction.user.id
+        });
+
         await interaction.reply({ content: `✅ Cargo <@&${roleId}> removido da Staff.`, ephemeral: true });
     }
   }

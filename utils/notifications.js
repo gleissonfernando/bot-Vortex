@@ -3,105 +3,87 @@ const fs = require('fs');
 const path = require('path');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
+const SUPERIOR_ID = '1497703127074345040';
 
 /**
  * Obtém o ID do canal de logs com prioridade absoluta.
  */
 function getLogChannelId() {
-    // ID fixo solicitado pelo usuário
     const FIXED_LOG_CHANNEL = '1497380031016599603';
-    
     try {
         if (fs.existsSync(CONFIG_PATH)) {
             const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-            // Se houver um canal configurado no painel, ele tem prioridade
             if (data.LOG_CHANNEL && data.LOG_CHANNEL.length > 5) {
                 return String(data.LOG_CHANNEL);
             }
         }
-    } catch (err) {
-        console.error('[VORTEX LOG] Erro ao ler config.json:', err.message);
-    }
-    
+    } catch (err) {}
     return FIXED_LOG_CHANNEL;
 }
 
 /**
- * Envia um log profissional estilo VORTEX
+ * Envia um log profissional e também notifica via DM se solicitado.
  */
-async function sendStaffLog(client, title, description, color = '#7000FF') {
+async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null }) {
     const channelId = getLogChannelId();
-    if (!channelId || !client) return;
+    if (!client) return;
 
+    const embed = new EmbedBuilder()
+        .setAuthor({ name: `VORTEX | ${type}`, iconURL: client.user.displayAvatarURL() })
+        .setTitle(`📜 ${String(title).toUpperCase()}`)
+        .setColor(color)
+        .setDescription(String(description))
+        .setTimestamp()
+        .setFooter({ text: 'Vortex Management System • Monitoramento' });
+
+    // 1. Enviar para o Canal de Logs
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) {
-            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado.`);
-            return;
+        if (channel) {
+            await channel.send({ embeds: [embed] }).catch(() => {});
         }
+    } catch (err) {}
 
-        const embed = new EmbedBuilder()
-            .setAuthor({ name: 'VORTEX | LOG SYSTEM', iconURL: client.user.displayAvatarURL() })
-            .setTitle(`📜 ${String(title).toUpperCase()}`)
-            .setColor(color)
-            .setDescription(String(description))
-            .setTimestamp()
-            .setFooter({ text: 'Vortex Management System • Monitoramento' });
+    // 2. Enviar para a DM do Usuário (se fornecido)
+    if (userId) {
+        try {
+            const user = await client.users.fetch(userId).catch(() => null);
+            if (user) {
+                await user.send({ embeds: [embed] }).catch(() => {});
+            }
+        } catch (err) {}
+    }
 
-        await channel.send({ embeds: [embed] }).catch(err => {
-            console.error(`[VORTEX LOG] Falha ao enviar para o canal ${channelId}:`, err.message);
-        });
-    } catch (error) {
-        console.error('[VORTEX LOG] Erro fatal na função sendStaffLog:', error.message);
+    // 3. Enviar para a DM da Gerência Superior (opcional, mas recomendado para logs críticos)
+    if (type === 'ALERTA' || type === 'MANUTENÇÃO') {
+        try {
+            const superior = await client.users.fetch(SUPERIOR_ID).catch(() => null);
+            if (superior) {
+                await superior.send({ embeds: [embed] }).catch(() => {});
+            }
+        } catch (err) {}
     }
 }
 
 /**
- * Envia um log de atualização ou status
+ * Atalhos para funções específicas
  */
+async function sendStaffLog(client, title, description, color = '#7000FF') {
+    return sendVortexLog(client, { title, description, color, type: 'LOG' });
+}
+
 async function sendUpdateLog(client, title, description, color = '#00D9FF') {
-    const channelId = getLogChannelId();
-    if (!channelId || !client) return;
-
-    try {
-        const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) return;
-
-        const embed = new EmbedBuilder()
-            .setAuthor({ name: 'VORTEX | UPDATE', iconURL: client.user.displayAvatarURL() })
-            .setTitle(`🔄 ${String(title).toUpperCase()}`)
-            .setColor(color)
-            .setDescription(String(description))
-            .setTimestamp()
-            .setFooter({ text: 'Vortex Management System • Status' });
-        
-        await channel.send({ embeds: [embed] }).catch(() => {});
-    } catch (err) {}
+    return sendVortexLog(client, { title, description, color, type: 'UPDATE' });
 }
 
-/**
- * Notifica erros críticos no canal de logs
- */
 async function notifyError(client, error, context = '') {
-    const channelId = getLogChannelId();
-    if (!channelId || !client) return;
-
     const errorMessage = error instanceof Error ? error.message : String(error);
-
-    try {
-        const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) return;
-
-        const embed = new EmbedBuilder()
-            .setAuthor({ name: 'VORTEX | ALERTA CRÍTICO', iconURL: client.user.displayAvatarURL() })
-            .setTitle('🚨 ERRO NO SISTEMA')
-            .setColor('#FF0055')
-            .setDescription(`**Contexto:** ${String(context)}\n**Erro:** \`\`\`js\n${errorMessage}\n\`\`\``)
-            .setTimestamp()
-            .setFooter({ text: 'Vortex Security • Alerta de Erro' });
-
-        await channel.send({ embeds: [embed] }).catch(() => {});
-    } catch (err) {}
+    return sendVortexLog(client, { 
+        title: 'ERRO NO SISTEMA', 
+        description: `**Contexto:** ${context}\n**Erro:** \`\`\`js\n${errorMessage}\n\`\`\``, 
+        color: '#FF0055', 
+        type: 'ALERTA' 
+    });
 }
 
-module.exports = { sendStaffLog, sendUpdateLog, notifyError };
+module.exports = { sendVortexLog, sendStaffLog, sendUpdateLog, notifyError };

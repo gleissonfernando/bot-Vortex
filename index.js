@@ -7,7 +7,7 @@ const path = require('path');
 const config = require('./config/config');
 const { logger } = require('./utils/logger');
 const { setDiscordClient } = require('./utils/dashboardClient');
-const { notifyError } = require('./utils/notifications');
+const { notifyError, sendVortexLog } = require('./utils/notifications');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || 3000);
@@ -97,15 +97,24 @@ const registerCommands = async () => {
 client.once('ready', async () => {
     console.log(`Vortex Online: ${client.user.tag}`);
     await registerCommands();
+    
+    await sendVortexLog(client, {
+        title: 'Bot Inicializado',
+        description: `O sistema **Vortex Management System** foi iniciado com sucesso.\n\n**Usuário:** ${client.user.tag}\n**Servidores:** ${client.guilds.cache.size}`,
+        color: '#57F287',
+        type: 'SISTEMA'
+    });
 });
 
 // Blindagem contra Crashes
 process.on('unhandledRejection', (reason) => {
     console.error('[VORTEX CRITICAL] Rejeição não tratada:', reason);
+    notifyError(client, reason, 'Unhandled Rejection');
 });
 
 process.on('uncaughtException', (error) => {
     console.error('[VORTEX CRITICAL] Exceção não capturada:', error.message);
+    notifyError(client, error, 'Uncaught Exception');
 });
 
 client.login(config.token).catch(err => console.error('[VORTEX] Falha no Login:', err.message));
