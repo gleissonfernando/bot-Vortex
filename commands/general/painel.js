@@ -19,20 +19,35 @@ const SUPERIOR_ID = '1497703127074345040';
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
+/**
+ * Verifica se o membro tem permissão para acessar o painel.
+ * Permite se tiver o ID Superior ou qualquer um dos cargos na lista STAFF_ROLES do config.json.
+ */
+function hasPanelPermission(member) {
+    if (member.roles.cache.has(SUPERIOR_ID)) return true;
+    
+    const conf = loadJSON(CONFIG_PATH);
+    if (conf.STAFF_ROLES && Array.isArray(conf.STAFF_ROLES)) {
+        return conf.STAFF_ROLES.some(roleId => member.roles.cache.has(roleId));
+    }
+    
+    return false;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
     .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(SUPERIOR_ID)) {
+    if (!hasPanelPermission(interaction.member)) {
       return interaction.reply({ content: '❌ Você não tem acesso a este painel.', ephemeral: true });
     }
     await renderDashboard(interaction, 'tab_stats');
   },
 
   async handleButton(interaction) {
-    if (!interaction.member.roles.cache.has(SUPERIOR_ID)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+    if (!hasPanelPermission(interaction.member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
     
     const conf = loadJSON(CONFIG_PATH);
 
@@ -101,8 +116,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .addFields(
         { name: '🔐 Permissões', value: `<@&${SUPERIOR_ID}>`, inline: true },
         { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true }
-      )
-      .setImage('https://i.imgur.com/your-vortex-banner.png'); // Placeholder para o banner
+      );
 
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
