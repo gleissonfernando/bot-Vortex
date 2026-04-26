@@ -25,6 +25,7 @@ module.exports = {
     ],
     
     gerenciaRoleIds: [
+        '1497703127074345040', // Cargo específico que pode apagar/gerenciar
         '1201238413676924979',
         ...(process.env.GERENCIA_ROLE_IDS || '').split(',').map(v => v.trim()).filter(Boolean)
     ]
