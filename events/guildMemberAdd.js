@@ -1,5 +1,4 @@
-const { Events } = require('discord.js');
-const { logger } = require('../utils/logger');
+const { Events, EmbedBuilder } = require('discord.js');
 const config = require('../config/config');
 const { sendStaffLog } = require('../utils/notifications');
 
@@ -8,44 +7,42 @@ module.exports = {
     async execute(member) {
         try {
             const guild = member.guild;
-            logger.info(`Novo membro: ${member.user.username} entrou em ${guild.name}`);
-
+            const client = guild.client;
+            
             // Adicionar cargo automático (Pendente)
             try {
-                const pendingRole = await guild.roles.fetch(config.pendingRoleId);
+                const pendingRole = await guild.roles.fetch(config.pendingRoleId).catch(() => null);
                 if (pendingRole) {
-                    await member.roles.add(pendingRole);
-                    logger.info(`Cargo pendente (${config.pendingRoleId}) aplicado a ${member.user.username}`);
+                    await member.roles.add(pendingRole).catch(() => {});
                 }
             } catch (error) {
-                logger.error(`Erro ao aplicar cargo pendente:`, error);
+                console.error(`[VORTEX] Erro ao aplicar cargo pendente:`, error.message);
             }
 
-            // Log de entrada
+            // Log de entrada profissional
             await sendStaffLog(
-                guild.client,
+                client,
                 '📥 Novo Membro',
-                `O usuário <@${member.id}> (\`${member.user.tag}\`) entrou no servidor e recebeu o cargo pendente.`,
+                `**Usuário:** <@${member.id}>\n**Tag:** \`${member.user.tag}\`\n**ID:** \`${member.id}\`\n\nO usuário entrou no servidor e recebeu o cargo pendente automaticamente.`,
                 '#57F287'
             );
 
             // Enviar mensagem de Boas-vindas via DM
             try {
                 const welcomeEmbed = new EmbedBuilder()
-                    .setColor('#D4AF37')
+                    .setColor('#7000FF')
                     .setTitle(`✨ Bem-vindo à Vortex, ${member.user.username}!`)
                     .setDescription(`Olá! Ficamos felizes em ter você conosco no servidor **${guild.name}**.\n\nPara iniciar seu processo de recrutamento ou solicitar seu set, utilize o comando \`/set\` em um dos canais autorizados.\n\nBoa sorte!`)
-                    .setThumbnail(guild.iconURL({ dynamic: true }))
-                    .setTimestamp();
+                    .setThumbnail(guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL())
+                    .setTimestamp()
+                    .setFooter({ text: 'Vortex Management System' });
 
-                await member.send({ embeds: [welcomeEmbed] });
-                logger.info(`Mensagem de boas-vindas enviada via DM para ${member.user.username}`);
+                await member.send({ embeds: [welcomeEmbed] }).catch(() => {});
             } catch (dmError) {
-                logger.warn(`Não foi possível enviar DM para ${member.user.username} (DMs fechadas).`);
+                // Silencioso se DMs estiverem fechadas
             }
-
         } catch (error) {
-            logger.error('Erro no evento guildMemberAdd:', error);
+            console.error('[VORTEX] Erro no evento guildMemberAdd:', error.message);
         }
     },
 };

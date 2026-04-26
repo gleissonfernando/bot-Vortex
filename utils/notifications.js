@@ -1,21 +1,23 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const config = require('../config/config');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 
 /**
- * Obtém o ID do canal de logs com prioridade absoluta para o ID fornecido pelo usuário.
+ * Obtém o ID do canal de logs com prioridade absoluta.
  */
 function getLogChannelId() {
-    // ID fornecido pelo usuário como destino principal
+    // ID fixo solicitado pelo usuário
     const FIXED_LOG_CHANNEL = '1497380031016599603';
     
     try {
         if (fs.existsSync(CONFIG_PATH)) {
             const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-            if (data.LOG_CHANNEL) return String(data.LOG_CHANNEL);
+            // Se houver um canal configurado no painel, ele tem prioridade
+            if (data.LOG_CHANNEL && data.LOG_CHANNEL.length > 5) {
+                return String(data.LOG_CHANNEL);
+            }
         }
     } catch (err) {
         console.error('[VORTEX LOG] Erro ao ler config.json:', err.message);
@@ -34,7 +36,7 @@ async function sendStaffLog(client, title, description, color = '#7000FF') {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) {
-            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado. Verifique as permissões do bot.`);
+            console.error(`[VORTEX LOG] Canal ${channelId} não encontrado.`);
             return;
         }
 
