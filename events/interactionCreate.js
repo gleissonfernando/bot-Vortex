@@ -92,10 +92,10 @@ module.exports = {
         if (interaction.isStringSelectMenu() && interaction.customId === 'Vortex_select_tipo') {
             const modal = new ModalBuilder().setCustomId(`Vortex_modal_${interaction.values[0]}`).setTitle(`Vortex | ${interaction.values[0]}`);
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tel').setLabel('NÚMERO DE TELEFONE').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ind').setLabel('QUEM INDICOU? (@)').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('idade').setLabel('SUA IDADE').setStyle(TextInputStyle.Short).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id_game').setLabel('🎮 ID EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nome_game').setLabel('👤 NOME EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('idade').setLabel('🎂 SUA IDADE').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('telefone').setLabel('📱 NÚMERO DE TELEFONE').setStyle(TextInputStyle.Short).setRequired(true))
             );
             return interaction.showModal(modal);
         }
@@ -103,10 +103,10 @@ module.exports = {
         if (interaction.isModalSubmit() && interaction.customId.startsWith('Vortex_modal_')) {
             await interaction.deferReply({ ephemeral: true });
             const tipo = interaction.customId.split('_')[2];
-            const tel = interaction.fields.getTextInputValue('tel');
-            const idG = interaction.fields.getTextInputValue('id');
-            const ind = interaction.fields.getTextInputValue('ind');
+            const idG = interaction.fields.getTextInputValue('id_game');
+            const nomeG = interaction.fields.getTextInputValue('nome_game');
             const idade = interaction.fields.getTextInputValue('idade');
+            const tel = interaction.fields.getTextInputValue('telefone');
 
             const canal = await guild.channels.create({
                 name: `set-${user.username}`,
@@ -128,10 +128,10 @@ module.exports = {
                     { name: '👤 Usuário', value: `<@${user.id}>`, inline: true },
                     { name: '🆔 Discord ID', value: `\`${user.id}\``, inline: true },
                     { name: '📌 Tipo de Set', value: `\`${tipo}\``, inline: true },
-                    { name: '📱 Telefone', value: `\`${tel}\``, inline: true },
                     { name: '🎮 ID Game', value: `\`${idG}\``, inline: true },
+                    { name: '👤 Nome Game', value: `\`${nomeG}\``, inline: true },
                     { name: '🎂 Idade', value: `\`${idade}\``, inline: true },
-                    { name: '👥 Indicação', value: ind.includes('@') ? ind : `\`${ind}\``, inline: true },
+                    { name: '📱 Telefone', value: `\`${tel}\``, inline: true },
                     { name: '🔗 Steam Hex', value: '`Automático`', inline: true },
                     { name: '📊 Status', value: '`Aguardando análise`', inline: true }
                 )
@@ -139,7 +139,7 @@ module.exports = {
                 .setTimestamp();
 
             const buttons = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`Vortex_app_${user.id}_${tel}`).setLabel('Aprovar').setEmoji('✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`Vortex_app_${user.id}_${tel}_${nomeG}`).setLabel('Aprovar').setEmoji('✅').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`Vortex_rej_${user.id}`).setLabel('Reprovar').setEmoji('❌').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('Vortex_del').setLabel('Apagar').setEmoji('🗑️').setStyle(ButtonStyle.Secondary)
             );
@@ -179,14 +179,16 @@ module.exports = {
                 const targetId = interaction.customId.split('_')[2];
                 
                 if (isApp) {
-                    const tel = interaction.customId.split('_')[3];
+                    const parts = interaction.customId.split('_');
+                    const tel = parts[3];
+                    const nomeG = parts[4];
                     const target = await guild.members.fetch(targetId).catch(() => null);
                     if (target) {
                         const PENDENTE_ID = '1449514118292967578';
                         const APROVADO_ID = '1201235607549124639';
                         await target.roles.remove(PENDENTE_ID).catch(() => {});
                         await target.roles.add(APROVADO_ID).catch(() => {});
-                        await target.setNickname(`[${tel}] ${target.user.username}`).catch(() => {});
+                        await target.setNickname(`[${tel}] ${nomeG}`).catch(() => {});
                         try { await target.send({ content: `✅ **VORTEX:** Sua solicitação foi **APROVADA** por <@${user.id}>.` }).catch(() => {}); } catch {}
                     }
                 } else {
