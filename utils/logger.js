@@ -1,0 +1,380 @@
+/**
+ * Sistema de Logging para Bot Magnatas
+ * Fornece logging estruturado com diferentes níveis
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Níveis de log
+ */
+const LOG_LEVELS = {
+    DEBUG: 0,
+    INFO: 1,
+    WARN: 2,
+    ERROR: 3,
+    CRITICAL: 4
+};
+
+/**
+ * Cores para console (ANSI)
+ */
+const COLORS = {
+    RESET: '\x1b[0m',
+    RED: '\x1b[31m',
+    GREEN: '\x1b[32m',
+    YELLOW: '\x1b[33m',
+    BLUE: '\x1b[34m',
+    MAGENTA: '\x1b[35m',
+    CYAN: '\x1b[36m',
+    GRAY: '\x1b[90m'
+};
+
+class Logger {
+    constructor(options = {}) {
+        this.minLevel = options.minLevel || LOG_LEVELS.INFO;
+        this.logDir = options.logDir || path.join(__dirname, '../logs');
+        this.maxLogSize = options.maxLogSize || 10 * 1024 * 1024; // 10MB
+        this.enableConsole = options.enableConsole !== false;
+        this.enableFile = options.enableFile !== false;
+        this.enableTimestamp = options.enableTimestamp !== false;
+
+        // Criar diretório de logs se não existir
+        if (this.enableFile && !fs.existsSync(this.logDir)) {
+            fs.mkdirSync(this.logDir, { recursive: true });
+        }
+
+        this.logFiles = {
+            debug: path.join(this.logDir, 'debug.log'),
+            info: path.join(this.logDir, 'info.log'),
+            warn: path.join(this.logDir, 'warn.log'),
+            error: path.join(this.logDir, 'error.log'),
+            all: path.join(this.logDir, 'all.log')
+        };
+    }
+
+    /**
+     * Formata timestamp
+     * @returns {string}
+     */
+    getTimestamp() {
+        if (!this.enableTimestamp) return '';
+        return new Date().toISOString();
+    }
+
+    /**
+     * Formata mensagem de log
+     * @param {string} level - Nível de log
+     * @param {string} message - Mensagem
+     * @param {object} meta - Metadados adicionais
+     * @returns {string}
+     */
+    formatMessage(level, message, meta = {}) {
+        const timestamp = this.getTimestamp();
+        const metaStr = Object.keys(meta).length > 0 
+            ? ` | ${JSON.stringify(meta)}`
+            : '';
+        
+        return `[${timestamp}] [${level}] ${message}${metaStr}`;
+    }
+
+    /**
+     * Formata mensagem para console com cores
+     * @param {string} level - Nível de log
+     * @param {string} message - Mensagem
+     * @param {string} color - Cor ANSI
+     * @returns {string}
+     */
+    formatConsoleMessage(level, message, color) {
+        const timestamp = this.getTimestamp();
+        const levelStr = `${color}[${level}]${COLORS.RESET}`;
+        const timeStr = timestamp ? `${COLORS.GRAY}[${timestamp}]${COLORS.RESET}` : '';
+        
+        return `${timeStr} ${levelStr} ${message}`;
+    }
+
+    /**
+     * Escreve log em arquivo
+     * @param {string} file - Arquivo de log
+     * @param {string} message - Mensagem
+     */
+    writeToFile(file, message) {
+        try {
+            // Verifica tamanho do arquivo
+            if (fs.existsSync(file)) {
+                const stats = fs.statSync(file);
+                if (stats.size > this.maxLogSize) {
+                    const backup = `${file}.${Date.now()}.backup`;
+                    fs.renameSync(file, backup);
+                }
+            }
+
+            fs.appendFileSync(file, message + '\n', 'utf8');
+        } catch (error) {
+            console.error('❌ Erro ao escrever log em arquivo:', error);
+        }
+    }
+
+    /**
+     * Log de debug
+     * @param {string} message - Mensagem
+     * @param {object} meta - Metadados
+     */
+    debug(message, meta = {}) {
+        if (this.minLevel > LOG_LEVELS.DEBUG) return;
+
+        const formatted = this.formatMessage('DEBUG', message, meta);
+        
+        if (this.enableConsole) {
+            console.log(this.formatConsoleMessage('DEBUG', message, COLORS.CYAN));
+        }
+        
+        if (this.enableFile) {
+            this.writeToFile(this.logFiles.debug, formatted);
+            this.writeToFile(this.logFiles.all, formatted);
+        }
+    }
+
+    /**
+     * Log de informação
+     * @param {string} message - Mensagem
+     * @param {object} meta - Metadados
+     */
+    info(message, meta = {}) {
+        if (this.minLevel > LOG_LEVELS.INFO) return;
+
+        const formatted = this.formatMessage('INFO', message, meta);
+        
+        if (this.enableConsole) {
+            console.log(this.formatConsoleMessage('INFO', message, COLORS.GREEN));
+        }
+        
+        if (this.enableFile) {
+            this.writeToFile(this.logFiles.info, formatted);
+            this.writeToFile(this.logFiles.all, formatted);
+        }
+    }
+
+    /**
+     * Log de aviso
+     * @param {string} message - Mensagem
+     * @param {object} meta - Metadados
+     */
+    warn(message, meta = {}) {
+        if (this.minLevel > LOG_LEVELS.WARN) return;
+
+        const formatted = this.formatMessage('WARN', message, meta);
+        
+        if (this.enableConsole) {
+            console.warn(this.formatConsoleMessage('WARN', message, COLORS.YELLOW));
+        }
+        
+        if (this.enableFile) {
+            this.writeToFile(this.logFiles.warn, formatted);
+            this.writeToFile(this.logFiles.all, formatted);
+        }
+    }
+
+    /**
+     * Log de erro
+     * @param {string} message - Mensagem
+     * @param {Error} error - Objeto de erro
+     * @param {object} meta - Metadados
+     */
+    error(message, error = null, meta = {}) {
+        if (this.minLevel > LOG_LEVELS.ERROR) return;
+
+        const errorStack = error ? error.stack : '';
+        const errorMsg = error ? error.message : '';
+        const fullMeta = { ...meta, error: errorMsg };
+        
+        const formatted = this.formatMessage('ERROR', message, fullMeta);
+        const fullFormatted = errorStack ? `${formatted}\n${errorStack}` : formatted;
+        
+        if (this.enableConsole) {
+            console.error(this.formatConsoleMessage('ERROR', message, COLORS.RED));
+            if (error) console.error(error);
+        }
+        
+        if (this.enableFile) {
+            this.writeToFile(this.logFiles.error, fullFormatted);
+            this.writeToFile(this.logFiles.all, fullFormatted);
+        }
+    }
+
+    /**
+     * Log crítico
+     * @param {string} message - Mensagem
+     * @param {Error} error - Objeto de erro
+     * @param {object} meta - Metadados
+     */
+    critical(message, error = null, meta = {}) {
+        if (this.minLevel > LOG_LEVELS.CRITICAL) return;
+
+        const errorStack = error ? error.stack : '';
+        const errorMsg = error ? error.message : '';
+        const fullMeta = { ...meta, error: errorMsg, severity: 'CRITICAL' };
+        
+        const formatted = this.formatMessage('CRITICAL', message, fullMeta);
+        const fullFormatted = errorStack ? `${formatted}\n${errorStack}` : formatted;
+        
+        if (this.enableConsole) {
+            console.error(this.formatConsoleMessage('CRITICAL', message, COLORS.MAGENTA));
+            if (error) console.error(error);
+        }
+        
+        if (this.enableFile) {
+            this.writeToFile(this.logFiles.error, fullFormatted);
+            this.writeToFile(this.logFiles.all, fullFormatted);
+        }
+
+        // Envia alerta (poderia integrar com Discord, email, etc)
+        this.sendAlert(message, error, meta);
+    }
+
+    /**
+     * Envia alerta (placeholder para integração)
+     * @param {string} message - Mensagem
+     * @param {Error} error - Erro
+     * @param {object} meta - Metadados
+     */
+    sendAlert(message, error, meta) {
+        // TODO: Integrar com Discord webhook, email, ou outro sistema de alertas
+        console.log('🚨 ALERTA CRÍTICO:', message);
+    }
+
+    /**
+     * Log de performance
+     * @param {string} operation - Nome da operação
+     * @param {number} duration - Duração em ms
+     * @param {object} meta - Metadados
+     */
+    performance(operation, duration, meta = {}) {
+        const level = duration > 1000 ? 'WARN' : 'DEBUG';
+        const emoji = duration > 1000 ? '⚠️' : '⏱️';
+        
+        const message = `${emoji} ${operation} levou ${duration}ms`;
+        const fullMeta = { ...meta, duration };
+
+        if (level === 'WARN') {
+            this.warn(message, fullMeta);
+        } else {
+            this.debug(message, fullMeta);
+        }
+    }
+
+    /**
+     * Log de interação
+     * @param {string} type - Tipo de interação
+     * @param {string} userId - ID do usuário
+     * @param {string} guildId - ID do servidor
+     * @param {object} meta - Metadados
+     */
+    interaction(type, userId, guildId, meta = {}) {
+        const fullMeta = { 
+            type, 
+            userId, 
+            guildId, 
+            ...meta 
+        };
+        
+        this.debug(`Interação: ${type}`, fullMeta);
+    }
+
+    /**
+     * Log de comando
+     * @param {string} commandName - Nome do comando
+     * @param {string} userId 
+      @param {string} guildId 1201193356810780773,
+     * @param {object} meta - Metadados
+     */
+    command(commandName, userId, guildId, meta = {}) {
+        const fullMeta = { 
+            command: commandName, 
+            userId, 
+            guildId, 
+            ...meta 
+        };
+        
+        this.info(`Comando executado: ${commandName}`, fullMeta);
+    }
+
+    /**
+     * Log de erro de comando
+     * @param {string} commandName - Nome do comando
+     * @param {Error} error - Erro
+     * @param {object} meta - Metadados
+     */
+    commandError(commandName, error, meta = {}) {
+        const fullMeta = { 
+            command: commandName, 
+            ...meta 
+        };
+        
+        this.error(`Erro no comando: ${commandName}`, error, fullMeta);
+    }
+
+    /**
+     * Limpa logs antigos
+     * @param {number} daysOld - Remover logs com mais de X dias
+     */
+    cleanOldLogs(daysOld = 7) {
+        try {
+            const now = Date.now();
+            const maxAge = daysOld * 24 * 60 * 60 * 1000;
+
+            const files = fs.readdirSync(this.logDir);
+            files.forEach(file => {
+                const filePath = path.join(this.logDir, file);
+                const stats = fs.statSync(filePath);
+                
+                if (now - stats.mtimeMs > maxAge) {
+                    fs.unlinkSync(filePath);
+                    this.info(`Log antigo removido: ${file}`);
+                }
+            });
+        } catch (error) {
+            this.error('Erro ao limpar logs antigos', error);
+        }
+    }
+
+    /**
+     * Retorna estatísticas de logs
+     * @returns {object}
+     */
+    getStats() {
+        const stats = {};
+        
+        try {
+            Object.entries(this.logFiles).forEach(([key, file]) => {
+                if (fs.existsSync(file)) {
+                    const fileStats = fs.statSync(file);
+                    stats[key] = {
+                        size: fileStats.size,
+                        sizeKB: (fileStats.size / 1024).toFixed(2),
+                        modified: fileStats.mtime
+                    };
+                }
+            });
+        } catch (error) {
+            this.error('Erro ao obter estatísticas de logs', error);
+        }
+
+        return stats;
+    }
+}
+
+// Exporta instância padrão
+const logger = new Logger({
+    minLevel: LOG_LEVELS.INFO,
+    enableConsole: true,
+    enableFile: true,
+    enableTimestamp: true
+});
+
+module.exports = {
+    Logger,
+    logger,
+    LOG_LEVELS
+};

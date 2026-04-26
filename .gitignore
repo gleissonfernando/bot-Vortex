@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Local agent/editor dirs
+.claude/
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build/cache
+dist/
+build/
+coverage/
+.cache/
+.tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Runtime local db/files
+*.sqlite
+*.sqlite3
+*.db
+
+# Local overrides / machine-specific configs
+*.local
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+.npmrc
+*.pid
+*.seed
+*.tgz
+.eslintcache
+
+# Bot/session temporary files
+sessions/
+session/
+tmp/
+uploads/
+
+# Local command/config overrides
+commands/config.local.json
+config/*.local.js
+
+# Keep safe templates versioned
+!*.example
