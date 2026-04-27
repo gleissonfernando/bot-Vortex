@@ -220,6 +220,71 @@ function withNoticeImage(payload) {
   };
 }
 
+function isDirectImageUrl(value) {
+  return /^https?:\/\/.+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)
+    || /^https?:\/\/cdn\.discordapp\.com\/attachments\//i.test(value)
+    || /^https?:\/\/media\.discordapp\.net\//i.test(value);
+}
+
+function parseDiscordMessageLink(value) {
+  const match = String(value).match(
+    /^https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)$/i
+  );
+  if (!match) return null;
+
+  return {
+    guildId: match[1],
+    channelId: match[2],
+    messageId: match[3],
+  };
+}
+
+async function resolveOptionalImageUrl(interaction, rawValue) {
+  const value = rawValue?.trim();
+  if (!value) return null;
+
+  if (isDirectImageUrl(value)) {
+    return value;
+  }
+
+  const parsed = parseDiscordMessageLink(value);
+  if (!parsed) {
+    return null;
+  }
+
+  if (parsed.guildId !== interaction.guildId) {
+    return null;
+  }
+
+  const channel = await interaction.guild.channels.fetch(parsed.channelId).catch(() => null);
+  if (!channel || !channel.isTextBased?.()) {
+    return null;
+  }
+
+  const message = await channel.messages.fetch(parsed.messageId).catch(() => null);
+  if (!message) {
+    return null;
+  }
+
+  const attachment = message.attachments.find((item) => {
+    const name = item.name || '';
+    const url = item.url || '';
+    return item.contentType?.startsWith('image/')
+      || /\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(name)
+      || isDirectImageUrl(url);
+  });
+
+  if (attachment?.url) {
+    return attachment.url;
+  }
+
+  const embedImage = message.embeds
+    .map((embed) => embed.image?.url || embed.thumbnail?.url)
+    .find(Boolean);
+
+  return embedImage || null;
+}
+
 function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
   const selection = getSelection(interaction);
   const fields = [
@@ -440,7 +505,6 @@ module.exports = {
     const message = interaction.fields.getTextInputValue('message').trim();
     const rawImageUrl = interaction.fields.getTextInputValue('image_url')?.trim();
     const scopeLabel = scope === 'global' ? 'Global Vortex' : 'Local';
-    const imageUrl = rawImageUrl && /^https?:\/\//i.test(rawImageUrl) ? rawImageUrl : null;
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -453,6 +517,7 @@ module.exports = {
       return interaction.editReply({ content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.' });
     }
 
+    const imageUrl = await resolveOptionalImageUrl(interaction, rawImageUrl);
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
     const imageEmbed = buildOptionalImageEmbed(interaction, imageUrl);
     const noticeEmbeds = imageEmbed ? [noticeEmbed, imageEmbed] : [noticeEmbed];

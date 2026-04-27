@@ -1,5 +1,4 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { sendVortexLog } = require('../../utils/notifications');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -27,28 +26,30 @@ module.exports = {
     const amount = interaction.options.getInteger('quantidade', true);
     await interaction.deferReply({ ephemeral: true });
 
-    const deleted = await interaction.channel.bulkDelete(amount, true).catch((error) => {
-      console.error('[VORTEX] Erro ao limpar mensagens:', error);
+    const messages = await interaction.channel.messages.fetch({ limit: amount }).catch((error) => {
+      console.error('[VORTEX] Erro ao buscar mensagens para limpar:', error);
       return null;
     });
 
-    if (!deleted) {
-      return interaction.editReply('❌ Não consegui apagar as mensagens. O Discord não permite apagar mensagens muito antigas.');
+    if (!messages || messages.size === 0) {
+      return interaction.editReply('❌ Não encontrei mensagens para apagar.');
     }
 
-    sendVortexLog(interaction.client, {
-      title: 'Mensagens Limpas',
-      description: [
-        `**Usuario:** <@${interaction.user.id}> (${interaction.user.id})`,
-        `**Canal:** <#${interaction.channel.id}> (${interaction.channel.id})`,
-        `**Quantidade solicitada:** ${amount}`,
-        `**Quantidade apagada:** ${deleted.size}`,
-      ].join('\n'),
-      color: '#FEE75C',
-      type: 'MODERAÇÃO',
-      userId: interaction.user.id,
-    }).catch(() => {});
+    let deleted = 0;
+    for (const message of messages.values()) {
+      if (!message?.deletable) continue;
+      try {
+        await message.delete();
+        deleted += 1;
+      } catch (error) {
+        console.error('[VORTEX] Erro ao deletar mensagem no clear:', error);
+      }
+    }
 
-    return interaction.editReply(`✅ ${deleted.size} mensagens apagadas.`);
+    if (deleted === 0) {
+      return interaction.editReply('❌ Não consegui apagar as mensagens deste canal.');
+    }
+
+    return interaction.editReply(`✅ ${deleted} mensagens apagadas.`);
   },
 };
