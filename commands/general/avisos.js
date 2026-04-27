@@ -109,10 +109,11 @@ function buildPanelEmbed(interaction) {
       '2. Se quiser relacionar uma pessoa ao aviso local, pesquise e selecione o usuario pelo nome.',
       '3. Selecione cargos extras para mencionar, alem dos cargos fixos do sistema.',
       '4. Selecione a call quando o aviso estiver ligado a uma reuniao ou atendimento.',
-      '5. Local publica no canal selecionado. Global envia DM para todos e tambem publica no canal.',
+      '5. Se quiser, adicione um link de imagem do Discord para aparecer no aviso. Esse campo nao e obrigatorio.',
+      '6. Local publica no canal selecionado. Global envia DM para todos e tambem publica no canal.',
       '',
       '**Importante**',
-      'A imagem oficial aparece no painel e no aviso enviado. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.',
+      'A imagem oficial da Vortex continua fixa no aviso principal. Se um link de imagem for informado, ele sera exibido em um bloco extra do aviso. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.',
     ].join('\n'))
     .addFields(
       { name: 'Local', value: 'Envia no canal selecionado e menciona os cargos configurados.', inline: true },
@@ -197,6 +198,15 @@ function buildMessageModal(scope) {
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(1800)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('image_url')
+        .setLabel('LINK DA IMAGEM DO DISCORD (OPCIONAL)')
+        .setPlaceholder('Cole o link direto da imagem, se quiser incluir uma foto')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setMaxLength(500)
     )
   );
 
@@ -242,6 +252,21 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
     ].join('\n'))
     .addFields(fields)
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
+    .setFooter({ text: 'Vortex Management System' })
+    .setTimestamp();
+}
+
+function buildOptionalImageEmbed(interaction, imageUrl) {
+  if (!imageUrl) return null;
+
+  return new EmbedBuilder()
+    .setColor('#111111')
+    .setAuthor({
+      name: 'VORTEX | Imagem do Aviso',
+      iconURL: interaction.client.user.displayAvatarURL(),
+    })
+    .setTitle('Midia vinculada ao aviso')
+    .setImage(imageUrl)
     .setFooter({ text: 'Vortex Management System' })
     .setTimestamp();
 }
@@ -413,7 +438,9 @@ module.exports = {
       : 'guild';
     const title = interaction.fields.getTextInputValue('title').trim();
     const message = interaction.fields.getTextInputValue('message').trim();
+    const rawImageUrl = interaction.fields.getTextInputValue('image_url')?.trim();
     const scopeLabel = scope === 'global' ? 'Global Vortex' : 'Local';
+    const imageUrl = rawImageUrl && /^https?:\/\//i.test(rawImageUrl) ? rawImageUrl : null;
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -427,7 +454,9 @@ module.exports = {
     }
 
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
-    const channelSent = await sendChannelNotice(interaction, selectedChannel, withNoticeImage({ embeds: [noticeEmbed] }), {
+    const imageEmbed = buildOptionalImageEmbed(interaction, imageUrl);
+    const noticeEmbeds = imageEmbed ? [noticeEmbed, imageEmbed] : [noticeEmbed];
+    const channelSent = await sendChannelNotice(interaction, selectedChannel, withNoticeImage({ embeds: noticeEmbeds }), {
       includeUser: scope === 'guild' && Boolean(getSelection(interaction).userId),
     });
     let result = { sent: 0, failed: 0, total: 0 };
@@ -437,7 +466,7 @@ module.exports = {
       if (recipients.length === 0) {
         return interaction.editReply({ content: '❌ Nenhum membro encontrado para receber o aviso por DM.' });
       }
-      result = await sendDmBatch(recipients, withNoticeImage({ embeds: [noticeEmbed] }));
+      result = await sendDmBatch(recipients, withNoticeImage({ embeds: noticeEmbeds }));
     }
 
     sendVortexLog(interaction.client, {
@@ -450,6 +479,7 @@ module.exports = {
         getSelection(interaction).roleIds?.length ? `**Cargos extras:** ${getSelection(interaction).roleIds.map((roleId) => `<@&${roleId}>`).join(' ')}` : null,
         getSelection(interaction).callId ? `**Call:** <#${getSelection(interaction).callId}> (${getSelection(interaction).callId})` : null,
         `**Titulo:** ${title}`,
+        imageUrl ? `**Imagem opcional:** ${imageUrl}` : null,
         `**Mensagem no canal:** ${channelSent ? 'sim' : 'nao'}`,
         scope === 'global' ? `**Total DM:** ${result.total}` : null,
         scope === 'global' ? `**DMs enviadas:** ${result.sent}` : null,
@@ -466,6 +496,10 @@ module.exports = {
       `Canal: <#${selectedChannel.id}>`,
       `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**`,
     ];
+
+    if (imageUrl) {
+      summary.push(`Imagem opcional: ${imageUrl}`);
+    }
 
     if (scope === 'guild' && getSelection(interaction).userId) {
       summary.push(
