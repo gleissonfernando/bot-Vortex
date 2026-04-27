@@ -157,6 +157,10 @@ async function updateStatusPanel(client, guildId) {
     const channel = await client.channels.fetch(configuredStatusChannelId).catch(() => null);
     if (!channel?.isTextBased?.()) return false;
 
+    await syncOnlineChannelVisibility(guild, channel).catch((error) => {
+      logger.error('Erro ao sincronizar visibilidade do canal online:', error);
+    });
+
     const embed = await createStatusEmbed(guild);
     const message = panel?.statusMessageId && panel?.statusChannelId === configuredStatusChannelId
       ? await channel.messages.fetch(panel.statusMessageId).catch(() => null)
@@ -178,6 +182,57 @@ async function updateStatusPanel(client, guildId) {
   } catch (error) {
     logger.error('Erro ao atualizar painel de ponto:', error);
     return false;
+  }
+}
+
+async function setOnlineChannelAccess(client, guildId, userId, allowed) {
+  try {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return false;
+
+    const pointConfig = getPointConfig();
+    const channel = await client.channels.fetch(pointConfig.statusChannelId).catch(() => null);
+    if (!channel?.permissionOverwrites?.edit) return false;
+
+    if (allowed) {
+      await channel.permissionOverwrites.edit(userId, {
+        ViewChannel: true,
+        ReadMessageHistory: true,
+      });
+    } else {
+      await channel.permissionOverwrites.delete(userId).catch(async () => {
+        await channel.permissionOverwrites.edit(userId, { ViewChannel: null, ReadMessageHistory: null });
+      });
+    }
+
+    return true;
+  } catch (error) {
+    logger.error('Erro ao atualizar permissao do canal online:', error);
+    return false;
+  }
+}
+
+async function syncOnlineChannelVisibility(guild, channel) {
+  const allPoints = await listGuildPoints(guild.id);
+  const activeUserIds = new Set(allPoints.filter((item) => item.activePointStartedAt).map((item) => String(item.userId)));
+
+  await channel.permissionOverwrites.edit(guild.id, {
+    ViewChannel: false,
+  }).catch(() => null);
+
+  for (const userId of activeUserIds) {
+    await channel.permissionOverwrites.edit(userId, {
+      ViewChannel: true,
+      ReadMessageHistory: true,
+    }).catch(() => null);
+  }
+
+  for (const [targetId, overwrite] of channel.permissionOverwrites.cache) {
+    if (targetId === guild.id) continue;
+    if (overwrite.type !== 1) continue;
+    if (!activeUserIds.has(targetId)) {
+      await channel.permissionOverwrites.delete(targetId).catch(() => null);
+    }
   }
 }
 
@@ -210,6 +265,8 @@ module.exports = {
   createControlEmbed,
   createControlRow,
   createStatusEmbed,
+  setOnlineChannelAccess,
+  syncOnlineChannelVisibility,
   updateStatusPanel,
   updateAllStatusPanels,
   initStatusPanel,

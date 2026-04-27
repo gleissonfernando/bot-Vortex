@@ -4,7 +4,7 @@ const path = require('path');
 const config = require('../config/config');
 const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled } = require('../utils/notifications');
 const { openPoint, closePoint, formatDuration, formatDate, formatTime } = require('../utils/pontoManager');
-const { updateStatusPanel, getPointConfig } = require('../utils/pontoPanel');
+const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
 const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
@@ -264,6 +264,13 @@ module.exports = {
                     registro: user.id
                 })
                 : await closePoint(guild.id, user.id);
+
+            if (result.action === 'opened') {
+                await setOnlineChannelAccess(client, guild.id, user.id, true);
+            }
+            if (result.action === 'closed') {
+                await setOnlineChannelAccess(client, guild.id, user.id, false);
+            }
 
             await updateStatusPanel(client, guild.id);
 
