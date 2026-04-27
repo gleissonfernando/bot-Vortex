@@ -1,0 +1,30 @@
+{
+  "STAFF_ROLES": [],
+  "LOG_CHANNEL": "1497685822525149337",
+  "CATEGORY_ID": "1497749211775766538",
+  "MAINTENANCE_MODE": false,
+  "MAINTENANCE_BY": "",
+  "MAINTENANCE_SINCE": null,
+  "DISABLE_CHANNEL_LOGS": false,
+  "DISABLE_DM_LOGS": false,
+  "DISABLE_NOTICE_DMS": false,
+  "NOTICE_MENTION_ROLE_ID": "",
+  "ABSENCE_ROLE_ID": "",
+  "POINT_ACTION_CHANNEL_ID": "1498087608390127806",
+  "POINT_ONLINE_CHANNEL_ID": "1498401871776448582",
+  "POINT_ADJUST_CATEGORY_ID": "1498087442304073870",
+  "POINT_ADJUST_STAFF_ROLES": [],
+  "VORTEX_ROLE_LEVELS": {
+    "admin": [],
+    "medio": [],
+    "membro": []
+  },
+  "COMMAND_ROLE_PERMISSIONS": {
+    "avisos": [],
+    "set": [],
+    "registro": [],
+    "ponto": [],
+    "ausencia": [],
+    "ativarponto": []
+  }
+}

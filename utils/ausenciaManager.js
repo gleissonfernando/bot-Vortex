@@ -1,0 +1,358 @@
+const fs = require('fs');
+const path = require('path');
+const { EmbedBuilder } = require('discord.js');
+const { logger } = require('./logger');
+
+const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
+const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
+const DEFAULT_ABSENCE_ROLE_ID = '1498359212252725339';
+const DEFAULT_ABSENCE_LOG_CHANNEL_ID = '1498359968087146516';
+const CHECK_INTERVAL_MS = 60 * 1000;
+
+let interval = null;
+
+function ensureFile(filePath, fallback) {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, `${JSON.stringify(fallback, null, 2)}\n`, 'utf8');
+  }
+}
+
+function loadJSON(filePath, fallback = {}) {
+  ensureFile(filePath, fallback);
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+  } catch (error) {
+    logger.error(`Erro ao ler ${path.basename(filePath)}:`, error);
+    return fallback;
+  }
+}
+
+function saveJSON(filePath, data) {
+  ensureFile(filePath, {});
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+function getAbsenceConfig() {
+  const conf = loadJSON(CONFIG_PATH, {});
+  return {
+    roleId: String(conf.ABSENCE_ROLE_ID || DEFAULT_ABSENCE_ROLE_ID),
+    logChannelId: String(conf.ABSENCE_LOG_CHANNEL_ID || DEFAULT_ABSENCE_LOG_CHANNEL_ID),
+    disableEndMessage: Boolean(conf.DISABLE_ABSENCE_END_MESSAGE),
+  };
+}
+
+function saveAbsenceConfig(nextConfig) {
+  const conf = loadJSON(CONFIG_PATH, {});
+  const next = {
+    ...conf,
+    ...nextConfig,
+  };
+  saveJSON(CONFIG_PATH, next);
+  return getAbsenceConfig();
+}
+
+function formatDate(value) {
+  if (!value) return 'N/A';
+  return new Date(value).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDuration(ms = 0) {
+  const totalMinutes = Math.max(0, Math.ceil(ms / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || parts.length === 0) parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
+function parsePeriod(input, now = new Date()) {
+  const raw = String(input || '').trim().toLowerCase();
+  const hoursMatch = raw.match(/^(\d{1,4})\s*h$/i);
+  if (hoursMatch) {
+    const hours = Number(hoursMatch[1]);
+    if (hours <= 0) return null;
+    return new Date(now.getTime() + hours * 60 * 60 * 1000);
+  }
+
+  const daysMatch = raw.match(/^(\d{1,3})(?:\s*(?:d|dia|dias))?$/i);
+  if (daysMatch) {
+    const days = Number(daysMatch[1]);
+    if (days <= 0) return null;
+    return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
+  const dateMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dateMatch) {
+    const day = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]) - 1;
+    const year = Number(dateMatch[3]);
+    const end = new Date(year, month, day, 23, 59, 59, 999);
+    if (Number.isNaN(end.getTime())) return null;
+    if (end.getDate() !== day || end.getMonth() !== month || end.getFullYear() !== year) return null;
+    if (end.getTime() <= now.getTime()) return null;
+    return end;
+  }
+
+  return null;
+}
+
+function readAbsences() {
+  return loadJSON(AUSENCIAS_PATH, {});
+}
+
+function writeAbsences(data) {
+  saveJSON(AUSENCIAS_PATH, data);
+}
+
+function saveAbsence(absence) {
+  const data = readAbsences();
+  if (!data[absence.guildId]) data[absence.guildId] = {};
+  data[absence.guildId][absence.userId] = absence;
+  writeAbsences(data);
+  return absence;
+}
+
+function getGuildAbsences(guildId) {
+  const data = readAbsences();
+  return Object.values(data[guildId] || {});
+}
+
+function getActiveGuildAbsences(guildId) {
+  return getGuildAbsences(guildId).filter((absence) => absence.status === 'active');
+}
+
+async function sendAbsenceLog(client, guildId, absence, action = 'created') {
+  const config = getAbsenceConfig();
+  const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  const isCreated = action === 'created';
+  const isUpdated = action === 'updated';
+  const embed = new EmbedBuilder()
+    .setColor(isCreated ? '#7000FF' : isUpdated ? '#FEE75C' : '#57F287')
+    .setTitle(isCreated ? 'Ausencia Registrada' : isUpdated ? 'Retorno de Ausencia Alterado' : 'Ausencia Finalizada')
+    .setDescription(isCreated
+      ? `O usuario <@${absence.userId}> entrou em modo ausencia e recebeu o cargo <@&${absence.roleId}>.`
+      : isUpdated
+        ? `A data de retorno de <@${absence.userId}> foi alterada por <@${absence.updatedBy}>.`
+        : `A ausencia de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
+    .addFields(
+      { name: 'Nome', value: absence.name || 'N/A', inline: true },
+      { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
+      { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
+      { name: 'Periodo informado', value: absence.periodInput || 'N/A', inline: true },
+      { name: 'Inicio', value: formatDate(absence.startedAt), inline: true },
+      { name: 'Fim', value: formatDate(absence.endsAt), inline: true },
+      { name: 'Tempo', value: formatDuration(new Date(absence.endsAt).getTime() - new Date(absence.startedAt).getTime()), inline: true },
+      { name: 'Cargo de ausencia', value: `<@&${absence.roleId}>`, inline: true }
+    )
+    .setFooter({ text: `Vortex - Sistema de Ausencia • ${guildId}` })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] }).catch(() => null);
+  return true;
+}
+
+async function createAbsence(interaction, { name, discordId, reason, periodInput }) {
+  const config = getAbsenceConfig();
+  const endsAt = parsePeriod(periodInput);
+  if (!endsAt) {
+    return {
+      ok: false,
+      message: 'Periodo invalido. Para dias, use uma data `DD/MM/AAAA` ou quantidade como `3`. Para horas, use `2h`, `12h` ou similar.',
+    };
+  }
+
+  const targetId = discordId.trim();
+  if (targetId !== interaction.user.id) {
+    return {
+      ok: false,
+      message: 'O ID informado precisa ser o seu ID do Discord.',
+    };
+  }
+
+  const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  if (!member) {
+    return { ok: false, message: 'Nao consegui encontrar seu membro no servidor.' };
+  }
+
+  const role = await interaction.guild.roles.fetch(config.roleId).catch(() => null);
+  if (!role) {
+    return { ok: false, message: `Cargo de ausencia <@&${config.roleId}> nao encontrado.` };
+  }
+
+  const activeAbsence = getActiveGuildAbsences(interaction.guild.id).find((absence) => absence.userId === interaction.user.id);
+  if (member.roles.cache.has(role.id) || activeAbsence) {
+    return {
+      ok: false,
+      message: 'Solicitacao recusada: voce ja esta em ausencia. Quando sua ausencia acabar, voce podera solicitar outra. Se precisar alterar algo, entre em contato com a gerencia para avaliarem seu caso.',
+    };
+  }
+
+  await member.roles.add(role.id, 'Ausencia registrada pelo sistema Vortex');
+
+  const now = new Date();
+  const absence = saveAbsence({
+    guildId: interaction.guild.id,
+    userId: interaction.user.id,
+    name: name.trim(),
+    discordId: targetId,
+    reason: reason.trim(),
+    periodInput: periodInput.trim(),
+    startedAt: now.toISOString(),
+    endsAt: endsAt.toISOString(),
+    status: 'active',
+    roleId: role.id,
+    logChannelId: config.logChannelId,
+    endMessageSentAt: null,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  });
+
+  await sendAbsenceLog(interaction.client, interaction.guild.id, absence, 'created');
+
+  return { ok: true, absence };
+}
+
+async function notifyAbsenceReturnChanged(client, guild, absence, oldEndsAt) {
+  const user = await client.users.fetch(absence.userId).catch(() => null);
+  if (!user) return false;
+
+  const embed = new EmbedBuilder()
+    .setColor('#FEE75C')
+    .setTitle('Retorno de Ausencia Alterado')
+    .setDescription('Sua data de retorno de ausencia foi alterada pela gerencia.')
+    .addFields(
+      { name: 'Servidor', value: guild?.name || 'Vortex', inline: true },
+      { name: 'Retorno anterior', value: formatDate(oldEndsAt), inline: true },
+      { name: 'Novo retorno', value: formatDate(absence.endsAt), inline: true },
+      { name: 'Alterado por', value: `<@${absence.updatedBy}>`, inline: true }
+    )
+    .setFooter({ text: 'Vortex - Sistema de Ausencia' })
+    .setTimestamp();
+
+  await user.send({ embeds: [embed] });
+  return true;
+}
+
+async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) {
+  const data = readAbsences();
+  const absence = data[guild.id]?.[userId];
+  if (!absence || absence.status !== 'active') {
+    return { ok: false, message: 'Nao existe ausencia ativa para este usuario.' };
+  }
+
+  const nextEndsAt = parsePeriod(returnInput);
+  if (!nextEndsAt) {
+    return {
+      ok: false,
+      message: 'Retorno invalido. Use data `DD/MM/AAAA`, quantidade de dias como `3` ou horas como `12h`.',
+    };
+  }
+
+  const oldEndsAt = absence.endsAt;
+  const next = {
+    ...absence,
+    periodInput: returnInput.trim(),
+    previousEndsAt: oldEndsAt,
+    endsAt: nextEndsAt.toISOString(),
+    updatedBy: staffId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  data[guild.id][userId] = next;
+  writeAbsences(data);
+
+  let dmSent = false;
+  await notifyAbsenceReturnChanged(client, guild, next, oldEndsAt)
+    .then(() => { dmSent = true; })
+    .catch(() => { dmSent = false; });
+
+  await sendAbsenceLog(client, guild.id, next, 'updated');
+
+  return { ok: true, absence: next, oldEndsAt, dmSent };
+}
+
+async function finishAbsence(client, guild, absence, data) {
+  const member = await guild.members.fetch(absence.userId).catch(() => null);
+  if (member) {
+    await member.roles.remove(absence.roleId, 'Ausencia finalizada pelo sistema Vortex').catch(() => null);
+  }
+
+  const now = new Date();
+  const next = {
+    ...absence,
+    status: 'finished',
+    finishedAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  if (!data[guild.id]) data[guild.id] = {};
+  data[guild.id][absence.userId] = next;
+
+  const config = getAbsenceConfig();
+  if (!config.disableEndMessage) {
+    const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
+    if (channel?.isTextBased?.()) {
+      await channel.send({
+        content: `<@${absence.userId}> Hoje e seu ultimo dia de ausencia, ta na hora de trabalhar.`,
+      }).catch(() => null);
+      next.endMessageSentAt = now.toISOString();
+    }
+  }
+
+  await sendAbsenceLog(client, guild.id, next, 'finished');
+}
+
+async function checkExpiredAbsences(client) {
+  const data = readAbsences();
+  const now = Date.now();
+
+  for (const [guildId, guildAbsences] of Object.entries(data)) {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) continue;
+
+    for (const absence of Object.values(guildAbsences || {})) {
+      if (absence.status !== 'active') continue;
+      if (!absence.endsAt || new Date(absence.endsAt).getTime() > now) continue;
+
+      await finishAbsence(client, guild, absence, data).catch((error) => {
+        logger.error('Erro ao finalizar ausencia:', error);
+      });
+    }
+  }
+
+  writeAbsences(data);
+}
+
+function initAbsenceManager(client) {
+  if (interval) clearInterval(interval);
+  checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausencias no inicio:', error));
+  interval = setInterval(() => {
+    checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausencias:', error));
+  }, CHECK_INTERVAL_MS);
+}
+
+module.exports = {
+  DEFAULT_ABSENCE_ROLE_ID,
+  DEFAULT_ABSENCE_LOG_CHANNEL_ID,
+  getAbsenceConfig,
+  saveAbsenceConfig,
+  getGuildAbsences,
+  getActiveGuildAbsences,
+  createAbsence,
+  updateAbsenceReturn,
+  initAbsenceManager,
+  parsePeriod,
+  formatDate,
+  formatDuration,
+};

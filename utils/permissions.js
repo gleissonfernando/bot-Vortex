@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const config = require('../config/config');
+const MASTER_ROLE_ID = '1497703127074345040';
 
 function normalizeIds(list) {
     if (!Array.isArray(list)) return [];
@@ -14,50 +14,46 @@ function memberHasAnyRole(member, roleIds) {
     return normalized.some(roleId => member.roles.cache.has(roleId));
 }
 
-function isUserAuthorizedById(userId) {
-    if (!userId) return false;
-    const authorizedIds = normalizeIds(config.authorizedUserIds);
-    return authorizedIds.includes(String(userId));
-}
-
-function getPanelStaffRoleIds() {
+function getPanelConfig() {
     try {
         const panelConfigPath = path.join(__dirname, '../commands/config.json');
-        if (!fs.existsSync(panelConfigPath)) return [];
+        if (!fs.existsSync(panelConfigPath)) return {};
         const raw = fs.readFileSync(panelConfigPath, 'utf8');
-        const panelConfig = JSON.parse(raw);
-        return normalizeIds(panelConfig.STAFF_ROLES || []);
+        return JSON.parse(raw);
     } catch {
-        return [];
+        return {};
     }
+}
+
+function getVortexRoleIds(levels = []) {
+    const panelConfig = getPanelConfig();
+    const configured = panelConfig.VORTEX_ROLE_LEVELS || {};
+    return levels.flatMap(level => normalizeIds(configured[level] || []));
+}
+
+function getAllVortexRoleIds() {
+    return getVortexRoleIds(['admin', 'medio', 'membro']);
+}
+
+function hasAnyVortexRole(member) {
+    return memberHasAnyRole(member, getAllVortexRoleIds());
+}
+
+function hasVortexLevel(member, levels = []) {
+    if (!member?.roles?.cache) return false;
+    if (member.roles.cache.has(MASTER_ROLE_ID)) return true;
+    if (!Array.isArray(levels) || levels.length === 0) return false;
+    return memberHasAnyRole(member, getVortexRoleIds(levels));
 }
 
 function isRegisteredUser(interaction) {
     if (!interaction || !interaction.user) return false;
-
-    const userId = interaction.user.id;
-    if (isUserAuthorizedById(userId)) return true;
-
-    const registeredRoleIds = normalizeIds(config.registeredRoleIds);
-    if (memberHasAnyRole(interaction.member, registeredRoleIds)) return true;
-
-    // Também considera os cargos cadastrados no /painel (commands/config.json -> STAFF_ROLES)
-    const panelStaffRoleIds = getPanelStaffRoleIds();
-    return memberHasAnyRole(interaction.member, panelStaffRoleIds);
+    return hasAnyVortexRole(interaction.member) || hasVortexLevel(interaction.member, []);
 }
 
 function isGerencia(interaction) {
     if (!interaction || !interaction.user) return false;
-
-    const userId = interaction.user.id;
-    if (isUserAuthorizedById(userId)) return true;
-
-    const gerenciaRoleIds = normalizeIds(config.gerenciaRoleIds);
-    if (memberHasAnyRole(interaction.member, gerenciaRoleIds)) return true;
-
-    // Agora também considera os cargos cadastrados no /painel para permissões de gerência
-    const panelStaffRoleIds = getPanelStaffRoleIds();
-    return memberHasAnyRole(interaction.member, panelStaffRoleIds);
+    return hasVortexLevel(interaction.member, ['admin', 'medio']);
 }
 
 async function denyNotRegistered(interaction) {
@@ -70,5 +66,7 @@ async function denyNotRegistered(interaction) {
 module.exports = {
     isRegisteredUser,
     isGerencia,
+    hasAnyVortexRole,
+    hasVortexLevel,
     denyNotRegistered
 };

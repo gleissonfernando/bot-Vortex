@@ -20,6 +20,10 @@ const COLORS = {
 
 /**
  * Cria embed de sucesso padronizado
+ * @param {string} title - Título do embed
+ * @param {string} description - Descrição
+ * @param {object} options - Opções adicionais
+ * @returns {EmbedBuilder}
  */
 function createSuccessEmbed(title, description, options = {}) {
     const embed = new EmbedBuilder()
@@ -50,6 +54,10 @@ function createSuccessEmbed(title, description, options = {}) {
 
 /**
  * Cria embed de erro padronizado
+ * @param {string} title - Título do embed
+ * @param {string} description - Descrição do erro
+ * @param {object} options - Opções adicionais
+ * @returns {EmbedBuilder}
  */
 function createErrorEmbed(title, description, options = {}) {
     const embed = new EmbedBuilder()
@@ -77,6 +85,10 @@ function createErrorEmbed(title, description, options = {}) {
 
 /**
  * Cria embed de aviso padronizado
+ * @param {string} title - Título do embed
+ * @param {string} description - Descrição
+ * @param {object} options - Opções adicionais
+ * @returns {EmbedBuilder}
  */
 function createWarningEmbed(title, description, options = {}) {
     const embed = new EmbedBuilder()
@@ -104,6 +116,10 @@ function createWarningEmbed(title, description, options = {}) {
 
 /**
  * Cria embed de informação padronizado
+ * @param {string} title - Título do embed
+ * @param {string} description - Descrição
+ * @param {object} options - Opções adicionais
+ * @returns {EmbedBuilder}
  */
 function createInfoEmbed(title, description, options = {}) {
     const embed = new EmbedBuilder()
@@ -159,6 +175,7 @@ function createTransactionEmbed(type, amount, options = {}) {
         })
         .setTimestamp();
 
+    // Adiciona campos adicionais
     const fields = [];
     if (options.from) fields.push({ name: 'De', value: options.from, inline: true });
     if (options.to) fields.push({ name: 'Para', value: options.to, inline: true });
@@ -193,6 +210,13 @@ async function sendEmbed(interaction, embed, ephemeral = false) {
     return sendMessage(interaction, { embeds: [embed] }, ephemeral);
 }
 
+/**
+ * Envia múltiplos embeds com tratamento de erros
+ * @param {object} interaction - Interação do Discord
+ * @param {array} embeds - Array de embeds
+ * @param {boolean} ephemeral - Se a mensagem deve ser efêmera
+ * @returns {Promise}
+ */
 async function sendEmbeds(interaction, embeds, ephemeral = false) {
     return sendMessage(interaction, { embeds }, ephemeral);
 }
@@ -219,6 +243,13 @@ function formatNumber(num) {
     return num.toLocaleString('pt-BR');
 }
 
+/**
+ * Trunca texto se exceder limite
+ * @param {string} text - Texto a truncar
+ * @param {number} maxLength - Comprimento máximo
+ * @param {string} suffix - Sufixo (padrão: '...')
+ * @returns {string}
+ */
 function truncateText(text, maxLength = 100, suffix = '...') {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength - suffix.length) + suffix;

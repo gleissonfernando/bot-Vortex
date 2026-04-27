@@ -13,7 +13,7 @@ async function sendLogToDashboard(payload = {}) {
             return false;
         }
 
-        const logsChannelId = config.logsChannelId || '1497380031016599603';
+        const logsChannelId = config.logsChannelId || '1497685822525149337';
         if (!logsChannelId) return false;
 
         const channel = await discordClient.channels.fetch(logsChannelId).catch(() => null);

@@ -1,50 +1,34 @@
-const GuildConfig = require('../backend/models/GuildConfig');
+const fs = require('fs');
+const path = require('path');
 const { logger } = require('./logger');
+const { FIXED_LOG_CHANNEL } = require('./notifications');
+const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
 
-/**
- * Cache em memória para configurações (evita consultas repetidas ao DB)
- */
+const GUILD_CONFIGS_PATH = path.join(__dirname, '..', 'commands', 'guildConfigs.json');
 const configCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const CACHE_TTL = 5 * 60 * 1000;
 
-/**
- * Buscar configuração de um servidor (com cache)
- */
-async function getGuildConfig(guildId) {
-  try {
-    // Verificar cache
-    const cached = configCache.get(guildId);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      logger.debug(`Config do servidor ${guildId} carregada do cache`);
-      return cached.data;
-    }
-
-    // Buscar do banco de dados
-    const config = await GuildConfig.findOne({ guildId });
-    
-    if (config) {
-      // Salvar no cache
-      configCache.set(guildId, {
-        data: config,
-        timestamp: Date.now()
-      });
-      logger.info(`Config do servidor ${guildId} carregada do banco`);
-      return config;
-    }
-
-    // Retornar configuração padrão se não existir
-    logger.warn(`Config não encontrada para ${guildId}, usando padrão`);
-    return getDefaultConfig(guildId);
-
-  } catch (error) {
-    logger.error(`Erro ao buscar config do servidor ${guildId}:`, error);
-    return getDefaultConfig(guildId);
+function ensureGuildConfigsFile() {
+  if (!fs.existsSync(GUILD_CONFIGS_PATH)) {
+    fs.writeFileSync(GUILD_CONFIGS_PATH, `${JSON.stringify({}, null, 2)}\n`, 'utf8');
   }
 }
 
-/**
- * Obter configuração padrão
- */
+function readGuildConfigs() {
+  ensureGuildConfigsFile();
+  try {
+    return JSON.parse(fs.readFileSync(GUILD_CONFIGS_PATH, 'utf8') || '{}');
+  } catch (error) {
+    logger.error('Erro ao ler guildConfigs.json:', error);
+    return {};
+  }
+}
+
+function writeGuildConfigs(configs) {
+  ensureGuildConfigsFile();
+  fs.writeFileSync(GUILD_CONFIGS_PATH, `${JSON.stringify(configs, null, 2)}\n`, 'utf8');
+}
+
 function getDefaultConfig(guildId) {
   return {
     guildId,
@@ -54,45 +38,132 @@ function getDefaultConfig(guildId) {
     language: 'pt-BR',
     prefix: '!',
     timezone: 'America/Sao_Paulo',
-    logChannelId: null,
+    logChannelId: FIXED_LOG_CHANNEL,
     welcomeChannelId: null,
     leaveChannelId: null,
     alertChannelId: null,
     verifyRoleId: null,
     welcomeMessage: '{user}, bem-vindo(a) ao servidor!',
     leaveMessage: '{user} saiu do servidor.',
-    maintenanceMessage: '⚠️ O bot está em manutenção.'
+    maintenanceMessage: 'O bot esta em manutencao.',
   };
 }
 
-/**
- * Salvar/atualizar configuração de um servidor
- */
+async function getGuildConfig(guildId) {
+  try {
+    const cached = configCache.get(guildId);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      logger.debug(`Config do servidor ${guildId} carregada do cache`);
+      return cached.data;
+    }
+
+    if (isSupabaseEnabled()) {
+      const rows = await supabaseRequest('guild_configs', {
+        query: {
+          select: 'guild_id,data,updated_at',
+          guild_id: `eq.${guildId}`,
+          limit: 1,
+        },
+      });
+
+      const remote = Array.isArray(rows) && rows[0] ? rows[0].data : {};
+      const config = {
+        ...getDefaultConfig(guildId),
+        ...remote,
+        guildId,
+        logChannelId: FIXED_LOG_CHANNEL,
+      };
+
+      configCache.set(guildId, { data: config, timestamp: Date.now() });
+      return config;
+    }
+
+    const configs = readGuildConfigs();
+    const config = {
+      ...getDefaultConfig(guildId),
+      ...(configs[guildId] || {}),
+      guildId,
+      logChannelId: FIXED_LOG_CHANNEL,
+    };
+
+    configCache.set(guildId, { data: config, timestamp: Date.now() });
+    return config;
+  } catch (error) {
+    logger.error(`Erro ao buscar config do servidor ${guildId}:`, error);
+    return getDefaultConfig(guildId);
+  }
+}
+
 async function updateGuildConfig(guildId, updates) {
   try {
-    const config = await GuildConfig.findOneAndUpdate(
-      { guildId },
-      { $set: { ...updates, updatedAt: new Date() } },
-      { upsert: true, new: true }
-    );
+    if (isSupabaseEnabled()) {
+      const current = await getGuildConfig(guildId);
+      const next = {
+        ...current,
+        ...updates,
+        guildId,
+        logChannelId: FIXED_LOG_CHANNEL,
+        updatedAt: new Date().toISOString(),
+      };
 
-    // Invalidar cache
+      await supabaseRequest('guild_configs', {
+        method: 'POST',
+        query: { on_conflict: 'guild_id' },
+        headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+        body: {
+          guild_id: guildId,
+          data: next,
+          updated_at: next.updatedAt,
+        },
+      });
+
+      configCache.delete(guildId);
+      logger.info(`Config do servidor ${guildId} atualizada no Supabase`);
+      return next;
+    }
+
+    const configs = readGuildConfigs();
+    const current = {
+      ...getDefaultConfig(guildId),
+      ...(configs[guildId] || {}),
+    };
+
+    const next = {
+      ...current,
+      ...updates,
+      guildId,
+      logChannelId: FIXED_LOG_CHANNEL,
+      updatedAt: new Date().toISOString(),
+    };
+
+    configs[guildId] = next;
+    writeGuildConfigs(configs);
     configCache.delete(guildId);
     logger.info(`Config do servidor ${guildId} atualizada`);
-    
-    return config;
+    return next;
   } catch (error) {
     logger.error(`Erro ao atualizar config do servidor ${guildId}:`, error);
     throw error;
   }
 }
 
-/**
- * Deletar configuração de um servidor
- */
 async function deleteGuildConfig(guildId) {
   try {
-    await GuildConfig.deleteOne({ guildId });
+    if (isSupabaseEnabled()) {
+      await supabaseRequest('guild_configs', {
+        method: 'DELETE',
+        query: { guild_id: `eq.${guildId}` },
+        headers: { Prefer: 'return=minimal' },
+      });
+
+      configCache.delete(guildId);
+      logger.info(`Config do servidor ${guildId} deletada do Supabase`);
+      return;
+    }
+
+    const configs = readGuildConfigs();
+    delete configs[guildId];
+    writeGuildConfigs(configs);
     configCache.delete(guildId);
     logger.info(`Config do servidor ${guildId} deletada`);
   } catch (error) {
@@ -101,34 +172,25 @@ async function deleteGuildConfig(guildId) {
   }
 }
 
-/**
- * Limpar cache de um servidor
- */
 function clearGuildCache(guildId) {
   configCache.delete(guildId);
   logger.debug(`Cache do servidor ${guildId} limpo`);
 }
 
-/**
- * Limpar todo o cache
- */
 function clearAllCache() {
   configCache.clear();
-  logger.debug('Todo o cache de configurações foi limpo');
+  logger.debug('Todo o cache de configuracoes foi limpo');
 }
 
-/**
- * Processar variáveis em mensagens
- */
 function processMessageVariables(message, user, guild) {
   if (!message) return '';
 
   return message
-    .replace(/{user}/g, user?.toString() || 'Usuário')
-    .replace(/{username}/g, user?.username || 'Usuário')
+    .replace(/{user}/g, user?.toString() || 'Usuario')
+    .replace(/{username}/g, user?.username || 'Usuario')
     .replace(/{server}/g, guild?.name || 'Servidor')
     .replace(/{serverId}/g, guild?.id || 'N/A')
-    .replace(/{memberCount}/g, guild?.memberCount || 'N/A')
+    .replace(/{memberCount}/g, String(guild?.memberCount || 'N/A'))
     .replace(/{date}/g, new Date().toLocaleDateString('pt-BR'))
     .replace(/{time}/g, new Date().toLocaleTimeString('pt-BR'));
 }
@@ -140,5 +202,5 @@ module.exports = {
   deleteGuildConfig,
   clearGuildCache,
   clearAllCache,
-  processMessageVariables
+  processMessageVariables,
 };

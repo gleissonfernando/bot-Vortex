@@ -1,4 +1,6 @@
-const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
+
+console.log("🔥 VORTEX LOCAL ATIVO 🔥");
+const { Client, GatewayIntentBits, Collection, Events, REST, Routes } = require('discord.js');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,11 +9,17 @@ const path = require('path');
 const config = require('./config/config');
 const { logger } = require('./utils/logger');
 const { setDiscordClient } = require('./utils/dashboardClient');
-const { notifyError, sendVortexLog } = require('./utils/notifications');
+const { notifyError, notifyBotDown, sendVortexLog } = require('./utils/notifications');
+const { initStatusPanel } = require('./utils/pontoPanel');
+const { initAbsenceManager } = require('./utils/ausenciaManager');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
+
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
 
 const client = new Client({
     intents: [
@@ -20,12 +28,17 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildPresences
     ]
 });
 
 client.commands = new Collection();
 setDiscordClient(client);
+
+app.get('/health', (req, res) => {
+    res.json({ ok: true, service: 'vortex-bot' });
+});
 
 // Carregar Comandos
 const foldersPath = path.join(__dirname, 'commands');
@@ -44,7 +57,7 @@ for (const folder of commandFolders) {
     }
 }
 
-// Carregar Eventos
+                          
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
@@ -94,9 +107,11 @@ const registerCommands = async () => {
     }
 };
 
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
     console.log(`Vortex Online: ${client.user.tag}`);
     await registerCommands();
+    initStatusPanel(client);
+    initAbsenceManager(client);
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',
@@ -110,14 +125,36 @@ client.once('ready', async () => {
 process.on('unhandledRejection', (reason) => {
     console.error('[VORTEX CRITICAL] Rejeição não tratada:', reason);
     notifyError(client, reason, 'Unhandled Rejection');
+    notifyBotDown(client, reason, 'Unhandled Rejection');
 });
 
 process.on('uncaughtException', (error) => {
     console.error('[VORTEX CRITICAL] Exceção não capturada:', error.message);
     notifyError(client, error, 'Uncaught Exception');
+    notifyBotDown(client, error, 'Uncaught Exception');
 });
 
-client.login(config.token).catch(err => console.error('[VORTEX] Falha no Login:', err.message));
-app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));
+process.on('SIGINT', () => {
+    notifyBotDown(client, 'Processo encerrado por SIGINT', 'Encerramento manual').finally(() => {
+        process.exit(0);
+    });
+});
 
-module.exports = { client };
+process.on('SIGTERM', () => {
+    notifyBotDown(client, 'Processo encerrado por SIGTERM', 'Encerramento do processo').finally(() => {
+        process.exit(0);
+    });
+});
+
+client.on('shardDisconnect', (event, shardId) => {
+    const reason = `Shard ${shardId} desconectada. Codigo: ${event?.code || 'N/A'} | Motivo: ${event?.reason || 'N/A'}`;
+    console.error('[VORTEX CRITICAL]', reason);
+    notifyBotDown(client, reason, 'Shard Disconnect');
+});
+
+client.login(config.token).catch(err => {
+    console.error('[VORTEX] Falha no Login:', err.message);
+    notifyBotDown(client, err, 'Falha no Login');
+});
+app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));
+   module.exports = { client };

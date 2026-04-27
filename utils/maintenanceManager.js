@@ -53,6 +53,7 @@ function disableMaintenance(deactivatedBy = null) {
 
 /**
  * Verifica se um membro possui pelo menos um dos cargos de staff.
+ * Usado para liberar o uso do bot durante a manutenção.
  */
 function isStaffMember(member) {
     if (!member) return false;
@@ -67,6 +68,7 @@ function isStaffMember(member) {
 async function notifyAllStaffMembers(client, guild, responsavelId, ativando = true) {
     const { EmbedBuilder } = require('discord.js');
 
+    // Força o fetch completo dos membros
     let members;
     try {
         members = await guild.members.fetch();
@@ -75,6 +77,7 @@ async function notifyAllStaffMembers(client, guild, responsavelId, ativando = tr
         return { enviados: 0, falhas: 0 };
     }
 
+    // Filtra apenas membros (não bots) que possuem pelo menos um cargo de staff
     const staffMembers = members.filter(m =>
         !m.user.bot &&
         STAFF_ROLE_IDS.some(roleId => m.roles.cache.has(roleId))

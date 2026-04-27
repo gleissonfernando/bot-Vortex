@@ -8,7 +8,7 @@ module.exports = {
     // IDs Fixos Vortex
     pendingRoleId: '1449514118292967578',
     approvedRoleId: '1201235607549124639',
-    logsChannelId: '1497380031016599603',
+    logsChannelId: '1497685822525149337',
     recruitmentCategoryId: '1497749211775766538',
 
     authorizedUserIds: [

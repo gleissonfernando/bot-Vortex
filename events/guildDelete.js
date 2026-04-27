@@ -1,11 +1,16 @@
 const { Events } = require("discord.js");
+const { logger } = require("../utils/logger");
+const { deleteGuildConfig } = require("../utils/configManager");
 const { sendStaffLog } = require("../utils/notifications");
 
 module.exports = {
   name: Events.GuildDelete,
   async execute(guild) {
     try {
-      console.log(`[VORTEX] Bot foi removido do servidor: ${guild.name} (${guild.id})`);
+      logger.warn(`Bot foi removido do servidor: ${guild.name} (${guild.id})`);
+      await deleteGuildConfig(guild.id).catch((error) => {
+        logger.error(`Erro ao limpar configuracoes do servidor ${guild.id}:`, error);
+      });
 
       // Log em tempo real no canal de logs principal
       const client = guild.client;

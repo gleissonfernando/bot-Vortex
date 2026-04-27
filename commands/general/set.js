@@ -44,7 +44,8 @@ module.exports = {
                     name: '🚀 Como funciona?',
                     value: '`1.` Clique no botão abaixo para iniciar\n' +
                            '`2.` Selecione o tipo de set (Morador ou Membro)\n' +
-                           '`3.` Preencha o formulário e aguarde a Staff',
+                           '`3.` Informe ID, nome e número em game\n' +
+                           '`4.` Aguarde a análise da Staff',
                     inline: false
                 }
             )

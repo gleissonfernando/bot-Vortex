@@ -1,6 +1,7 @@
-const GuildLog = require('../backend/models/GuildLog');
+const GuildLog = require('../models/GuildLog');
 const { logger } = require('./logger');
 const dashboardClient = require('./dashboardClient');
+const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
 
 /**
  * Mapeamento de tipo de log interno → cor do embed no painel
@@ -21,6 +22,47 @@ const TYPE_COLORS = {
     message_delete:      0xFFA500,
     command:             0x5865F2,
 };
+
+function toSupabaseLog(log) {
+  return {
+    guild_id: log.guildId,
+    type: log.type,
+    title: log.title,
+    description: log.description,
+    user_id: log.userId,
+    user_name: log.userName,
+    user_avatar: log.userAvatar,
+    channel_id: log.channelId,
+    channel_name: log.channelName,
+    message_id: log.messageId,
+    metadata: log.metadata || {},
+    severity: log.severity,
+    ip_address: log.ipAddress,
+    user_agent: log.userAgent,
+    created_at: log.createdAt,
+  };
+}
+
+function fromSupabaseLog(row) {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    type: row.type,
+    title: row.title,
+    description: row.description,
+    userId: row.user_id,
+    userName: row.user_name,
+    userAvatar: row.user_avatar,
+    channelId: row.channel_id,
+    channelName: row.channel_name,
+    messageId: row.message_id,
+    metadata: row.metadata || {},
+    severity: row.severity,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    createdAt: row.created_at,
+  };
+}
 
 /**
  * Registrar evento no log do servidor (MongoDB) e replicar para o painel em background.
@@ -45,8 +87,7 @@ async function logGuildEvent(guildId, options) {
       imageUrl = null,
     } = options;
 
-    // 1. Salvar no MongoDB local
-    const logEntry = new GuildLog({
+    const logEntry = {
       guildId,
       type,
       title,
@@ -62,10 +103,22 @@ async function logGuildEvent(guildId, options) {
       ipAddress,
       userAgent,
       createdAt: new Date()
-    });
+    };
 
-    await logEntry.save();
-    logger.debug(`Log registrado para servidor ${guildId}: ${title}`);
+    if (isSupabaseEnabled()) {
+      const rows = await supabaseRequest('guild_logs', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: toSupabaseLog(logEntry),
+      });
+      if (Array.isArray(rows) && rows[0]) Object.assign(logEntry, fromSupabaseLog(rows[0]));
+      logger.debug(`Log registrado no Supabase para servidor ${guildId}: ${title}`);
+    } else {
+      const mongoEntry = new GuildLog(logEntry);
+      await mongoEntry.save();
+      Object.assign(logEntry, mongoEntry.toObject ? mongoEntry.toObject() : mongoEntry);
+      logger.debug(`Log registrado para servidor ${guildId}: ${title}`);
+    }
 
     // 2. Replicar para o painel em background (fire-and-forget)
     dashboardClient.sendLogToDashboard({
@@ -102,6 +155,37 @@ async function getGuildLogs(guildId, options = {}) {
       startDate = null,
       endDate = null
     } = options;
+
+    if (isSupabaseEnabled()) {
+      const query = {
+        select: '*',
+        guild_id: `eq.${guildId}`,
+        order: 'created_at.desc',
+        limit,
+        offset: skip,
+      };
+
+      if (type) query.type = `eq.${type}`;
+      if (userId) query.user_id = `eq.${userId}`;
+      if (startDate && endDate) {
+        query.and = `(created_at.gte.${new Date(startDate).toISOString()},created_at.lte.${new Date(endDate).toISOString()})`;
+      } else if (startDate) {
+        query.created_at = `gte.${new Date(startDate).toISOString()}`;
+      } else if (endDate) {
+        query.created_at = `lte.${new Date(endDate).toISOString()}`;
+      }
+
+      const rows = await supabaseRequest('guild_logs', { query });
+      const logs = Array.isArray(rows) ? rows.map(fromSupabaseLog) : [];
+
+      return {
+        logs,
+        total: logs.length,
+        limit,
+        skip,
+        hasMore: logs.length === limit,
+      };
+    }
 
     const query = { guildId };
 
@@ -143,6 +227,20 @@ async function clearOldLogs(guildId, daysOld = 30) {
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    if (isSupabaseEnabled()) {
+      await supabaseRequest('guild_logs', {
+        method: 'DELETE',
+        query: {
+          guild_id: `eq.${guildId}`,
+          created_at: `lt.${cutoffDate.toISOString()}`,
+        },
+        headers: { Prefer: 'return=minimal' },
+      });
+
+      logger.info(`Logs antigos removidos do Supabase para servidor ${guildId}`);
+      return 0;
+    }
 
     const result = await GuildLog.deleteMany({
       guildId,

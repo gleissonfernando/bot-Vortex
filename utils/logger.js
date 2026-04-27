@@ -56,6 +56,7 @@ class Logger {
 
     /**
      * Formata timestamp
+     * @returns {string}
      */
     getTimestamp() {
         if (!this.enableTimestamp) return '';
@@ -64,6 +65,10 @@ class Logger {
 
     /**
      * Formata mensagem de log
+     * @param {string} level - Nível de log
+     * @param {string} message - Mensagem
+     * @param {object} meta - Metadados adicionais
+     * @returns {string}
      */
     formatMessage(level, message, meta = {}) {
         const timestamp = this.getTimestamp();
@@ -76,6 +81,10 @@ class Logger {
 
     /**
      * Formata mensagem para console com cores
+     * @param {string} level - Nível de log
+     * @param {string} message - Mensagem
+     * @param {string} color - Cor ANSI
+     * @returns {string}
      */
     formatConsoleMessage(level, message, color) {
         const timestamp = this.getTimestamp();
@@ -97,6 +106,7 @@ class Logger {
                     fs.renameSync(file, backup);
                 }
             }
+
             fs.appendFileSync(file, message + '\n', 'utf8');
         } catch (error) {
             console.error('❌ Erro ao escrever log em arquivo:', error);
@@ -170,6 +180,7 @@ class Logger {
             this.writeToFile(this.logFiles.all, fullFormatted);
         }
 
+        // Envia alerta (poderia integrar com Discord, email, etc)
         this.sendAlert(message, error, meta);
     }
 
@@ -215,10 +226,12 @@ class Logger {
         try {
             const now = Date.now();
             const maxAge = daysOld * 24 * 60 * 60 * 1000;
+
             const files = fs.readdirSync(this.logDir);
             files.forEach(file => {
                 const filePath = path.join(this.logDir, file);
                 const stats = fs.statSync(filePath);
+                
                 if (now - stats.mtimeMs > maxAge) {
                     fs.unlinkSync(filePath);
                     this.info(`Log antigo removido: ${file}`);
@@ -245,6 +258,7 @@ class Logger {
         } catch (error) {
             this.error('Erro ao obter estatísticas de logs', error);
         }
+
         return stats;
     }
 }

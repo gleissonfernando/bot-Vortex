@@ -1,0 +1,12 @@
+Resumo das atualizacoes recentes do Vortex
+
+- Sistema de avisos atualizado com painel, banner da Vortex, mencoes de cargos, selecao de usuario, cargo e call.
+- /painel recebeu configuracoes para Set e Avisos.
+- Cargos Staff foi reorganizado para Cargos Vortex com niveis Admin, Medio e Membro.
+- Comandos /calltemporaria e /registrplayer foram removidos; /registro foi adicionado para consulta de ponto.
+- Sistema de ponto recebeu painel visual, botao de solicitar ajuste, ticket privado e aprovacao/recusa por staff.
+- Ajustes de ponto agora enviam DM ao usuario com dados da decisao e banner da Vortex.
+- Relatorio completo de pontos foi adicionado no /painel > Pontos.
+- Player online foi configurado para atualizar no canal 1498401871776448582.
+- Comandos slash agora respeitam cargos configurados em Cargos Vortex e permissoes do painel.
+- Notificador automatico de atualizacao envia aviso no canal configurado quando o bot inicia.

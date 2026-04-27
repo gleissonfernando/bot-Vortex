@@ -19,7 +19,9 @@ node_modules/
 .idea/
 
 # Logs
-logs/
+logs/*
+!logs/
+!logs/vortex-update-summary.txt
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -42,6 +44,7 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.db
+*.db-journal
 
 # Local overrides / machine-specific configs
 *.local
@@ -54,16 +57,47 @@ Thumbs.db
 *.seed
 *.tgz
 .eslintcache
+*.bak
+*.backup
 
 # Bot/session temporary files
 sessions/
 session/
 tmp/
 uploads/
+downloads/
+cache/
+transcripts/
+attachments/
 
 # Local command/config overrides
 commands/config.local.json
 config/*.local.js
+
+# Bot runtime state - do not publish server/user data
+commands/config.json
+commands/stats.json
+commands/pontos.json
+commands/pontoPanels.json
+commands/pontoAdjustRequests.json
+commands/pedidos_ativos.json
+commands/ausencias.json
+commands/*cache*.json
+commands/*backup*.json
+
+# Deployment/runtime metadata
+.env.production
+.env.staging
+ecosystem.config.js
+pm2*.json
+*.pid.lock
+
+# Local generated media/reports
+logs/*
+!logs/
+!logs/vortex-update-summary.txt
+reports/
+*.txt.local
 
 # Keep safe templates versioned
 !*.example
