@@ -129,10 +129,10 @@ async function createStatusEmbed(guild) {
         '```',
         rows.map((row) => row.mention).join(' '),
       ].join('\n')
-    : 'Nenhum policial em serviço no momento.';
+    : 'Nenhuma fac em serviço no momento.';
 
   const description = [
-    `Temos ${active.length} policiais em serviço:`,
+    `Temos ${active.length} membros da fac em serviço:`,
     '',
     table,
   ].join('\n');
