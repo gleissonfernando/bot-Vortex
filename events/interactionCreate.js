@@ -21,6 +21,10 @@ function hasStaffPermission(member) {
     return hasVortexLevel(member, ['admin', 'medio']);
 }
 
+function hasMasterPermission(member) {
+    return Boolean(member?.roles?.cache?.has(SUPERIOR_ID));
+}
+
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName !== 'painel' && !hasAnyVortexRole(interaction.member)) return false;
@@ -127,7 +131,7 @@ module.exports = {
         const conf = loadJSON(CONFIG_PATH);
 
         // Bloqueio de Manutenção VORTEX
-        if (conf.MAINTENANCE_MODE && !hasStaffPermission(member)) {
+        if (conf.MAINTENANCE_MODE && !hasMasterPermission(member)) {
             const maintEmbed = new EmbedBuilder()
                 .setTitle('⚠️ VORTEX | MANUTENÇÃO')
                 .setColor('#FF0055')

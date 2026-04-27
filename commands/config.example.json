@@ -25,6 +25,7 @@
     "registro": [],
     "ponto": [],
     "ausencia": [],
-    "ativarponto": []
+    "ativarponto": [],
+    "clear": []
   }
 }
