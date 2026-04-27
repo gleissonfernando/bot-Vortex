@@ -27,6 +27,7 @@ function hasMasterPermission(member) {
 
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
+    if (commandName === 'clear') return true;
     if (commandName !== 'painel' && !hasAnyVortexRole(interaction.member)) return false;
 
     const conf = loadJSON(CONFIG_PATH);

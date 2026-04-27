@@ -18,10 +18,6 @@ module.exports = {
       return interaction.reply({ content: '❌ Este comando só pode ser usado em canal de texto do servidor.', ephemeral: true });
     }
 
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({ content: '❌ Você precisa da permissão Gerenciar Mensagens para usar este comando.', ephemeral: true });
-    }
-
     const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
     const botPermissions = botMember ? interaction.channel.permissionsFor(botMember) : null;
     if (!botPermissions?.has(PermissionFlagsBits.ManageMessages)) {

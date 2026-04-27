@@ -37,7 +37,6 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatorio de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausencia' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
-    { label: '/clear', value: 'clear', description: 'Quem pode limpar mensagens' },
 ];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
