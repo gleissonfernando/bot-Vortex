@@ -7,7 +7,7 @@ const { logger } = require('./logger');
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
-const PONTO_ONLINE_CHANNEL_ID = '1498401871776448582';
+const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 let statusPanelInterval = null;
@@ -153,11 +153,12 @@ async function updateStatusPanel(client, guildId) {
     if (!guild) return false;
 
     const pointConfig = getPointConfig();
-    const channel = await client.channels.fetch(panel?.statusChannelId || pointConfig.statusChannelId).catch(() => null);
+    const configuredStatusChannelId = pointConfig.statusChannelId;
+    const channel = await client.channels.fetch(configuredStatusChannelId).catch(() => null);
     if (!channel?.isTextBased?.()) return false;
 
     const embed = await createStatusEmbed(guild);
-    const message = panel?.statusMessageId
+    const message = panel?.statusMessageId && panel?.statusChannelId === configuredStatusChannelId
       ? await channel.messages.fetch(panel.statusMessageId).catch(() => null)
       : null;
 

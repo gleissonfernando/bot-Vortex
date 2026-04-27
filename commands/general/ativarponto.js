@@ -68,8 +68,8 @@ module.exports = {
 
     return interaction.editReply({
       content: [
-        `Painel de ponto ativado em <#${PONTO_ACTION_CHANNEL_ID}>: ${controlMessage.url}`,
-        `O painel de online sera atualizado em <#${PONTO_ONLINE_CHANNEL_ID}>: ${statusMessage.url}`,
+        `Painel de ponto ativado em <#${pointConfig.actionChannelId}>: ${controlMessage.url}`,
+        `O painel de online sera atualizado em <#${pointConfig.statusChannelId}>: ${statusMessage.url}`,
       ].join('\n'),
     });
   },
