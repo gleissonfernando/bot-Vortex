@@ -1,8 +1,10 @@
-const { EmbedBuilder } = require('discord.js');
+const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
+const VORTEX_BANNER_PATH = path.join(__dirname, '..', 'foto', 'IMG_4234.png');
+const VORTEX_BANNER_NAME = 'IMG_4234.png';
 const FIXED_LOG_CHANNEL = '1497685822525149337';
 const SUPERIOR_ID = '1497703127074345040';
 const ALERT_DM_USER_IDS = [
@@ -66,11 +68,20 @@ async function sendVortexLog(client, { title, description, color = '#7000FF', ty
         .setTimestamp()
         .setFooter({ text: 'Vortex Management System - Monitoramento' });
 
+    const files = [];
+    if (type === 'UPDATE' && fs.existsSync(VORTEX_BANNER_PATH)) {
+        embed.setImage(`attachment://${VORTEX_BANNER_NAME}`);
+        files.push(new AttachmentBuilder(VORTEX_BANNER_PATH, { name: VORTEX_BANNER_NAME }));
+    }
+
     if (!channelLogsDisabled) {
         try {
             const channel = await client.channels.fetch(channelId).catch(() => null);
             if (channel?.isTextBased?.()) {
-                await channel.send({ embeds: [embed] }).catch(() => {});
+                await channel.send({
+                    embeds: [embed],
+                    files: files.length ? files : undefined,
+                }).catch(() => channel.send({ embeds: [embed] }).catch(() => {}));
             }
         } catch (error) {}
     }

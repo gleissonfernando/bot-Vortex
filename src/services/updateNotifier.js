@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
@@ -19,7 +20,6 @@ function getVersion() {
 
 async function notifyBotUpdate(client) {
   if (sentThisBoot) return false;
-  sentThisBoot = true;
 
   const channelId = process.env.UPDATE_LOG_CHANNEL_ID || DEFAULT_UPDATE_LOG_CHANNEL_ID;
   const roleId = process.env.UPDATE_NOTIFY_ROLE_ID || DEFAULT_UPDATE_NOTIFY_ROLE_ID;
@@ -32,23 +32,29 @@ async function notifyBotUpdate(client) {
     }
 
     const botMember = channel.guild?.members?.me || await channel.guild?.members.fetchMe?.().catch(() => null);
+    let canAttachFiles = true;
     if (botMember) {
       const permissions = channel.permissionsFor(botMember);
       if (
         !permissions?.has(PermissionFlagsBits.ViewChannel) ||
-        !permissions?.has(PermissionFlagsBits.SendMessages) ||
-        !permissions?.has(PermissionFlagsBits.AttachFiles)
+        !permissions?.has(PermissionFlagsBits.SendMessages)
       ) {
-        console.error(`[VORTEX] Sem permissão para enviar mensagem/anexos no canal de atualização: ${channelId}`);
+        console.error(`[VORTEX] Sem permissão para enviar mensagem no canal de atualização: ${channelId}`);
         return false;
+      }
+      canAttachFiles = permissions.has(PermissionFlagsBits.AttachFiles);
+      if (!canAttachFiles) {
+        console.error(`[VORTEX] Sem permissão de anexar arquivos no canal ${channelId}. Enviando notificação sem banner/TXT.`);
       }
     }
 
     const now = new Date();
+    const hasBanner = fs.existsSync(VORTEX_BANNER_PATH);
+    const hasSummary = fs.existsSync(UPDATE_SUMMARY_PATH);
     const embed = new EmbedBuilder()
       .setColor('#57F287')
       .setAuthor({
-        name: 'VORTEX | Sistema Atualizado',
+        name: 'Sistema Vortex | Atualização',
         iconURL: client.user.displayAvatarURL(),
       })
       .setTitle('Bot Atualizado')
@@ -63,22 +69,31 @@ async function notifyBotUpdate(client) {
         '',
         '✅ Todos os sistemas foram carregados corretamente.',
       ].join('\n'))
-      .setImage(`attachment://${VORTEX_BANNER_NAME}`)
       .setFooter({ text: 'Vortex Management System - Update Notifier' })
       .setTimestamp(now);
 
-    const files = [
-      new AttachmentBuilder(VORTEX_BANNER_PATH, { name: VORTEX_BANNER_NAME }),
-      new AttachmentBuilder(UPDATE_SUMMARY_PATH, { name: 'vortex-update-summary.txt' }),
-    ];
+    const files = [];
+    if (canAttachFiles && hasBanner) {
+      embed.setImage(`attachment://${VORTEX_BANNER_NAME}`);
+      files.push(new AttachmentBuilder(VORTEX_BANNER_PATH, { name: VORTEX_BANNER_NAME }));
+    } else if (!hasBanner) {
+      console.error(`[VORTEX] Banner não encontrado em: ${VORTEX_BANNER_PATH}`);
+    }
+
+    if (canAttachFiles && hasSummary) {
+      files.push(new AttachmentBuilder(UPDATE_SUMMARY_PATH, { name: 'vortex-update-summary.txt' }));
+    } else if (!hasSummary) {
+      console.error(`[VORTEX] TXT de resumo não encontrado em: ${UPDATE_SUMMARY_PATH}`);
+    }
 
     await channel.send({
       content: `<@&${roleId}>`,
       embeds: [embed],
-      files,
+      files: files.length ? files : undefined,
       allowedMentions: { roles: [roleId] },
     });
 
+    sentThisBoot = true;
     console.log(`[VORTEX] Notificação de atualização enviada no canal ${channelId}`);
     return true;
   } catch (error) {
