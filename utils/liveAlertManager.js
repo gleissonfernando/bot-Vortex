@@ -240,6 +240,11 @@ function getTwitchConfig() {
   };
 }
 
+function hasTwitchCredentials() {
+  const { clientId, clientSecret } = getTwitchConfig();
+  return Boolean(clientId && clientSecret);
+}
+
 async function getTwitchAppToken() {
   const { clientId, clientSecret } = getTwitchConfig();
   if (!clientId || !clientSecret) return null;
@@ -348,13 +353,13 @@ function buildLiveAlertEmbed({ member, user, activity, link, place }) {
   return embed;
 }
 
-async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null }) {
+async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null, force = false }) {
   if (!guild || !user || user.bot) return false;
 
   const guildId = guild.id;
   const userId = user.id;
   const streamKey = streamKeyOverride || `${guildId}:${userId}`;
-  if (activeStreams.has(streamKey)) return false;
+  if (!force && activeStreams.has(streamKey)) return false;
 
   const alertLink = link || getLiveLink(guildId, userId);
   if (!alertLink) {
@@ -390,7 +395,7 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   return true;
 }
 
-async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, streamKey }) {
+async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, streamKey, force = false }) {
   const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return false;
 
@@ -406,7 +411,77 @@ async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, stre
     link,
     place: category,
     streamKeyOverride: streamKey,
+    force,
   });
+}
+
+async function checkUserTwitchLinks(client, guildId, userId, { sendIfOnline = false } = {}) {
+  const termsAccepted = hasAcceptedLiveTerms(guildId, userId);
+  const links = getLiveLinks(guildId, userId);
+  const twitchLinks = links
+    .map((link) => ({
+      ...link,
+      twitchLogin: link.twitchLogin || parseTwitchLogin(link.url),
+    }))
+    .filter((link) => link.twitchLogin);
+
+  const result = {
+    ok: false,
+    termsAccepted,
+    hasCredentials: hasTwitchCredentials(),
+    totalLinks: links.length,
+    twitchLinks: twitchLinks.length,
+    sent: 0,
+    online: [],
+    offline: [],
+    message: '',
+  };
+
+  if (!termsAccepted) {
+    result.message = 'Termos ainda nao foram aceitos.';
+    return result;
+  }
+
+  if (twitchLinks.length === 0) {
+    result.message = links.length
+      ? 'Nenhum link cadastrado e da Twitch.'
+      : 'Nenhum link cadastrado.';
+    return result;
+  }
+
+  if (!result.hasCredentials) {
+    result.message = 'TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes no ambiente.';
+    return result;
+  }
+
+  const streams = await fetchTwitchStreams(twitchLinks.map((link) => link.twitchLogin));
+  for (const link of twitchLinks) {
+    const stream = streams.get(link.twitchLogin);
+    if (!stream) {
+      result.offline.push(link);
+      continue;
+    }
+
+    result.online.push({ link, stream });
+    if (sendIfOnline) {
+      const streamKey = `${guildId}:${userId}:twitch:${link.twitchLogin}`;
+      const sent = await sendTwitchLiveAlert(client, {
+        guildId,
+        userId,
+        link: link.url,
+        stream,
+        streamKey,
+        force: true,
+      });
+      if (sent) result.sent += 1;
+    }
+  }
+
+  result.ok = true;
+  result.message = result.online.length
+    ? `${result.online.length} live(s) online encontrada(s).`
+    : 'Nenhuma live online encontrada agora.';
+  return result;
 }
 
 function getConfiguredTwitchTargets() {
@@ -552,6 +627,7 @@ module.exports = {
   getLiveLinks,
   handlePresenceLiveAlert,
   handleVoiceLiveAlert,
+  checkUserTwitchLinks,
   hasAcceptedLiveTerms,
   initTwitchLiveMonitor,
   isValidLiveUrl,

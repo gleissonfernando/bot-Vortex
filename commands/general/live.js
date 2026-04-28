@@ -11,6 +11,7 @@ const {
   ALERT_CHANNEL_ID,
   buildLiveTermsUrl,
   buildLivePanelEmbed,
+  checkUserTwitchLinks,
   getLiveLinks,
   hasAcceptedLiveTerms,
   isValidLiveUrl,
@@ -22,6 +23,7 @@ const { hasCommandRole } = require('../../utils/permissions');
 const CUSTOM_IDS = {
   set: 'live_alert_set_link',
   remove: 'live_alert_remove_link',
+  test: 'live_alert_test_now',
   modal: 'live_alert_link_modal',
 };
 
@@ -49,6 +51,11 @@ function buildLiveComponents({ hasLinks, termsAccepted, termsUrl }) {
         .setCustomId(CUSTOM_IDS.remove)
         .setLabel('Remover todos')
         .setStyle(ButtonStyle.Danger)
+        .setDisabled(!hasLinks),
+      new ButtonBuilder()
+        .setCustomId(CUSTOM_IDS.test)
+        .setLabel('Verificar agora')
+        .setStyle(ButtonStyle.Secondary)
         .setDisabled(!hasLinks),
     );
 
@@ -133,6 +140,48 @@ module.exports = {
         embeds: [buildLivePanelEmbed(interaction, links, termsAccepted)],
         components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted, termsUrl }),
         ephemeral: true,
+      });
+    }
+
+    if (interaction.customId === CUSTOM_IDS.test) {
+      await interaction.deferReply({ ephemeral: true });
+      const result = await checkUserTwitchLinks(interaction.client, interaction.guildId, interaction.user.id, {
+        sendIfOnline: true,
+      }).catch((error) => ({
+        ok: false,
+        message: `Erro ao consultar Twitch: ${error.message}`,
+        termsAccepted: hasAcceptedLiveTerms(interaction.guildId, interaction.user.id),
+        hasCredentials: false,
+        totalLinks: getLiveLinks(interaction.guildId, interaction.user.id).length,
+        twitchLinks: 0,
+        online: [],
+        offline: [],
+        sent: 0,
+      }));
+
+      const onlineLines = result.online?.length
+        ? result.online.map(({ link, stream }) => `🟢 ${link.url} — ${stream.title || 'Online'}`).join('\n')
+        : 'Nenhum';
+      const offlineLines = result.offline?.length
+        ? result.offline.map((link) => `⚫ ${link.url}`).join('\n')
+        : 'Nenhum';
+
+      return interaction.editReply({
+        content: [
+          result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
+          `**Resultado:** ${result.message}`,
+          `**Termos aceitos:** ${result.termsAccepted ? 'sim' : 'não'}`,
+          `**Credenciais Twitch:** ${result.hasCredentials ? 'ok' : 'faltando'}`,
+          `**Links cadastrados:** ${result.totalLinks}`,
+          `**Links Twitch:** ${result.twitchLinks}`,
+          `**Alertas enviados agora:** ${result.sent || 0}`,
+          '',
+          '**Online**',
+          onlineLines,
+          '',
+          '**Offline**',
+          offlineLines,
+        ].join('\n'),
       });
     }
 

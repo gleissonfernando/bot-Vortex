@@ -395,7 +395,7 @@ module.exports = {
 
         const live = client.commands.get('live');
         if (live) {
-            if (interaction.isButton() && (interaction.customId === 'live_alert_set_link' || interaction.customId === 'live_alert_remove_link')) {
+            if (interaction.isButton() && (interaction.customId === 'live_alert_set_link' || interaction.customId === 'live_alert_remove_link' || interaction.customId === 'live_alert_test_now')) {
                 return await live.handleButton(interaction);
             }
             if (interaction.isModalSubmit() && interaction.customId === 'live_alert_link_modal') {
