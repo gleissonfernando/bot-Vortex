@@ -29,16 +29,35 @@ function getConfiguredUpdateChannelId() {
   }
 }
 
+function getUpdateChannelCandidates() {
+  return [
+    process.env.UPDATE_LOG_CHANNEL_ID,
+    getConfiguredUpdateChannelId(),
+    DEFAULT_UPDATE_LOG_CHANNEL_ID,
+  ].filter(Boolean).map(String).filter((channelId, index, list) => list.indexOf(channelId) === index);
+}
+
 async function notifyBotUpdate(client) {
   if (sentThisBoot) return false;
 
-  const channelId = process.env.UPDATE_LOG_CHANNEL_ID || getConfiguredUpdateChannelId() || DEFAULT_UPDATE_LOG_CHANNEL_ID;
+  const channelIds = getUpdateChannelCandidates();
   const roleId = process.env.UPDATE_NOTIFY_ROLE_ID || DEFAULT_UPDATE_NOTIFY_ROLE_ID;
 
   try {
-    const channel = await client.channels.fetch(channelId).catch(() => null);
+    let channel = null;
+    let channelId = null;
+    for (const candidateId of channelIds) {
+      const candidate = await client.channels.fetch(candidateId).catch(() => null);
+      if (candidate?.isTextBased?.()) {
+        channel = candidate;
+        channelId = candidateId;
+        break;
+      }
+      console.error(`[VORTEX] Canal de atualização não encontrado ou inválido: ${candidateId}`);
+    }
+
     if (!channel || !channel.isTextBased?.()) {
-      console.error(`[VORTEX] Canal de atualização não encontrado ou inválido: ${channelId}`);
+      console.error(`[VORTEX] Nenhum canal de atualização válido encontrado. Tentados: ${channelIds.join(', ')}`);
       return false;
     }
 
