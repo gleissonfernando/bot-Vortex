@@ -18,7 +18,7 @@ const { initPointAutomation } = require('./utils/pointAutomation');
 const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 
 const app = express();
-const API_PORT = Number(process.env.API_PORT || 3000);
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 
 app.use(helmet());
@@ -43,6 +43,10 @@ setDiscordClient(client);
 
 app.get('/health', (req, res) => {
     res.json({ ok: true, service: 'vortex-bot' });
+});
+
+app.get(['/', '/termos', '/privacidade'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'vortex-site.html'));
 });
 
 app.get(['/twitch', '/live/termos'], (req, res) => {
@@ -73,6 +77,15 @@ app.get('/twitch/webhook', (req, res) => {
         '<p>Seu acesso para cadastrar links de live foi liberado. Volte ao Discord, use /live e clique em Adicionar link.</p>',
         '</main></body></html>',
     ].join(''));
+});
+
+app.post('/twitch/webhook', (req, res) => {
+    if (req.headers['twitch-eventsub-message-type'] === 'webhook_callback_verification') {
+        return res.status(200).send(req.body?.challenge || '');
+    }
+
+    console.log('[TWITCH WEBHOOK] Evento recebido:', req.body);
+    return res.status(200).send('OK');
 });
 
 // Carregar Comandos
