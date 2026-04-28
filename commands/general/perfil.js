@@ -21,6 +21,11 @@ module.exports = {
         .setName('link')
         .setDescription('Link da foto do perfil para atualizar')
         .setRequired(false))
+    .addAttachmentOption((option) =>
+      option
+        .setName('foto')
+        .setDescription('Upload direto da foto do perfil')
+        .setRequired(false))
     .addStringOption((option) =>
       option
         .setName('nivel')
@@ -32,6 +37,7 @@ module.exports = {
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const link = interaction.options.getString('link');
+    const photo = interaction.options.getAttachment('foto');
     const nivel = interaction.options.getString('nivel');
     const requesterProfile = getUserProfile(interaction.guild.id, interaction.user.id);
     const canManageProfiles = hasVortexLevel(interaction.member, ['admin', 'medio']);
@@ -42,7 +48,7 @@ module.exports = {
       });
     }
 
-    if ((link || nivel) && target.id !== interaction.user.id && !canManageProfiles) {
+    if ((link || photo || nivel) && target.id !== interaction.user.id && !canManageProfiles) {
       return interaction.editReply({
         content: '❌ Voce so pode atualizar o seu proprio perfil.',
       });
@@ -54,8 +60,12 @@ module.exports = {
       });
     }
 
-    if (link) {
-      const result = await updateProfileLink(interaction.guild, target, link, interaction.user.id);
+    if (link || photo) {
+      if (photo && !photo.contentType?.startsWith('image/')) {
+        return interaction.editReply({ content: '❌ O upload precisa ser uma imagem.' });
+      }
+      const imageUrl = photo?.url || link;
+      const result = await updateProfileLink(interaction.guild, target, imageUrl, interaction.user.id);
       if (!result.ok) return interaction.editReply({ content: `❌ ${result.message}` });
     }
 

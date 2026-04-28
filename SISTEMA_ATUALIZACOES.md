@@ -30,6 +30,7 @@ Atualizado em: horario real do bot no painel.
 - Usuario comum deve usar `/perfil` dentro do proprio canal/call cadastrado.
 - Gerencia/Admin pode consultar e atualizar qualquer perfil.
 - O `/perfil` permite atualizar foto e nivel com `/perfil link:<link da foto> nivel:<numero>`.
+- O `/perfil` tambem aceita upload direto de imagem usando a opcao `foto`.
 - Se o perfil ficar 1 dia sem atualizacao, o usuario recebe DM e a gerencia e avisada no canal configurado.
 
 ## Set
