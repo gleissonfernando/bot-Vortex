@@ -22,8 +22,8 @@ function buildReportText(guild, rows, totals) {
     `Relatorio de ponto - ${guild.name}`,
     `Gerado em: ${formatDate(new Date())}`,
     '',
-    `Usuarios no relatorio: ${totals.users}`,
-    `Usuarios em servico: ${totals.active}`,
+    `Usuários no relatório: ${totals.users}`,
+    `Usuários em serviço: ${totals.active}`,
     `Sessoes registradas: ${totals.sessions}`,
     `Tempo total somado: ${formatDuration(totals.totalMs)}`,
     '',
@@ -33,7 +33,7 @@ function buildReportText(guild, rows, totals) {
 
   for (const row of rows) {
     lines.push(
-      `Usuario: ${row.name}`,
+      `Usuário: ${row.name}`,
       `Discord ID: ${row.userId}`,
       `Registro: ${row.registro}`,
       `Status: ${row.status}`,
@@ -41,7 +41,7 @@ function buildReportText(guild, rows, totals) {
       `Sessoes: ${row.sessions}`,
       `Total de horas: ${row.total}`,
       `Primeiro ponto: ${row.firstPoint}`,
-      `Ultima abertura: ${row.lastOpen}`,
+      `Última abertura: ${row.lastOpen}`,
       `Ultimo fechamento: ${row.lastClose}`,
       row.activeSince ? `Ponto aberto desde: ${row.activeSince}` : null,
       '--------------------------------------------------------------------------------',
@@ -54,12 +54,12 @@ function buildReportText(guild, rows, totals) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ponto')
-    .setDescription('Mostra o relatorio geral de ponto de todos os usuarios.'),
+    .setDescription('Mostra o relatório geral de ponto de todos os usuários.'),
 
   async execute(interaction) {
     if (!isGerencia(interaction)) {
       return interaction.reply({
-        content: '❌ Voce nao tem permissao para ver o relatorio de ponto.',
+        content: '❌ Você não tem permissão para ver o relatório de ponto.',
         ephemeral: true,
       });
     }
@@ -107,8 +107,8 @@ module.exports = {
     ));
 
     const description = [
-      `Usuarios no relatorio: **${totals.users}**`,
-      `Em servico agora: **${totals.active}**`,
+      `Usuários no relatório: **${totals.users}**`,
+      `Em serviço agora: **${totals.active}**`,
       `Sessoes registradas: **${totals.sessions}**`,
       `Tempo total somado: **${formatDuration(totals.totalMs)}**`,
       '',
@@ -117,8 +117,8 @@ module.exports = {
       ...previewRows,
       '```',
       rows.length > previewRows.length
-        ? `Mostrando os ${previewRows.length} maiores totais. O arquivo anexado contem todos os usuarios.`
-        : 'O arquivo anexado contem o relatorio completo.',
+        ? `Mostrando os ${previewRows.length} maiores totais. O arquivo anexado contém todos os usuários.`
+        : 'O arquivo anexado contém o relatório completo.',
     ].join('\n');
 
     const embed = new EmbedBuilder()

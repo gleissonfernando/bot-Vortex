@@ -56,14 +56,14 @@ function getManagementRoleIds() {
 async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame = null, staffUserId = null } = {}) {
   const category = await guild.channels.fetch(APPROVED_SET_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
-    return { ok: false, message: `Categoria <#${APPROVED_SET_CATEGORY_ID}> nao encontrada.`, channel: null };
+    return { ok: false, message: `Categoria <#${APPROVED_SET_CATEGORY_ID}> não encontrada.`, channel: null };
   }
 
   const data = readChannels();
   const existingId = data[guild.id]?.[member.id]?.channelId;
   const existing = existingId ? await guild.channels.fetch(existingId).catch(() => null) : null;
   if (existing) {
-    return { ok: true, message: 'Canal do usuario aprovado ja existia.', channel: existing };
+    return { ok: true, message: 'Canal do usuário aprovado já existia.', channel: existing };
   }
 
   const displayName = nomeGame || member.displayName || member.user.username;
@@ -107,7 +107,7 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
         ],
       })),
     ],
-    reason: `Canal criado para usuario aprovado no /set por ${staffUserId || 'sistema'}`,
+    reason: `Canal criado para usuário aprovado no /set por ${staffUserId || 'sistema'}`,
   });
 
   if (!data[guild.id]) data[guild.id] = {};
@@ -130,7 +130,7 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
     allowedMentions: { users: [member.id] },
   }).catch(() => null);
 
-  return { ok: true, message: 'Canal criado para usuario aprovado.', channel };
+  return { ok: true, message: 'Canal criado para usuário aprovado.', channel };
 }
 
 function buildGuideEmbed(userId, step = 1) {
@@ -138,34 +138,34 @@ function buildGuideEmbed(userId, step = 1) {
     1: {
       title: 'Canal exclusivo de metas',
       description: [
-        `<@${userId}>, este canal foi criado exclusivamente para voce.`,
+        `<@${userId}>, este canal foi criado exclusivamente para você.`,
         '',
-        'Somente voce e a gerencia conseguem visualizar e acessar este canal.',
-        'Fique de olho no seu privado: quando surgir uma mensagem do bot Vortex, responda ou siga a orientacao enviada por la.',
+        'Somente você e a gerência conseguem visualizar e acessar este canal.',
+        'Fique de olho no seu privado: quando surgir uma mensagem do bot Vortex, responda ou siga a orientação enviada por lá.',
       ],
     },
     2: {
       title: 'Como funciona o /perfil',
       description: [
         'Use `/perfil` no seu canal cadastrado para ver seus dados.',
-        'Use `/perfil link:<link da foto> nivel:<numero>` para atualizar sua foto e seu nivel.',
+        'Use `/perfil link:<link da foto> nivel:<numero>` para atualizar sua foto e seu nível.',
         'Perfil sem atualizar pode gerar cobrança e penalidade.',
       ],
     },
     3: {
       title: 'Como funciona o /ponto',
       description: [
-        'Abra o ponto quando entrar em servico e feche quando sair.',
-        'Se esquecer de fechar, use o pedido de ajuste de ponto ou fale com a gerencia.',
-        'Quem ignora confirmacoes de ponto aberto por DM pode cair em correcao e penalidade.',
+        'Abra o ponto quando entrar em serviço e feche quando sair.',
+        'Se esquecer de fechar, use o pedido de ajuste de ponto ou fale com a gerência.',
+        'Quem ignora confirmações de ponto aberto por DM pode cair em correção e penalidade.',
       ],
     },
     4: {
       title: 'Como funciona a /ausencia',
       description: [
         'Use `/ausencia` quando precisar ficar afastado.',
-        'Quem nao esta em ausencia e fica sem bater ponto pode receber cobranca.',
-        'Leia sempre as DMs do Vortex. Ignorar informacoes do bot pode causar penalidade.',
+        'Quem não está em ausência e fica sem bater ponto pode receber cobrança.',
+        'Leia sempre as DMs do Vortex. Ignorar informações do bot pode causar penalidade.',
       ],
     },
   };
@@ -183,7 +183,7 @@ function buildGuideRow(step = 1) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(nextStep > 4 ? 'approved_channel_guide_done' : `approved_channel_guide_${nextStep}`)
-      .setLabel(nextStep > 4 ? 'Finalizar' : 'Entendi, proximo')
+      .setLabel(nextStep > 4 ? 'Finalizar' : 'Entendi, próximo')
       .setStyle(nextStep > 4 ? ButtonStyle.Success : ButtonStyle.Primary)
   );
 }
@@ -196,8 +196,8 @@ async function handleApprovedChannelGuide(interaction) {
       embeds: [
         new EmbedBuilder()
           .setColor('#57F287')
-          .setTitle('Guia concluido')
-          .setDescription('Obrigado por confirmar. Fique atento as DMs do bot Vortex e siga as orientacoes da gerencia.')
+          .setTitle('Guia concluído')
+          .setDescription('Obrigado por confirmar. Fique atento às DMs do bot Vortex e siga as orientações da gerência.')
           .setTimestamp(),
       ],
     });
@@ -217,7 +217,7 @@ async function deleteApprovedSetChannel(guild, userId) {
 
   const channel = await guild.channels.fetch(record.channelId).catch(() => null);
   if (channel) {
-    await channel.delete(`Usuario ${userId} saiu do servidor; canal aprovado removido.`).catch((error) => {
+    await channel.delete(`Usuário ${userId} saiu do servidor; canal aprovado removido.`).catch((error) => {
       logger.error('Erro ao deletar canal aprovado:', error);
     });
   }
@@ -226,7 +226,7 @@ async function deleteApprovedSetChannel(guild, userId) {
   if (Object.keys(data[guild.id]).length === 0) delete data[guild.id];
   writeChannels(data);
 
-  return { ok: true, deleted: Boolean(channel), message: channel ? 'Canal removido.' : 'Registro removido; canal nao existia.' };
+  return { ok: true, deleted: Boolean(channel), message: channel ? 'Canal removido.' : 'Registro removido; canal não existia.' };
 }
 
 module.exports = {

@@ -6,11 +6,11 @@ const { isGerencia } = require('../../utils/permissions');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painelponto')
-    .setDescription('Consulta o ponto de um usuario.')
+    .setDescription('Consulta o ponto de um usuário.')
     .addUserOption(option =>
       option
         .setName('usuario')
-        .setDescription('Usuario mencionado para gerar a folha/transcript')
+        .setDescription('Usuário mencionado para gerar a folha/transcript')
         .setRequired(true)),
 
   async execute(interaction) {
@@ -37,13 +37,13 @@ module.exports = {
       .setColor('#5865F2')
       .setTitle('Painel de Ponto Vortex')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setDescription('Transcript HTML gerado com a folha de ponto do usuario mencionado.')
+      .setDescription('Transcript HTML gerado com a folha de ponto do usuário mencionado.')
       .addFields(
-        { name: 'Usuario Discord', value: `<@${target.id}>`, inline: true },
+        { name: 'Usuário Discord', value: `<@${target.id}>`, inline: true },
         { name: 'Discord ID', value: `\`${target.id}\``, inline: true },
         { name: 'Entrou no Discord', value: member?.joinedAt ? formatDate(member.joinedAt) : 'N/A', inline: false },
         { name: 'Primeiro ponto', value: formatDate(data.firstPointAt), inline: true },
-        { name: 'Ultima abertura', value: formatDate(data.lastPointOpenAt), inline: true },
+        { name: 'Última abertura', value: formatDate(data.lastPointOpenAt), inline: true },
         { name: 'Ultimo fechamento', value: formatDate(data.lastPointCloseAt), inline: true },
         { name: 'Dias com ponto', value: String(getPointDays(data)), inline: true },
         { name: 'Total de horas', value: formatDuration(getEffectiveTotalMs(data)), inline: true },

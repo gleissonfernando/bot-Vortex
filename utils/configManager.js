@@ -46,7 +46,7 @@ function getDefaultConfig(guildId) {
     verifyRoleId: null,
     welcomeMessage: '{user}, bem-vindo(a) ao servidor!',
     leaveMessage: '{user} saiu do servidor.',
-    maintenanceMessage: 'O bot esta em manutencao.',
+    maintenanceMessage: 'O bot está em manutenção.',
   };
 }
 
@@ -187,8 +187,8 @@ function processMessageVariables(message, user, guild) {
   if (!message) return '';
 
   return message
-    .replace(/{user}/g, user?.toString() || 'Usuario')
-    .replace(/{username}/g, user?.username || 'Usuario')
+    .replace(/{user}/g, user?.toString() || 'Usuário')
+    .replace(/{username}/g, user?.username || 'Usuário')
     .replace(/{server}/g, guild?.name || 'Servidor')
     .replace(/{serverId}/g, guild?.id || 'N/A')
     .replace(/{memberCount}/g, String(guild?.memberCount || 'N/A'))

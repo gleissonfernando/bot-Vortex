@@ -73,15 +73,15 @@ function createControlEmbed() {
     .setAuthor({ name: 'VORTEX | Relogio de Ponto' })
     .setTitle('Bater Ponto')
     .setDescription([
-      'Use este painel para registrar sua entrada e saida de servico.',
+      'Use este painel para registrar sua entrada e saída de serviço.',
       '',
       '**Como funciona**',
       '1. Clique em `Entrar em Serviço` quando iniciar no game.',
       '2. Clique em `Sair de Serviço` quando terminar.',
-      '3. Se esquecer de fechar, use `Solicitar ajuste de ponto` e informe o horario correto e o motivo.',
+      '3. Se esquecer de fechar, use `Solicitar ajuste de ponto` e informe o horário correto e o motivo.',
       '',
       '**Importante**',
-      'O ajuste abre um atendimento privado para voce e a administracao. Se aprovado, o ponto aberto e fechado automaticamente no horario informado.',
+      'O ajuste abre um atendimento privado para você e a administração. Se aprovado, o ponto aberto é fechado automaticamente no horário informado.',
     ].join('\n'))
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setTimestamp()
@@ -207,7 +207,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 
     return true;
   } catch (error) {
-    logger.error('Erro ao atualizar permissao do canal online:', error);
+    logger.error('Erro ao atualizar permissão do canal online:', error);
     return false;
   }
 }

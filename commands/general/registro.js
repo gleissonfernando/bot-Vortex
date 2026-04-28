@@ -5,11 +5,11 @@ const { sendVortexLog } = require('../../utils/notifications');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('registro')
-    .setDescription('Mostra o registro de ponto de um usuario.')
+    .setDescription('Mostra o registro de ponto de um usuário.')
     .addUserOption(option =>
       option
         .setName('usuario')
-        .setDescription('Use @ para consultar outro usuario')
+        .setDescription('Use @ para consultar outro usuário')
         .setRequired(false)),
 
   async execute(interaction) {
@@ -23,7 +23,7 @@ module.exports = {
       description: [
         `**Comando:** /registro`,
         `**Usado por:** <@${interaction.user.id}> (${interaction.user.id})`,
-        `**Usuario consultado:** <@${target.id}> (${target.id})`,
+        `**Usuário consultado:** <@${target.id}> (${target.id})`,
         `**Canal:** ${interaction.channel ? `<#${interaction.channel.id}>` : 'N/A'}`,
       ].join('\n'),
       color: '#7000FF',

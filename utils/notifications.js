@@ -45,7 +45,7 @@ function syncStoredLogChannel() {
         data.LOG_CHANNEL = FIXED_LOG_CHANNEL;
         fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
     } catch (error) {
-        // Falha de sincronização nao pode impedir o envio dos logs.
+        // Falha de sincronização não pode impedir o envio dos logs.
     }
 }
 
@@ -133,7 +133,7 @@ async function sendAlertDm(client, { title, description, color = '#FF0055', type
 async function notifyBotDown(client, reason, context = 'Bot caiu') {
   const reasonText = reason instanceof Error
      ? `${reason.message}\n${reason.stack || ''}`.trim()
-        : String(reason || 'Motivo nao informado');
+        : String(reason || 'Motivo não informado');
 
     const description = [
         '**Status:** alerta de queda/erro critico',

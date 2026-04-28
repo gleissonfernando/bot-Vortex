@@ -8,9 +8,9 @@ const ACTION_DETAILS = {
     ChannelCreate: { title: 'Canal criado', verb: 'criou um canal', color: '#57F287' },
     ChannelUpdate: { title: 'Canal atualizado', verb: 'alterou um canal', color: '#00D9FF' },
     ChannelDelete: { title: 'Canal deletado', verb: 'deletou um canal', color: '#FF0055' },
-    ChannelOverwriteCreate: { title: 'Permissao criada', verb: 'criou permissao em um canal', color: '#57F287' },
-    ChannelOverwriteUpdate: { title: 'Permissao alterada', verb: 'alterou permissao em um canal', color: '#FFA500' },
-    ChannelOverwriteDelete: { title: 'Permissao removida', verb: 'removeu permissao de um canal', color: '#FF0055' },
+    ChannelOverwriteCreate: { title: 'Permissão criada', verb: 'criou permissão em um canal', color: '#57F287' },
+    ChannelOverwriteUpdate: { title: 'Permissão alterada', verb: 'alterou permissão em um canal', color: '#FFA500' },
+    ChannelOverwriteDelete: { title: 'Permissão removida', verb: 'removeu permissão de um canal', color: '#FF0055' },
     MemberKick: { title: 'Membro expulso', verb: 'expulsou um membro', color: '#FF8C00' },
     MemberPrune: { title: 'Limpeza de membros', verb: 'removeu membros inativos', color: '#FF8C00' },
     MemberBanAdd: { title: 'Membro banido', verb: 'baniu um membro', color: '#FF0055' },
@@ -36,9 +36,9 @@ const ACTION_DETAILS = {
     MessageBulkDelete: { title: 'Mensagens deletadas', verb: 'deletou mensagens em massa', color: '#FF8C00' },
     MessagePin: { title: 'Mensagem fixada', verb: 'fixou uma mensagem', color: '#57F287' },
     MessageUnpin: { title: 'Mensagem desafixada', verb: 'desafixou uma mensagem', color: '#FFA500' },
-    IntegrationCreate: { title: 'Integracao criada', verb: 'criou uma integracao', color: '#57F287' },
-    IntegrationUpdate: { title: 'Integracao atualizada', verb: 'alterou uma integracao', color: '#00D9FF' },
-    IntegrationDelete: { title: 'Integracao deletada', verb: 'deletou uma integracao', color: '#FF0055' },
+    IntegrationCreate: { title: 'Integração criada', verb: 'criou uma integração', color: '#57F287' },
+    IntegrationUpdate: { title: 'Integração atualizada', verb: 'alterou uma integração', color: '#00D9FF' },
+    IntegrationDelete: { title: 'Integração deletada', verb: 'deletou uma integração', color: '#FF0055' },
     StageInstanceCreate: { title: 'Palco criado', verb: 'criou um palco', color: '#57F287' },
     StageInstanceUpdate: { title: 'Palco atualizado', verb: 'alterou um palco', color: '#00D9FF' },
     StageInstanceDelete: { title: 'Palco encerrado', verb: 'encerrou um palco', color: '#FF0055' },
@@ -48,12 +48,12 @@ const ACTION_DETAILS = {
     ThreadCreate: { title: 'Topico criado', verb: 'criou um topico', color: '#57F287' },
     ThreadUpdate: { title: 'Topico atualizado', verb: 'alterou um topico', color: '#00D9FF' },
     ThreadDelete: { title: 'Topico deletado', verb: 'deletou um topico', color: '#FF0055' },
-    AutoModerationRuleCreate: { title: 'AutoMod criado', verb: 'criou regra de automoderacao', color: '#57F287' },
-    AutoModerationRuleUpdate: { title: 'AutoMod atualizado', verb: 'alterou regra de automoderacao', color: '#00D9FF' },
-    AutoModerationRuleDelete: { title: 'AutoMod deletado', verb: 'deletou regra de automoderacao', color: '#FF0055' },
+    AutoModerationRuleCreate: { title: 'AutoMod criado', verb: 'criou regra de automoderação', color: '#57F287' },
+    AutoModerationRuleUpdate: { title: 'AutoMod atualizado', verb: 'alterou regra de automoderação', color: '#00D9FF' },
+    AutoModerationRuleDelete: { title: 'AutoMod deletado', verb: 'deletou regra de automoderação', color: '#FF0055' },
     AutoModerationBlockMessage: { title: 'Mensagem bloqueada', verb: 'bloqueou mensagem pelo AutoMod', color: '#FFA500' },
     AutoModerationFlagToChannel: { title: 'Mensagem sinalizada', verb: 'sinalizou mensagem pelo AutoMod', color: '#FFA500' },
-    AutoModerationUserCommunicationDisabled: { title: 'Usuario silenciado', verb: 'silenciou usuario pelo AutoMod', color: '#FF8C00' },
+    AutoModerationUserCommunicationDisabled: { title: 'Usuário silenciado', verb: 'silenciou usuário pelo AutoMod', color: '#FF8C00' },
 };
 
 const CHANGE_LABELS = {
@@ -68,7 +68,7 @@ const CHANGE_LABELS = {
     afk_channel_id: 'Canal AFK',
     afk_timeout: 'Tempo AFK',
     mfa_level: 'Nivel MFA',
-    verification_level: 'Nivel de verificacao',
+    verification_level: 'Nível de verificação',
     explicit_content_filter: 'Filtro de conteudo',
     default_message_notifications: 'Notificacoes padrao',
     vanity_url_code: 'URL personalizada',
@@ -79,7 +79,7 @@ const CHANGE_LABELS = {
     public_updates_channel_id: 'Canal de updates',
     topic: 'Topico',
     bitrate: 'Bitrate',
-    user_limit: 'Limite de usuarios',
+    user_limit: 'Limite de usuários',
     nsfw: 'NSFW',
     rate_limit_per_user: 'Slowmode',
     parent_id: 'Categoria',
@@ -134,7 +134,7 @@ function formatTarget(target) {
 function formatPrimitive(value) {
     if (value === undefined || value === null || value === '') return 'vazio';
     if (value instanceof Date) return formatDate(value);
-    if (typeof value === 'boolean') return value ? 'sim' : 'nao';
+    if (typeof value === 'boolean') return value ? 'sim' : 'não';
     if (typeof value === 'number') return String(value);
     return String(value);
 }
@@ -165,7 +165,7 @@ function formatChangeValue(value) {
 
 function formatChanges(changes = []) {
     if (!Array.isArray(changes) || changes.length === 0) {
-        return 'Nenhuma alteracao detalhada foi enviada pela auditoria do Discord.';
+        return 'Nenhuma alteração detalhada foi enviada pela auditoria do Discord.';
     }
 
     return changes
@@ -189,7 +189,7 @@ function formatExtra(extra) {
     if (extra.membersRemoved !== undefined) details.push(`Membros removidos: ${code(extra.membersRemoved)}`);
     if (extra.messageId) details.push(`Mensagem ID: ${code(extra.messageId)}`);
     if (extra.roleName) details.push(`Cargo: ${code(extra.roleName)}`);
-    if (extra.integrationType) details.push(`Integracao: ${code(extra.integrationType)}`);
+    if (extra.integrationType) details.push(`Integração: ${code(extra.integrationType)}`);
 
     return details.length ? details.join('\n') : null;
 }
@@ -206,7 +206,7 @@ module.exports = {
             const actionName = getActionName(auditLogEntry.action);
             const action = ACTION_DETAILS[actionName] || {
                 title: 'Acao auditada',
-                verb: 'executou uma acao auditada',
+                verb: 'executou uma ação auditada',
                 color: '#5865F2',
             };
             const executor = auditLogEntry.executor;

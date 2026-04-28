@@ -4,11 +4,11 @@ const { getUserPoint, getEffectiveTotalMs, formatDuration, formatDate } = requir
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('serve')
-    .setDescription('Mostra os dados de servidor de um usuario.')
+    .setDescription('Mostra os dados de servidor de um usuário.')
     .addUserOption(option =>
       option
         .setName('usuario')
-        .setDescription('Usuario para consultar')
+        .setDescription('Usuário para consultar')
         .setRequired(false)),
 
   async execute(interaction) {

@@ -38,7 +38,7 @@ function parseDiscordMessageLink(value) {
 async function fetchBinary(url) {
   const response = await fetch(url, { redirect: 'follow' });
   if (!response.ok) {
-    throw new Error(`Falha ao baixar a midia (${response.status}).`);
+    throw new Error(`Falha ao baixar a mídia (${response.status}).`);
   }
 
   const contentType = (response.headers.get('content-type') || '').toLowerCase();
@@ -92,7 +92,7 @@ async function resolveClipSource(interaction, rawLink) {
 
     sourceUrl = pickMediaUrlFromMessage(message);
     if (!sourceUrl) {
-      throw new Error('A mensagem informada nao tem uma midia de video ou GIF anexada.');
+      throw new Error('A mensagem informada não tem uma mídia de vídeo ou GIF anexada.');
     }
   }
 
@@ -103,7 +103,7 @@ async function resolveClipSource(interaction, rawLink) {
     || contentType === 'image/gif';
 
   if (!isAllowedContentType && !extMatch && !isDirectMediaUrl(sourceUrl)) {
-    throw new Error('O link informado nao aponta para uma midia de video valida.');
+    throw new Error('O link informado não aponta para uma mídia de vídeo válida.');
   }
 
   const fallbackExt = contentType.includes('webm')
@@ -132,7 +132,7 @@ async function safeReply(interaction, options) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('clipe')
-    .setDescription('Baixa uma midia de video de um link e envia como clipe.')
+    .setDescription('Baixa uma mídia de vídeo de um link e envia como clipe.')
     .addStringOption((option) =>
       option
         .setName('link')
@@ -201,7 +201,7 @@ module.exports = {
       sendVortexLog(interaction.client, {
         title: 'Clipe Enviado',
         description: [
-          `**Usuario:** <@${interaction.user.id}> (${interaction.user.id})`,
+          `**Usuário:** <@${interaction.user.id}> (${interaction.user.id})`,
           `**Canal:** <#${interaction.channel.id}> (${interaction.channel.id})`,
           `**Origem:** ${clip.sourceUrl}`,
           `**Arquivo:** ${clip.fileName}`,
@@ -214,7 +214,7 @@ module.exports = {
     } catch (error) {
       console.error('[VORTEX] Erro ao enviar clipe:', error);
       return interaction.editReply({
-        content: '❌ Baixei o link, mas nao consegui enviar como video. Verifique o tamanho do arquivo ou a permissao de anexar arquivos.',
+        content: '❌ Baixei o link, mas não consegui enviar como vídeo. Verifique o tamanho do arquivo ou a permissão de anexar arquivos.',
       });
     }
 

@@ -28,7 +28,7 @@ module.exports = {
     }
 
     if (!isGerencia(interaction)) {
-      return interaction.reply({ content: '❌ Voce nao tem permissao para ativar o painel de ponto.', ephemeral: true });
+      return interaction.reply({ content: '❌ Você não tem permissão para ativar o painel de ponto.', ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });

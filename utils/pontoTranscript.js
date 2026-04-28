@@ -81,7 +81,7 @@ function getMonthlySummary(sessions) {
 
 function buildHistoryRows(sessions) {
   if (!sessions.length) {
-    return '<tr><td colspan="7" class="empty">Nenhum ponto registrado neste mes. A folha deste usuario esta zerada.</td></tr>';
+    return '<tr><td colspan="7" class="empty">Nenhum ponto registrado neste mês. A folha deste usuário está zerada.</td></tr>';
   }
 
   return sessions.map((session) => `
@@ -102,13 +102,13 @@ function buildTimelineRows({ data, sessions, generatedAt }) {
   const rows = [];
 
   if (data.firstPointAt) rows.push(['Primeiro ponto registrado', formatDate(data.firstPointAt)]);
-  if (data.lastPointOpenAt) rows.push(['Ultima abertura', formatDate(data.lastPointOpenAt)]);
+  if (data.lastPointOpenAt) rows.push(['Última abertura', formatDate(data.lastPointOpenAt)]);
   if (lastSession?.closedAt) rows.push(['Ultimo fechamento', formatDate(lastSession.closedAt)]);
   if (lastSession?.closedBy) rows.push(['Responsavel pelo ultimo fechamento', lastSession.closedBy]);
   rows.push(['Transcript gerado', formatDate(generatedAt)]);
 
   if (!rows.length) {
-    rows.push(['Status', 'Nenhum evento de ponto encontrado para este usuario.']);
+    rows.push(['Status', 'Nenhum evento de ponto encontrado para este usuário.']);
   }
 
   return rows.map(([label, value]) => `
@@ -400,7 +400,7 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
               <th>#</th>
               <th>Abertura</th>
               <th>Fechamento</th>
-              <th>Duracao</th>
+              <th>Duração</th>
               <th>Ticket</th>
               <th>Responsavel</th>
               <th>Status</th>

@@ -107,20 +107,20 @@ function buildPanelEmbed(interaction) {
       '',
       '**Como funciona**',
       '1. Selecione o canal de texto onde o aviso sera publicado.',
-      '2. Se quiser relacionar uma pessoa ao aviso local, pesquise e selecione o usuario pelo nome.',
+      '2. Se quiser relacionar uma pessoa ao aviso local, pesquise e selecione o usuário pelo nome.',
       '3. Selecione cargos extras para mencionar, alem dos cargos fixos do sistema.',
       '4. Selecione a call quando o aviso estiver ligado a uma reuniao ou atendimento.',
-      '5. Se quiser, adicione um link de imagem do Discord para aparecer no aviso. Esse campo nao e obrigatorio.',
-      '6. Individual envia DM para o usuario selecionado. Local publica no canal selecionado. Global envia DM para todos.',
+      '5. Se quiser, adicione um link de imagem do Discord para aparecer no aviso. Esse campo não é obrigatório.',
+      '6. Individual envia DM para o usuário selecionado. Local publica no canal selecionado. Global envia DM para todos.',
       '',
       '**Importante**',
-      'A imagem oficial da Vortex continua fixa no aviso principal. Se um link de imagem for informado, ele sera exibido em um bloco extra do aviso. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.',
+      'A imagem oficial da Vortex continua fixa no aviso principal. Se um link de imagem for informado, ele será exibido em um bloco extra do aviso. Alguns usuários podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.',
     ].join('\n'))
     .addFields(
-      { name: 'Individual', value: 'Envia direto no privado do usuario selecionado.', inline: true },
+      { name: 'Individual', value: 'Envia direto no privado do usuário selecionado.', inline: true },
       { name: 'Local', value: 'Envia somente no canal selecionado.', inline: true },
       { name: 'Global Vortex', value: 'Envia DM para todos deste Discord.', inline: true },
-      { name: 'Usuario selecionado', value: 'Quando preenchido, aparece e pode ser mencionado no aviso local.', inline: true }
+      { name: 'Usuário selecionado', value: 'Quando preenchido, aparece e pode ser mencionado no aviso local.', inline: true }
     )
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
@@ -140,7 +140,7 @@ function buildPanelComponents() {
   const userRow = new ActionRowBuilder().addComponents(
     new UserSelectMenuBuilder()
       .setCustomId(CUSTOM_IDS.selectUser)
-      .setPlaceholder('Pesquise e selecione o usuario para aviso individual')
+      .setPlaceholder('Pesquise e selecione o usuário para aviso individual')
       .setMinValues(1)
       .setMaxValues(1)
   );
@@ -301,7 +301,7 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
   ];
 
   if ((scope === 'guild' || scope === 'direct') && selection.userId) {
-    fields.push({ name: 'Usuario relacionado', value: `<@${selection.userId}>`, inline: true });
+    fields.push({ name: 'Usuário relacionado', value: `<@${selection.userId}>`, inline: true });
   }
   if (selection.roleIds?.length) {
     fields.push({ name: 'Cargos extras', value: selection.roleIds.map((roleId) => `<@&${roleId}>`).join(' '), inline: true });
@@ -495,7 +495,7 @@ module.exports = {
     if (interaction.customId === CUSTOM_IDS.direct) {
       const selectedUser = await getSelectedUser(interaction);
       if (!selectedUser) {
-        return safeReply(interaction, { content: '❌ Selecione um usuario antes de enviar o aviso individual.', ephemeral: true });
+        return safeReply(interaction, { content: '❌ Selecione um usuário antes de enviar o aviso individual.', ephemeral: true });
       }
       return interaction.showModal(buildMessageModal('direct'));
     }
@@ -548,7 +548,7 @@ module.exports = {
     if (scope === 'direct') {
       const selectedUser = await getSelectedUser(interaction);
       if (!selectedUser) {
-        return interaction.editReply({ content: '❌ Selecione um usuario antes de enviar o aviso individual.' });
+        return interaction.editReply({ content: '❌ Selecione um usuário antes de enviar o aviso individual.' });
       }
       result = await sendDmBatch([selectedUser], withNoticeImage({ embeds: noticeEmbeds }));
     }
@@ -567,12 +567,12 @@ module.exports = {
         `**Staff:** <@${interaction.user.id}> (${interaction.user.id})`,
         `**Alcance:** ${scopeLabel}`,
         scope === 'guild' && getSelection(interaction).channelId ? `**Canal:** <#${getSelection(interaction).channelId}> (${getSelection(interaction).channelId})` : null,
-        (scope === 'guild' || scope === 'direct') && getSelection(interaction).userId ? `**Usuario relacionado:** <@${getSelection(interaction).userId}> (${getSelection(interaction).userId})` : null,
+        (scope === 'guild' || scope === 'direct') && getSelection(interaction).userId ? `**Usuário relacionado:** <@${getSelection(interaction).userId}> (${getSelection(interaction).userId})` : null,
         getSelection(interaction).roleIds?.length ? `**Cargos extras:** ${getSelection(interaction).roleIds.map((roleId) => `<@&${roleId}>`).join(' ')}` : null,
         getSelection(interaction).callId ? `**Call:** <#${getSelection(interaction).callId}> (${getSelection(interaction).callId})` : null,
         `**Titulo:** ${title}`,
         imageUrl ? `**Imagem opcional:** ${imageUrl}` : null,
-        `**Mensagem no canal:** ${channelSent ? 'sim' : 'nao'}`,
+        `**Mensagem no canal:** ${channelSent ? 'sim' : 'não'}`,
         scope === 'global' ? `**Total DM:** ${result.total}` : null,
         scope === 'global' ? `**DMs enviadas:** ${result.sent}` : null,
         scope === 'global' ? `**Falhas DM:** ${result.failed}` : null,
@@ -586,7 +586,7 @@ module.exports = {
       '✅ Aviso finalizado.',
       `Alcance: **${scopeLabel}**`,
       scope === 'guild' ? `Canal: <#${getSelection(interaction).channelId}>` : null,
-      scope === 'guild' ? `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**` : 'Mensagem no canal: **nao enviada**',
+      scope === 'guild' ? `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**` : 'Mensagem no canal: **não enviada**',
     ];
 
     if (imageUrl) {

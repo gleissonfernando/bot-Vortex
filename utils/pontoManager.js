@@ -305,7 +305,7 @@ function parseFlexiblePointAdjustment(dateInput, timeRangeInput, now = new Date(
   const dateTokens = extractFlexibleDateTokens(dateInput);
   const startDateBase = parseFlexibleDateToken(dateTokens[0], now);
   if (!startDateBase) {
-    return { ok: false, message: 'Data invalida. Use `23`, `23/04`, `23/04/2026` ou `23 ate 24`.' };
+    return { ok: false, message: 'Data inválida. Use `23`, `23/04`, `23/04/2026` ou `23 até 24`.' };
   }
 
   const explicitEndDateBase = dateTokens[1] ? parseFlexibleDateToken(dateTokens[1], startDateBase) : null;
@@ -313,7 +313,7 @@ function parseFlexiblePointAdjustment(dateInput, timeRangeInput, now = new Date(
   const startTime = parseFlexibleTimeToken(timeTokens[0]);
   const endTime = parseFlexibleTimeToken(timeTokens[1]);
   if (!startTime || !endTime) {
-    return { ok: false, message: 'Horario invalido. Use algo como `23 as 02`, `23:00 ate 02:00` ou `23h 02h`.' };
+    return { ok: false, message: 'Horário inválido. Use algo como `23 às 02`, `23:00 até 02:00` ou `23h 02h`.' };
   }
 
   const startedAt = buildDateWithTime(startDateBase, startTime);
@@ -323,7 +323,7 @@ function parseFlexiblePointAdjustment(dateInput, timeRangeInput, now = new Date(
   }
 
   if (closedAt.getTime() <= startedAt.getTime()) {
-    return { ok: false, message: 'O horario de fechamento precisa ser depois da abertura. Se virou o dia, informe a segunda data ou deixe o sistema virar automaticamente.' };
+    return { ok: false, message: 'O horário de fechamento precisa ser depois da abertura. Se virou o dia, informe a segunda data ou deixe o sistema virar automaticamente.' };
   }
 
   return { ok: true, startedAt, closedAt };

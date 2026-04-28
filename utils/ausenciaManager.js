@@ -150,25 +150,25 @@ async function sendAbsenceLog(client, guildId, absence, action = 'created') {
   const isRemoved = action === 'removed';
   const embed = new EmbedBuilder()
     .setColor(isCreated ? '#7000FF' : isUpdated ? '#FEE75C' : isRemoved ? '#ED4245' : '#57F287')
-    .setTitle(isCreated ? 'Ausencia Registrada' : isUpdated ? 'Retorno de Ausencia Alterado' : isRemoved ? 'Ausencia Retirada' : 'Ausencia Finalizada')
+    .setTitle(isCreated ? 'Ausência Registrada' : isUpdated ? 'Retorno de Ausência Alterado' : isRemoved ? 'Ausência Retirada' : 'Ausência Finalizada')
     .setDescription(isCreated
-      ? `O usuario <@${absence.userId}> entrou em modo ausencia e recebeu o cargo <@&${absence.roleId}>.`
+      ? `O usuário <@${absence.userId}> entrou em modo ausência e recebeu o cargo <@&${absence.roleId}>.`
       : isUpdated
         ? `A data de retorno de <@${absence.userId}> foi alterada por <@${absence.updatedBy}>.`
         : isRemoved
-          ? `O usuario <@${absence.userId}> retirou a propria ausencia e o cargo <@&${absence.roleId}> foi removido.`
-          : `A ausencia de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
+          ? `O usuário <@${absence.userId}> retirou a própria ausência e o cargo <@&${absence.roleId}> foi removido.`
+          : `A ausência de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
     .addFields(
       { name: 'Nome', value: absence.name || 'N/A', inline: true },
       { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
       { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
-      { name: 'Periodo informado', value: absence.periodInput || 'N/A', inline: true },
-      { name: 'Inicio', value: formatDate(absence.startedAt), inline: true },
+      { name: 'Período informado', value: absence.periodInput || 'N/A', inline: true },
+      { name: 'Início', value: formatDate(absence.startedAt), inline: true },
       { name: 'Fim', value: formatDate(absence.endsAt), inline: true },
       { name: 'Tempo', value: formatDuration(new Date(absence.endsAt).getTime() - new Date(absence.startedAt).getTime()), inline: true },
-      { name: 'Cargo de ausencia', value: `<@&${absence.roleId}>`, inline: true }
+      { name: 'Cargo de ausência', value: `<@&${absence.roleId}>`, inline: true }
     )
-    .setFooter({ text: `Vortex - Sistema de Ausencia • ${guildId}` })
+    .setFooter({ text: `Vortex - Sistema de Ausência • ${guildId}` })
     .setTimestamp();
 
   await channel.send({ embeds: [embed] }).catch(() => null);
@@ -181,7 +181,7 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
   if (!endsAt) {
     return {
       ok: false,
-      message: 'Periodo invalido. Para horas, use `12:00`, `2h`, `12h` ou similar. Para data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use quantidade como `3`.',
+      message: 'Período inválido. Para horas, use `12:00`, `2h`, `12h` ou similar. Para data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use quantidade como `3`.',
     };
   }
 
@@ -195,23 +195,23 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
 
   const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (!member) {
-    return { ok: false, message: 'Nao consegui encontrar seu membro no servidor.' };
+    return { ok: false, message: 'Não consegui encontrar seu membro no servidor.' };
   }
 
   const role = await interaction.guild.roles.fetch(config.roleId).catch(() => null);
   if (!role) {
-    return { ok: false, message: `Cargo de ausencia <@&${config.roleId}> nao encontrado.` };
+    return { ok: false, message: `Cargo de ausência <@&${config.roleId}> não encontrado.` };
   }
 
   const activeAbsence = getActiveGuildAbsences(interaction.guild.id).find((absence) => absence.userId === interaction.user.id);
   if (member.roles.cache.has(role.id) || activeAbsence) {
     return {
       ok: false,
-      message: 'Solicitacao recusada: voce ja esta em ausencia. Quando sua ausencia acabar, voce podera solicitar outra. Se precisar alterar algo, entre em contato com a gerencia para avaliarem seu caso.',
+      message: 'Solicitação recusada: você já está em ausência. Quando sua ausência acabar, você poderá solicitar outra. Se precisar alterar algo, entre em contato com a gerência para avaliarem seu caso.',
     };
   }
 
-  await member.roles.add(role.id, 'Ausencia registrada pelo sistema Vortex');
+  await member.roles.add(role.id, 'Ausência registrada pelo sistema Vortex');
 
   const now = new Date();
   const absence = saveAbsence({
@@ -240,12 +240,12 @@ async function removeOwnAbsence(interaction) {
   const data = readAbsences();
   const absence = data[interaction.guild.id]?.[interaction.user.id];
   if (!absence || absence.status !== 'active') {
-    return { ok: false, message: 'Voce nao possui ausencia ativa para retirar.' };
+    return { ok: false, message: 'Você não possui ausência ativa para retirar.' };
   }
 
   const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (member && absence.roleId) {
-    await member.roles.remove(absence.roleId, 'Ausencia retirada pelo usuario no sistema Vortex').catch(() => null);
+    await member.roles.remove(absence.roleId, 'Ausência retirada pelo usuário no sistema Vortex').catch(() => null);
   }
 
   const now = new Date();
@@ -271,15 +271,15 @@ async function notifyAbsenceReturnChanged(client, guild, absence, oldEndsAt) {
 
   const embed = new EmbedBuilder()
     .setColor('#FEE75C')
-    .setTitle('Retorno de Ausencia Alterado')
-    .setDescription('Sua data de retorno de ausencia foi alterada pela gerencia.')
+    .setTitle('Retorno de Ausência Alterado')
+    .setDescription('Sua data de retorno de ausência foi alterada pela gerência.')
     .addFields(
       { name: 'Servidor', value: guild?.name || 'Vortex', inline: true },
       { name: 'Retorno anterior', value: formatDate(oldEndsAt), inline: true },
       { name: 'Novo retorno', value: formatDate(absence.endsAt), inline: true },
       { name: 'Alterado por', value: `<@${absence.updatedBy}>`, inline: true }
     )
-    .setFooter({ text: 'Vortex - Sistema de Ausencia' })
+    .setFooter({ text: 'Vortex - Sistema de Ausência' })
     .setTimestamp();
 
   await user.send({ embeds: [embed] });
@@ -290,14 +290,14 @@ async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) 
   const data = readAbsences();
   const absence = data[guild.id]?.[userId];
   if (!absence || absence.status !== 'active') {
-    return { ok: false, message: 'Nao existe ausencia ativa para este usuario.' };
+    return { ok: false, message: 'Não existe ausência ativa para este usuário.' };
   }
 
   const nextEndsAt = parsePeriod(returnInput);
   if (!nextEndsAt) {
     return {
       ok: false,
-      message: 'Retorno invalido. Use data `DD/MM` ou `DD/MM/AAAA`, quantidade de dias como `3`, ou horas como `12:00`/`12h`.',
+      message: 'Retorno inválido. Use data `DD/MM` ou `DD/MM/AAAA`, quantidade de dias como `3`, ou horas como `12:00`/`12h`.',
     };
   }
 
@@ -327,7 +327,7 @@ async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) 
 async function finishAbsence(client, guild, absence, data) {
   const member = await guild.members.fetch(absence.userId).catch(() => null);
   if (member) {
-    await member.roles.remove(absence.roleId, 'Ausencia finalizada pelo sistema Vortex').catch(() => null);
+    await member.roles.remove(absence.roleId, 'Ausência finalizada pelo sistema Vortex').catch(() => null);
   }
 
   const now = new Date();
@@ -346,7 +346,7 @@ async function finishAbsence(client, guild, absence, data) {
     const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
     if (channel?.isTextBased?.()) {
       await channel.send({
-        content: `<@${absence.userId}> Hoje e seu ultimo dia de ausencia, ta na hora de trabalhar.`,
+        content: `<@${absence.userId}> Hoje é seu último dia de ausência, está na hora de trabalhar.`,
       }).catch(() => null);
       next.endMessageSentAt = now.toISOString();
     }
@@ -368,7 +368,7 @@ async function checkExpiredAbsences(client) {
       if (!absence.endsAt || new Date(absence.endsAt).getTime() > now) continue;
 
       await finishAbsence(client, guild, absence, data).catch((error) => {
-        logger.error('Erro ao finalizar ausencia:', error);
+        logger.error('Erro ao finalizar ausência:', error);
       });
     }
   }
@@ -378,9 +378,9 @@ async function checkExpiredAbsences(client) {
 
 function initAbsenceManager(client) {
   if (interval) clearInterval(interval);
-  checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausencias no inicio:', error));
+  checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausências no início:', error));
   interval = setInterval(() => {
-    checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausencias:', error));
+    checkExpiredAbsences(client).catch((error) => logger.error('Erro ao checar ausências:', error));
   }, CHECK_INTERVAL_MS);
 }
 

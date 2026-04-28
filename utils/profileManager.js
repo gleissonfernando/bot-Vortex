@@ -104,7 +104,7 @@ async function ensureProfileChannelAccess(guild, channelId, userId = null) {
       ViewChannel: true,
       SendMessages: true,
       ReadMessageHistory: true,
-    }, { reason: 'Garantir acesso da gerencia ao canal privado do perfil' }).catch(() => null);
+    }, { reason: 'Garantir acesso da gerência ao canal privado do perfil' }).catch(() => null);
   }
 }
 
@@ -236,7 +236,7 @@ async function registerApprovedProfile(guild, member, {
 async function updateProfileLink(guild, user, link, updatedBy) {
   const profileUrl = normalizeProfileUrl(link);
   if (!profileUrl) {
-    return { ok: false, message: 'Link invalido. Use um link http/https do Discord ou de imagem.' };
+    return { ok: false, message: 'Link inválido. Use um link http/https do Discord ou de imagem.' };
   }
 
   const data = readProfiles();
@@ -245,7 +245,7 @@ async function updateProfileLink(guild, user, link, updatedBy) {
   const now = new Date();
   const existing = data[guild.id][user.id] || {};
   if (!existing.approvedAt) {
-    return { ok: false, message: 'Este usuario ainda nao possui perfil aprovado salvo pelo /set.' };
+    return { ok: false, message: 'Este usuário ainda não possui perfil aprovado salvo pelo /set.' };
   }
 
   const images = await getUserImages(user);
@@ -274,7 +274,7 @@ async function updateProfileLink(guild, user, link, updatedBy) {
 async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
   const normalizedLevel = normalizeProfileLevel(nivelGame);
   if (!normalizedLevel) {
-    return { ok: false, message: 'Nivel invalido. Use apenas numeros, exemplo: 12.' };
+    return { ok: false, message: 'Nível inválido. Use apenas números, exemplo: 12.' };
   }
 
   const data = readProfiles();
@@ -283,7 +283,7 @@ async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
   const now = new Date();
   const existing = data[guild.id][user.id] || {};
   if (!existing.approvedAt) {
-    return { ok: false, message: 'Este usuario ainda nao possui perfil aprovado salvo pelo /set.' };
+    return { ok: false, message: 'Este usuário ainda não possui perfil aprovado salvo pelo /set.' };
   }
 
   const images = await getUserImages(user);
@@ -316,11 +316,11 @@ async function registerManualProfile(guild, user, {
 } = {}) {
   const profileUrl = photoLink ? normalizeProfileUrl(photoLink) : null;
   if (photoLink && !profileUrl) {
-    return { ok: false, message: 'Link da foto invalido. Use um link http/https.' };
+    return { ok: false, message: 'Link da foto inválido. Use um link http/https.' };
   }
   const normalizedLevel = nivelGame ? normalizeProfileLevel(nivelGame) : null;
   if (nivelGame && !normalizedLevel) {
-    return { ok: false, message: 'Nivel invalido. Use apenas numeros, exemplo: 12.' };
+    return { ok: false, message: 'Nível inválido. Use apenas números, exemplo: 12.' };
   }
 
   const member = await guild.members.fetch(user.id).catch(() => null);
@@ -373,20 +373,20 @@ function buildProfileEmbed({ guild, user, member, profile }) {
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
     .setImage(imageUrl)
     .addFields(
-      { name: 'Usuario', value: `<@${user.id}>`, inline: true },
+      { name: 'Usuário', value: `<@${user.id}>`, inline: true },
       { name: 'Discord ID', value: `\`${user.id}\``, inline: true },
       { name: 'Status', value: profile ? (profile.registeredManually ? 'Cadastrado manualmente' : 'Aprovado no /set') : 'Sem perfil aprovado salvo', inline: true },
       { name: 'Nome em game', value: profile?.nomeGame || 'N/A', inline: true },
       { name: 'ID em game', value: profile?.idGame || 'N/A', inline: true },
-      { name: 'Numero', value: profile?.numeroGame || 'N/A', inline: true },
-      { name: 'Nivel em game', value: profile?.nivelGame || 'N/A', inline: true },
+      { name: 'Número', value: profile?.numeroGame || 'N/A', inline: true },
+      { name: 'Nível em game', value: profile?.nivelGame || 'N/A', inline: true },
       { name: 'Call/Canal', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
       { name: 'Tipo', value: profile?.tipo || 'N/A', inline: true },
       { name: 'Cargo mais alto', value: member?.roles?.highest ? `<@&${member.roles.highest.id}>` : 'N/A', inline: true },
       { name: 'Links de fotos salvos', value: latestPhotos.slice(0, 1024), inline: false },
-      { name: 'Ultima atualizacao', value: profile?.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A', inline: false },
+      { name: 'Última atualização', value: profile?.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A', inline: false },
       { name: 'Tempo desde atualização', value: lastUpdate ? formatDuration(elapsed) : 'N/A', inline: true },
-      { name: 'Proxima atualização', value: nextUpdateAt ? formatDate(nextUpdateAt) : 'N/A', inline: true }
+      { name: 'Próxima atualização', value: nextUpdateAt ? formatDate(nextUpdateAt) : 'N/A', inline: true }
     )
     .setFooter({ text: `Vortex - Perfil • ${formatDate(new Date())}` })
     .setTimestamp();
@@ -418,11 +418,11 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
     .setColor('#FEE75C')
     .setTitle('Perfil precisa ser atualizado')
     .setDescription([
-      `O usuario <@${profile.userId}> precisa atualizar o perfil do /set.`,
+      `O usuário <@${profile.userId}> precisa atualizar o perfil do /set.`,
       '',
-      `**Ultima atualizacao:** ${formatDate(profile.lastProfileUpdateAt)}`,
+      `**Última atualização:** ${formatDate(profile.lastProfileUpdateAt)}`,
       `**Tempo sem atualizar:** ${formatDuration(now - lastUpdateMs)}`,
-      `**Horario do aviso:** ${formatDate(new Date())}`,
+      `**Horário do aviso:** ${formatDate(new Date())}`,
       '',
       'Use `/perfil link:<link da imagem> nivel:<numero>` para atualizar.',
     ].join('\n'))
@@ -503,7 +503,7 @@ function parseTestPeriod(amountInput, unitInput) {
 function initProfileManager(client) {
   if (interval) clearInterval(interval);
   ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
-  checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no inicio:', error));
+  checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no início:', error));
   interval = setInterval(() => {
     checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis:', error));
   }, PROFILE_CHECK_INTERVAL_MS);

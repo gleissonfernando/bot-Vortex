@@ -10,11 +10,11 @@ const { hasVortexLevel } = require('../../utils/permissions');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('perfil')
-    .setDescription('Mostra ou atualiza o perfil de um usuario aprovado no /set.')
+    .setDescription('Mostra ou atualiza o perfil de um usuário aprovado no /set.')
     .addUserOption((option) =>
       option
         .setName('usuario')
-        .setDescription('Usuario para consultar')
+        .setDescription('Usuário para consultar')
         .setRequired(false))
     .addStringOption((option) =>
       option
@@ -29,7 +29,7 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('nivel')
-        .setDescription('Numero do nivel em game para atualizar')
+        .setDescription('Número do nível em game para atualizar')
         .setRequired(false)),
 
   async execute(interaction) {
@@ -44,13 +44,13 @@ module.exports = {
 
     if (!requesterProfile && !canManageProfiles) {
       return interaction.editReply({
-        content: '❌ Voce precisa ter cadastro no /perfil ou ter sido aprovado no /set para ver perfis.',
+        content: '❌ Você precisa ter cadastro no /perfil ou ter sido aprovado no /set para ver perfis.',
       });
     }
 
     if ((link || photo || nivel) && target.id !== interaction.user.id && !canManageProfiles) {
       return interaction.editReply({
-        content: '❌ Voce so pode atualizar o seu proprio perfil.',
+        content: '❌ Você só pode atualizar o seu próprio perfil.',
       });
     }
 
@@ -78,7 +78,7 @@ module.exports = {
     const profile = getUserProfile(interaction.guild.id, target.id);
     if (!profile && !canManageProfiles) {
       return interaction.editReply({
-        content: '❌ Este usuario ainda nao possui perfil cadastrado.',
+        content: '❌ Este usuário ainda não possui perfil cadastrado.',
       });
     }
 

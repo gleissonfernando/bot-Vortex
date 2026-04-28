@@ -40,8 +40,8 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
-    { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatorio de ponto' },
-    { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausencia' },
+    { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatório de ponto' },
+    { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
 ];
@@ -164,7 +164,7 @@ module.exports = {
 
       sendVortexLog(interaction.client, {
           title: 'Relatorio Completo de Pontos Gerado',
-          description: `O relatorio completo de pontos foi gerado por <@${interaction.user.id}> (${interaction.user.id}).`,
+          description: `O relatório completo de pontos foi gerado por <@${interaction.user.id}> (${interaction.user.id}).`,
           color: '#7000FF',
           type: 'PONTO',
           userId: interaction.user.id
@@ -194,10 +194,10 @@ module.exports = {
     if (customId === 'close_selected_point') {
       await interaction.deferReply({ ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuario primeiro.' });
+      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
       const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId];
       if (!pointData?.activePointStartedAt) {
-        return interaction.editReply({ content: `❌ <@${userId}> nao esta com ponto aberto.` });
+        return interaction.editReply({ content: `❌ <@${userId}> não está com ponto aberto.` });
       }
       const confirmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -212,10 +212,10 @@ module.exports = {
       return interaction.editReply({
         content: [
           '⚠️ Confirme o fechamento manual do ponto.',
-          `Usuario: <@${userId}>`,
+          `Usuário: <@${userId}>`,
           `Aberto desde: ${formatDate(pointData.activePointStartedAt)}`,
           '',
-          'Ao confirmar, o ponto sera fechado agora, o usuario recebera DM e sera aberto um canal de correcao de ponto.',
+          'Ao confirmar, o ponto será fechado agora, o usuário receberá DM e será aberto um canal de correção de ponto.',
         ].join('\n'),
         components: [confirmRow],
       });
@@ -232,18 +232,18 @@ module.exports = {
       const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
       const result = await closePoint(interaction.guild.id, userId);
       if (result.action === 'already_closed') {
-        return interaction.editReply({ content: `❌ <@${userId}> nao esta com ponto aberto.` });
+        return interaction.editReply({ content: `❌ <@${userId}> não está com ponto aberto.` });
       }
       await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
       if (targetUser) {
         await targetUser.send({
           content: [
-            '⚠️ Seu ponto foi fechado manualmente pela gerencia.',
+            '⚠️ Seu ponto foi fechado manualmente pela gerência.',
             `Fechado por: <@${interaction.user.id}>`,
-            `Horario registrado: ${formatDate(result.data.lastPointCloseAt)}`,
+            `Horário registrado: ${formatDate(result.data.lastPointCloseAt)}`,
             `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
             '',
-            'Se esse horario estiver errado, solicite a correcao de ponto pelo painel de ponto ou fale com a gerencia.',
+            'Se esse horário estiver errado, solicite a correção de ponto pelo painel de ponto ou fale com a gerência.',
           ].join('\n'),
           allowedMentions: { users: [interaction.user.id] },
         }).catch(() => null);
@@ -252,15 +252,15 @@ module.exports = {
         ...pointBeforeClose,
         userId,
       }, {
-        reason: 'Fechamento manual pela gerencia',
+        reason: 'Fechamento manual pela gerência',
         closedAt: result.data.lastPointCloseAt,
         durationMs: result.durationMs,
         closedBy: interaction.user.id,
       }).catch(() => null);
       sendVortexLog(interaction.client, {
-        title: 'Ponto fechado pela gerencia',
+        title: 'Ponto fechado pela gerência',
         description: [
-          `Usuario: <@${userId}> (${userId})`,
+          `Usuário: <@${userId}> (${userId})`,
           `Gerente: <@${interaction.user.id}>`,
           `Fechado em: ${formatDate(result.data.lastPointCloseAt)}`,
           `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
@@ -272,7 +272,7 @@ module.exports = {
       return interaction.editReply({
         content: [
           `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.`,
-          correctionChannel ? `Canal de correcao: <#${correctionChannel.id}>` : 'Canal de correcao: nao criado.',
+          correctionChannel ? `Canal de correção: <#${correctionChannel.id}>` : 'Canal de correção: não criado.',
         ].join('\n'),
       });
     }
@@ -354,10 +354,10 @@ module.exports = {
       });
 
       sendVortexLog(interaction.client, {
-          title: 'Mensagem de Ausencia Alterada',
-          description: `Mensagem de fim de ausencia foi **${nextConfig.disableEndMessage ? 'DESLIGADA' : 'LIGADA'}** por <@${interaction.user.id}>.`,
+          title: 'Mensagem de Ausência Alterada',
+          description: `Mensagem de fim de ausência foi **${nextConfig.disableEndMessage ? 'DESLIGADA' : 'LIGADA'}** por <@${interaction.user.id}>.`,
           color: nextConfig.disableEndMessage ? '#FFA500' : '#57F287',
-          type: 'AUSENCIA',
+          type: 'AUSÊNCIA',
           userId: interaction.user.id
       }).catch(() => {});
 
@@ -387,7 +387,7 @@ module.exports = {
         modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder()
                 .setCustomId('user_id')
-                .setLabel('ID DO USUARIO')
+                .setLabel('ID DO USUÁRIO')
                 .setPlaceholder('Selecione no painel ou cole o ID Discord')
                 .setValue(selectedUserId || '')
                 .setStyle(TextInputStyle.Short)
@@ -400,15 +400,15 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('point_date')
                         .setLabel('DATA DO PONTO')
-                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
+                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 até 24')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('time_range')
-                        .setLabel('HORARIO DO PONTO')
-                        .setPlaceholder('Ex: 23 as 02, 23:00 ate 02:00 ou 12 as 23')
+                        .setLabel('HORÁRIO DO PONTO')
+                        .setPlaceholder('Ex: 23 às 02, 23:00 até 02:00 ou 12 às 23')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 )
@@ -422,12 +422,12 @@ module.exports = {
         const absenceConfig = getAbsenceConfig();
         const modal = new ModalBuilder()
             .setCustomId('modal_absence_role')
-            .setTitle('Configurar Cargo de Ausencia');
+            .setTitle('Configurar Cargo de Ausência');
 
         modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder()
                 .setCustomId('role_id')
-                .setLabel('ID DO CARGO DE AUSENCIA')
+                .setLabel('ID DO CARGO DE AUSÊNCIA')
                 .setPlaceholder('Cole o ID do cargo')
                 .setValue(absenceConfig.roleId)
                 .setStyle(TextInputStyle.Short)
@@ -440,14 +440,14 @@ module.exports = {
     if (customId === 'change_absence_return') {
         const modal = new ModalBuilder()
             .setCustomId('modal_absence_return')
-            .setTitle('Alterar Retorno de Ausencia');
+            .setTitle('Alterar Retorno de Ausência');
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('user_id')
-                    .setLabel('ID DO USUARIO')
-                    .setPlaceholder('Cole o ID Discord do usuario')
+                    .setLabel('ID DO USUÁRIO')
+                    .setPlaceholder('Cole o ID Discord do usuário')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
             ),
@@ -474,7 +474,7 @@ module.exports = {
                 new TextInputBuilder()
                     .setCustomId('user_id')
                     .setLabel('ID DO USUARIO')
-                    .setPlaceholder('Cole o ID Discord do usuario')
+                    .setPlaceholder('Cole o ID Discord do usuário')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
             ),
@@ -535,7 +535,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('nivel_game')
-                    .setLabel('NIVEL EM GAME')
+                    .setLabel('NÍVEL EM GAME')
                     .setPlaceholder('Ex: 12')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(false)
@@ -642,7 +642,7 @@ module.exports = {
         saveJSON(CONFIG_PATH, data);
 
         sendVortexLog(interaction.client, {
-            title: 'Canal de Atualizacoes Alterado',
+            title: 'Canal de Atualizações Alterado',
             description: `O canal do sistema de atualizações foi alterado para <#${data.UPDATE_LOG_CHANNEL_ID}> por <@${interaction.user.id}>.`,
             color: '#57F287',
             type: 'ATUALIZAÇÕES',
@@ -754,7 +754,7 @@ module.exports = {
 
         sendVortexLog(interaction.client, {
             title: 'Dados de Ponto Deletados',
-            description: `Os dados de ponto de <@${userId}> (${userId}) foram deletados por <@${interaction.user.id}>.\nRegistro existia: ${existed ? 'sim' : 'nao'}.`,
+            description: `Os dados de ponto de <@${userId}> (${userId}) foram deletados por <@${interaction.user.id}>.\nRegistro existia: ${existed ? 'sim' : 'não'}.`,
             color: '#FF0055',
             type: 'PONTO',
             userId: interaction.user.id
@@ -787,12 +787,12 @@ module.exports = {
         if (targetUser) {
             await targetUser.send({
                 content: [
-                    '✅ Seu ponto foi ajustado pela gerencia.',
+                    '✅ Seu ponto foi ajustado pela gerência.',
                     `Abertura aplicada: ${formatDate(result.startedAt)}`,
                     `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                     `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
                     '',
-                    'O sistema foi alterado com a correcao informada. Caso ainda exista divergencia, fale com a gerencia.',
+                    'O sistema foi alterado com a correção informada. Caso ainda exista divergência, fale com a gerência.',
                 ].join('\n'),
             }).catch(() => null);
         }
@@ -838,10 +838,10 @@ module.exports = {
         saveAbsenceConfig({ ABSENCE_ROLE_ID: roleId });
 
         sendVortexLog(interaction.client, {
-            title: 'Cargo de Ausencia Alterado',
-            description: `O cargo de ausencia foi alterado para <@&${roleId}> por <@${interaction.user.id}>.`,
+            title: 'Cargo de Ausência Alterado',
+            description: `O cargo de ausência foi alterado para <@&${roleId}> por <@${interaction.user.id}>.`,
             color: '#7000FF',
-            type: 'AUSENCIA',
+            type: 'AUSÊNCIA',
             userId: interaction.user.id
         }).catch(() => {});
 
@@ -862,16 +862,16 @@ module.exports = {
         }
 
         sendVortexLog(interaction.client, {
-            title: 'Retorno de Ausencia Alterado',
+            title: 'Retorno de Ausência Alterado',
             description: [
                 `**Staff:** <@${interaction.user.id}>`,
-                `**Usuario:** <@${userId}> (${userId})`,
+                `**Usuário:** <@${userId}> (${userId})`,
                 `**Retorno anterior:** ${formatAbsenceDate(result.oldEndsAt)}`,
                 `**Novo retorno:** ${formatAbsenceDate(result.absence.endsAt)}`,
-                `**DM enviada:** ${result.dmSent ? 'sim' : 'nao'}`,
+                `**DM enviada:** ${result.dmSent ? 'sim' : 'não'}`,
             ].join('\n'),
             color: '#FEE75C',
-            type: 'AUSENCIA',
+            type: 'AUSÊNCIA',
             userId: interaction.user.id
         }).catch(() => {});
 
@@ -898,7 +898,7 @@ module.exports = {
 
         const thresholdMs = parseTestPeriod(amount, unit);
         if (!thresholdMs) {
-            return safeReply(interaction, { content: '❌ Periodo invalido. Use unidade `minutos`, `horas` ou `dias`.', ephemeral: true });
+            return safeReply(interaction, { content: '❌ Período inválido. Use unidade `minutos`, `horas` ou `dias`.', ephemeral: true });
         }
 
         const results = await checkProfileUpdates(interaction.client, {
@@ -958,7 +958,7 @@ module.exports = {
                 '✅ Perfil cadastrado no sistema.',
                 `Usuário: <@${userId}>`,
                 `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
-                `Nivel: ${result.profile.nivelGame || 'N/A'}`,
+                `Nível: ${result.profile.nivelGame || 'N/A'}`,
                 `Call/Canal: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
                 `Fotos salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
                 `Data/hora real: ${formatDate(new Date())}`,
@@ -1013,17 +1013,17 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#5865F2')
       .setDescription('### 🔐 Controle de Cargos Vortex\n\n' + 
-                      'Nesta aba você seleciona cargos pesquisando pelo nome e define o nivel de acesso de cada grupo.\n\n' +
+                      'Nesta aba você seleciona cargos pesquisando pelo nome e define o nível de acesso de cada grupo.\n\n' +
                       '**Como funciona**\n' +
-                      '**Admin:** mexe em avisos, set e todos os sistemas de ponto, mas nao usa manutenção.\n' +
-                      '**Medio:** aceita set e envia avisos.\n' +
-                      '**Membro:** usa botoes de bater ponto e registra ações basicas.\n\n' +
+                      '**Admin:** mexe em avisos, set e todos os sistemas de ponto, mas não usa manutenção.\n' +
+                      '**Médio:** aceita set e envia avisos.\n' +
+                      '**Membro:** usa botões de bater ponto e registra ações básicas.\n\n' +
                       '**👑 Administrador Master:** <@&1497703127074345040>\n\n' +
                       '*Manutenção continua liberada somente para o cargo master.*')
       .addFields(
         { name: 'Acesso total', value: `<@&${SUPERIOR_ID}>`, inline: false },
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
-        { name: 'Medio Vortex', value: formatRoleList(levels.medio), inline: false },
+        { name: 'Médio Vortex', value: formatRoleList(levels.medio), inline: false },
         { name: 'Membro Vortex', value: formatRoleList(levels.membro), inline: false },
         { name: 'Set', value: formatRoleList(permissions.set, '`Sem filtro extra`'), inline: true },
         { name: 'Avisos', value: formatRoleList(permissions.avisos, '`Sem filtro extra`'), inline: true },
@@ -1037,7 +1037,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         new RoleSelectMenuBuilder().setCustomId('select_vortex_role_admin').setPlaceholder('Selecionar cargos Admin Vortex').setMinValues(0).setMaxValues(5)
       ),
       new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId('select_vortex_role_medio').setPlaceholder('Selecionar cargos Medio Vortex').setMinValues(0).setMaxValues(5)
+        new RoleSelectMenuBuilder().setCustomId('select_vortex_role_medio').setPlaceholder('Selecionar cargos Médio Vortex').setMinValues(0).setMaxValues(5)
       ),
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder().setCustomId('select_vortex_role_membro').setPlaceholder('Selecionar cargos Membro Vortex').setMinValues(0).setMaxValues(5)
@@ -1065,7 +1065,7 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
           { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
           { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
-          { name: 'Canal de atualizações', value: conf.UPDATE_LOG_CHANNEL_ID ? `<#${conf.UPDATE_LOG_CHANNEL_ID}>` : '`Padrao do sistema`', inline: true },
+          { name: 'Canal de atualizações', value: conf.UPDATE_LOG_CHANNEL_ID ? `<#${conf.UPDATE_LOG_CHANNEL_ID}>` : '`Padrão do sistema`', inline: true },
           { name: 'Atualizações recentes', value: readUpdatesSummary().slice(0, 900), inline: false }
       )
 
@@ -1098,7 +1098,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF')
       .setDescription('### Configuração geral\n\nUse os botões abaixo para abrir a configuração específica de **Set** ou **Avisos**. O canal de logs continua configurável nesta tela.')
       .addFields(
-        { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Nao configurado`', inline: true },
+        { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
         { name: 'Set', value: 'Configure cargos e permissões do sistema de set.', inline: true },
         { name: 'Avisos', value: 'Configure DMs e cargo mencionado nos avisos.', inline: true }
       );
@@ -1117,7 +1117,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription('### Configurar avisos\n\nControle o envio de DMs globais e escolha um cargo extra para ser mencionado nos avisos.')
       .addFields(
         { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Cargo extra mencionado', value: conf.NOTICE_MENTION_ROLE_ID ? `<@&${conf.NOTICE_MENTION_ROLE_ID}>` : '`Nao configurado`', inline: true }
+        { name: 'Cargo extra mencionado', value: conf.NOTICE_MENTION_ROLE_ID ? `<@&${conf.NOTICE_MENTION_ROLE_ID}>` : '`Não configurado`', inline: true }
       );
 
     const noticeRoleRow = new ActionRowBuilder().addComponents(
@@ -1144,7 +1144,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription('### Configurar set\n\nSelecione quais cargos podem usar as ações do sistema de set. A manutenção continua exclusiva do cargo master.')
       .addFields(
         { name: 'Cargos liberados para /set', value: formatRoleList(setRoles, '`Todos os Cargos Vortex pelas regras internas`'), inline: false },
-        { name: 'Nivel Medio Vortex', value: 'Tambem pode aceitar set e mandar avisos quando configurado em Cargos Vortex.', inline: false }
+        { name: 'Nível Médio Vortex', value: 'Também pode aceitar set e mandar avisos quando configurado em Cargos Vortex.', inline: false }
       );
 
     commandPermissionSelections.set(getSelectionKey(interaction), 'set');
@@ -1182,11 +1182,11 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Use esta aba para deletar dados de ponto ou fazer um reajuste manual.',
         'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Reajustar ponto`.',
         '',
-        `**Usuario selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
+        `**Usuário selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
         `**Pontos abertos:** ${openPointOptions.length}`,
         '',
         '**Reajuste de ponto**',
-        'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse periodo no total do usuario e salva em `commands/pontos.json`.',
+        'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
         '',
         'Formato obrigatório: `DD/MM/AAAA HH:mm:ss`. Os segundos são opcionais.',
       ].join('\n'));
@@ -1205,12 +1205,12 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMinValues(1)
           .setMaxValues(1)
           .setDisabled(openPointOptions.length === 0)
-          .addOptions(openPointOptions.length ? openPointOptions : [{ label: 'Nenhum ponto aberto', value: 'none', description: 'Nao ha usuarios com ponto aberto' }])
+          .addOptions(openPointOptions.length ? openPointOptions : [{ label: 'Nenhum ponto aberto', value: 'none', description: 'Não há usuários com ponto aberto' }])
       ),
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_point_readjust_user')
-          .setPlaceholder('Selecionar usuario para reajustar ponto')
+          .setPlaceholder('Selecionar usuário para reajustar ponto')
           .setMinValues(1)
           .setMaxValues(1)
       ),
@@ -1225,7 +1225,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
         `Cobrança de offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
         `DM de ponto aberto a cada: **${automationConfig.pointMonitorDmIntervalHours}h**`,
-        `Fechamento automatico apos: **${automationConfig.pointMonitorAutoCloseHours}h sem confirmar**`,
+        `Fechamento automático após: **${automationConfig.pointMonitorAutoCloseHours}h sem confirmar**`,
         `Tentativas antes de abrir correção: **${automationConfig.pointMonitorMaxDmAttempts}**`,
         `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
         `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
@@ -1281,7 +1281,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       ? activeAbsences.slice(0, 10).map((absence, index) => {
           return `${index + 1}. <@${absence.userId}> - volta ${formatAbsenceDate(absence.endsAt)} - ID \`${absence.userId}\``;
         }).join('\n')
-      : 'Nenhuma ausencia ativa no momento.';
+      : 'Nenhuma ausência ativa no momento.';
 
     embed.setAuthor({ name: 'VORTEX | GESTÃO DE AUSÊNCIAS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#7000FF')
@@ -1289,9 +1289,9 @@ async function renderDashboard(interaction, tab, edit = false) {
         '### Controle de ausências',
         '',
         '**Como funciona**',
-        'Use esta aba para configurar o cargo aplicado pelo `/ausencia`, controlar a mensagem de fim e alterar o retorno de quem esta ausente.',
+        'Use esta aba para configurar o cargo aplicado pelo `/ausencia`, controlar a mensagem de fim e alterar o retorno de quem está ausente.',
         '',
-        '**Ausencias ativas**',
+        '**Ausências ativas**',
         activeList,
         '',
         'Para horas, informe o retorno como `12:00` ou `12h`. Para dia/data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use uma quantidade como `3`.',
@@ -1321,13 +1321,13 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Controle de Perfil',
         '',
-        'Este módulo acompanha os usuarios aprovados no `/set`.',
+        'Este módulo acompanha os usuários aprovados no `/set`.',
         'Também permite cadastrar manualmente pessoas que já estão no Discord.',
         'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto> nivel:<numero>`.',
         'Os links de foto ficam salvos no JSON mesmo se a imagem original for apagada.',
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         '',
-        `Selecionado para cadastro: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuario`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
+        `Selecionado para cadastro: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
         '',
         '**Perfis salvos**',
         profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
@@ -1344,14 +1344,14 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_profile_register_user')
-          .setPlaceholder('Selecionar usuario para cadastrar perfil')
+          .setPlaceholder('Selecionar usuário para cadastrar perfil')
           .setMinValues(1)
           .setMaxValues(1)
       ),
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_profile_register_channel')
-          .setPlaceholder('Selecionar call/canal do usuario')
+          .setPlaceholder('Selecionar call/canal do usuário')
           .setMinValues(1)
           .setMaxValues(1)
       ),

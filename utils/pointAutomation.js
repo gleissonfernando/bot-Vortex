@@ -133,14 +133,14 @@ async function sendOpenPointDm(client, guild, point, attempts) {
     .setColor('#FEE75C')
     .setTitle('Confirme seu ponto aberto')
     .setDescription([
-      'Seu ponto esta aberto ha bastante tempo.',
+      'Seu ponto está aberto há bastante tempo.',
       '',
       `Abertura: **${formatDate(point.activePointStartedAt)}**`,
       `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
-      `Tempo restante para fechamento automatico: **${Math.max(0, Math.round((readAutomationConfig().pointMonitorAutoCloseHours * 60 * 60 * 1000 - (Date.now() - new Date(point.activePointStartedAt).getTime())) / 60000))} minutos**`,
+      `Tempo restante para fechamento automático: **${Math.max(0, Math.round((readAutomationConfig().pointMonitorAutoCloseHours * 60 * 60 * 1000 - (Date.now() - new Date(point.activePointStartedAt).getTime())) / 60000))} minutos**`,
       `Tentativa: **${attempts}/3**`,
       '',
-      'Clique no botao para confirmar que voce ainda esta online. Se nao confirmar ate o limite, o ponto sera fechado automaticamente e a gerencia sera avisada.',
+      'Clique no botão para confirmar que você ainda está online. Se não confirmar até o limite, o ponto será fechado automaticamente e a gerência será avisada.',
     ].join('\n'))
     .setTimestamp();
   await user.send({ embeds: [embed], components: [buildConfirmRow(guild.id)] });
@@ -181,7 +181,7 @@ async function createPointCorrectionChannel(client, guild, point, state, details
       `Ponto aberto desde: **${formatDate(point.activePointStartedAt)}**`,
       `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
       '',
-      'A gerencia deve conferir o horario correto de saida e aplicar a correcao de ponto.',
+      'A gerência deve conferir o horário correto de saída e aplicar a correção de ponto.',
     ]).join('\n'))
     .setTimestamp();
 
@@ -209,7 +209,7 @@ async function openPointCorrectionForClosedPoint(client, guild, point, {
   const details = {
     title: 'Correção de ponto aberta',
     descriptionLines: [
-      `<@${point.userId}> teve o ponto fechado e precisa confirmar se o horario esta correto.`,
+      `<@${point.userId}> teve o ponto fechado e precisa confirmar se o horário está correto.`,
       '',
       `Motivo: **${reason}**`,
       closedBy ? `Fechado por: <@${closedBy}>` : null,
@@ -217,18 +217,18 @@ async function openPointCorrectionForClosedPoint(client, guild, point, {
       closedAt ? `Fechamento registrado: **${formatDate(closedAt)}**` : null,
       durationMs !== null ? `Tempo contabilizado: **${formatDuration(durationMs)}**` : null,
       '',
-      'Se o horario estiver errado, a gerencia deve aplicar o reajuste pela aba Pontos do /painel.',
+      'Se o horário estiver errado, a gerência deve aplicar o reajuste pela aba Pontos do /painel.',
     ].filter(Boolean),
   };
   const channel = await createPointCorrectionChannel(client, guild, point, state[key] || {}, details);
   await sendVortexLog(client, {
-    title: 'Canal de correcao de ponto aberto',
+    title: 'Canal de correção de ponto aberto',
     description: [
-      `Usuario: <@${point.userId}> (${point.userId})`,
+      `Usuário: <@${point.userId}> (${point.userId})`,
       `Motivo: ${reason}`,
       closedBy ? `Fechado por: <@${closedBy}>` : null,
       closedAt ? `Fechamento registrado: ${formatDate(closedAt)}` : null,
-      channel ? `Canal: <#${channel.id}>` : 'Canal: nao criado',
+      channel ? `Canal: <#${channel.id}>` : 'Canal: não criado',
     ].filter(Boolean).join('\n'),
     color: '#FEE75C',
     type: 'PONTO',
@@ -270,23 +270,23 @@ async function checkOpenPointConfirmations(client, guild, state) {
         .setColor('#ED4245')
         .setTitle('Ponto fechado automaticamente')
         .setDescription([
-          `<@${point.userId}> nao confirmou o alerta de ponto aberto.`,
+          `<@${point.userId}> não confirmou o alerta de ponto aberto.`,
           '',
           `Abertura: **${formatDate(point.activePointStartedAt)}**`,
-          result?.data?.lastPointCloseAt ? `Fechamento automatico: **${formatDate(result.data.lastPointCloseAt)}**` : null,
+          result?.data?.lastPointCloseAt ? `Fechamento automático: **${formatDate(result.data.lastPointCloseAt)}**` : null,
           result?.durationMs ? `Tempo contabilizado: **${formatDuration(result.durationMs)}**` : null,
           '',
-          'Se o horario estiver errado, o usuario deve solicitar correcao de ponto.',
+          'Se o horário estiver errado, o usuário deve solicitar correção de ponto.',
         ].filter(Boolean).join('\n'))
         .setTimestamp();
       const user = await client.users.fetch(point.userId).catch(() => null);
       if (user) await user.send({ embeds: [embed] }).catch(() => null);
       const channel = await openPointCorrectionForClosedPoint(client, guild, point, {
-        reason: 'Fechamento automatico por falta de confirmacao',
+        reason: 'Fechamento automático por falta de confirmação',
         closedAt: result?.data?.lastPointCloseAt || new Date().toISOString(),
         durationMs: result?.durationMs ?? null,
       }).catch((error) => {
-        logger.error('Erro ao abrir correcao apos fechamento automatico:', error);
+        logger.error('Erro ao abrir correção após fechamento automático:', error);
         return null;
       });
       state[key] = {
@@ -318,10 +318,10 @@ async function checkOpenPointConfirmations(client, guild, state) {
         `Ponto aberto desde: **${formatDate(point.activePointStartedAt)}**`,
         `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
         '',
-        'A gerencia deve conferir o horario correto e aplicar a correcao se necessario.',
+        'A gerência deve conferir o horário correto e aplicar a correção se necessário.',
       ],
     }).catch((error) => {
-      logger.error('Erro ao criar canal de correcao de ponto:', error);
+      logger.error('Erro ao criar canal de correção de ponto:', error);
       return null;
     });
     state[key] = {
@@ -359,12 +359,12 @@ async function checkOfflineUsers(client, guild, state) {
       .setColor('#ED4245')
       .setTitle('Cobrança de atividade')
       .setDescription([
-        `<@${profile.userId}> esta ha muito tempo sem ponto aberto e nao esta em ausencia.`,
+        `<@${profile.userId}> está há muito tempo sem ponto aberto e não está em ausência.`,
         '',
-        `Ultima atividade de ponto: **${formatDate(lastActivity)}**`,
+        `Última atividade de ponto: **${formatDate(lastActivity)}**`,
         `Limite configurado: **${config.offlineThresholdHours}h**`,
         '',
-        'Oriente o usuario a abrir ponto quando estiver em serviço, solicitar ausencia quando precisar se afastar ou pedir correcao se esqueceu de fechar ponto.',
+        'Oriente o usuário a abrir ponto quando estiver em serviço, solicitar ausência quando precisar se afastar ou pedir correção se esqueceu de fechar ponto.',
       ].join('\n'))
       .setTimestamp();
 
@@ -381,7 +381,7 @@ async function runPointAutomationCheck(client, { force = false } = {}) {
   const state = readJSON(STATE_PATH, {});
   for (const guild of client.guilds.cache.values()) {
     await checkOpenPointConfirmations(client, guild, state, force).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
-    await checkOfflineUsers(client, guild, state, force).catch((error) => logger.error('Erro na cobranca de usuarios offline:', error));
+    await checkOfflineUsers(client, guild, state, force).catch((error) => logger.error('Erro na cobrança de usuários offline:', error));
   }
   writeJSON(STATE_PATH, state);
   return state;
@@ -401,7 +401,7 @@ async function confirmPointPresence(interaction) {
     lastPromptAt: null,
   };
   writeJSON(STATE_PATH, state);
-  return interaction.reply({ content: '✅ Confirmado. A gerencia nao sera acionada por esta verificacao.', ephemeral: true });
+  return interaction.reply({ content: '✅ Confirmado. A gerência não será acionada por esta verificação.', ephemeral: true });
 }
 
 async function handlePenaltyButton(interaction) {
@@ -409,14 +409,14 @@ async function handlePenaltyButton(interaction) {
   const userId = interaction.customId.replace(approved ? 'point_penalty_accept_' : 'point_penalty_reject_', '');
   const embed = new EmbedBuilder()
     .setColor(approved ? '#ED4245' : '#57F287')
-    .setTitle(approved ? 'Penalidade aceita pela gerencia' : 'Penalidade recusada pela gerencia')
+    .setTitle(approved ? 'Penalidade aceita pela gerência' : 'Penalidade recusada pela gerência')
     .setDescription([
-      `Usuario: <@${userId}>`,
+      `Usuário: <@${userId}>`,
       `Gerente: <@${interaction.user.id}>`,
       `Data/hora: **${formatDate(new Date())}**`,
       approved
-        ? 'Motivos possiveis registrados: nao atualizou perfil, nao bateu/fechou ponto ou ignorou cobrancas do bot.'
-        : 'A ocorrencia foi recusada pela gerencia.',
+        ? 'Motivos possíveis registrados: não atualizou perfil, não bateu/fechou ponto ou ignorou cobranças do bot.'
+        : 'A ocorrência foi recusada pela gerência.',
     ].join('\n'))
     .setTimestamp();
   await interaction.update({ embeds: [embed], components: [] }).catch(() => null);
@@ -424,9 +424,9 @@ async function handlePenaltyButton(interaction) {
 
 function initPointAutomation(client) {
   if (interval) clearInterval(interval);
-  setTimeout(() => runPointAutomationCheck(client).catch((error) => logger.error('Erro inicial na automacao de ponto:', error)), 15 * 1000);
+  setTimeout(() => runPointAutomationCheck(client).catch((error) => logger.error('Erro inicial na automação de ponto:', error)), 15 * 1000);
   interval = setInterval(() => {
-    runPointAutomationCheck(client).catch((error) => logger.error('Erro na automacao de ponto:', error));
+    runPointAutomationCheck(client).catch((error) => logger.error('Erro na automação de ponto:', error));
   }, CHECK_INTERVAL_MS);
 }
 

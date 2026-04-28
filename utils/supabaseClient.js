@@ -23,7 +23,7 @@ function buildUrl(table, query = {}) {
 
 async function supabaseRequest(table, options = {}) {
   if (!isSupabaseEnabled()) {
-    throw new Error('Supabase nao configurado. Defina SUPABASE_URL e SUPABASE_ANON_KEY no .env.');
+    throw new Error('Supabase não configurado. Defina SUPABASE_URL e SUPABASE_ANON_KEY no .env.');
   }
 
   const {

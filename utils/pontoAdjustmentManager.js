@@ -63,17 +63,17 @@ function buildRequestEmbed(interaction, closedAtInput, reason) {
   return new EmbedBuilder()
     .setColor('#FEE75C')
     .setAuthor({ name: 'VORTEX | Ajuste de Ponto', iconURL: interaction.client.user.displayAvatarURL() })
-    .setTitle('Solicitacao de ajuste de ponto')
+    .setTitle('Solicitação de ajuste de ponto')
     .setDescription([
-      'Um usuario solicitou fechamento manual do ponto.',
+      'Um usuário solicitou fechamento manual do ponto.',
       '',
       '**Dados informados**',
-      `Usuario: <@${interaction.user.id}>`,
+      `Usuário: <@${interaction.user.id}>`,
       `Horario correto de saida: \`${closedAtInput}\``,
       `Motivo: ${reason}`,
       '',
       '**Analise**',
-      'Ao aceitar, o ponto aberto do usuario sera fechado automaticamente no horario informado.',
+      'Ao aceitar, o ponto aberto do usuário será fechado automaticamente no horário informado.',
     ].join('\n'))
     .setTimestamp()
     .setFooter({ text: 'Vortex - Sistema de Ponto' });
@@ -114,7 +114,7 @@ async function createAdjustmentRequest(interaction, closedAtInput, reason) {
   const pointConfig = getPointConfig();
   const category = await interaction.guild.channels.fetch(pointConfig.adjustCategoryId).catch(() => null);
   if (!category) {
-    return { ok: false, message: `Categoria de ajuste nao encontrada: <#${pointConfig.adjustCategoryId}>.` };
+    return { ok: false, message: `Categoria de ajuste não encontrada: <#${pointConfig.adjustCategoryId}>.` };
   }
 
   const staffRoleIds = getStaffRoleIds();
@@ -160,12 +160,12 @@ async function createAdjustmentRequest(interaction, closedAtInput, reason) {
 
 async function decideAdjustment(interaction, requestId, approved) {
   if (!hasPointStaffPermission(interaction.member)) {
-    return { ok: false, message: 'Sem permissao para analisar ajuste de ponto.' };
+    return { ok: false, message: 'Sem permissão para analisar ajuste de ponto.' };
   }
 
   const request = getRequest(requestId);
-  if (!request) return { ok: false, message: 'Solicitacao de ajuste nao encontrada.' };
-  if (request.status !== 'pending') return { ok: false, message: 'Esta solicitacao ja foi analisada.' };
+  if (!request) return { ok: false, message: 'Solicitação de ajuste não encontrada.' };
+  if (request.status !== 'pending') return { ok: false, message: 'Esta solicitação já foi analisada.' };
 
   if (!approved) {
     updateRequest(requestId, {
@@ -174,7 +174,7 @@ async function decideAdjustment(interaction, requestId, approved) {
       decidedAt: new Date().toISOString(),
     });
     await sendAdjustmentDecisionDm(interaction, request, false, null).catch(() => {});
-    return { ok: true, status: 'rejected', message: `Ajuste recusado.\nUsuario: <@${request.userId}>\nNegado por: <@${interaction.user.id}>` };
+    return { ok: true, status: 'rejected', message: `Ajuste recusado.\nUsuário: <@${request.userId}>\nNegado por: <@${interaction.user.id}>` };
   }
 
   const result = await correctOpenPointCloseTime(
@@ -203,7 +203,7 @@ async function decideAdjustment(interaction, requestId, approved) {
     status: 'approved',
     message: [
       'Ajuste aprovado e ponto fechado automaticamente.',
-      `Usuario: <@${request.userId}>`,
+      `Usuário: <@${request.userId}>`,
       `Fechamento aplicado: ${formatDate(result.closedAt)}`,
       `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
     ].join('\n'),
@@ -221,7 +221,7 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
     .setAuthor({ name: 'VORTEX | Ajuste de Ponto', iconURL: interaction.client.user.displayAvatarURL() })
     .setTitle(approved ? 'Ajuste de ponto aprovado' : 'Ajuste de ponto recusado')
     .setDescription([
-      `Usuario: <@${request.userId}>`,
+      `Usuário: <@${request.userId}>`,
       `Horario solicitado: \`${request.closedAtInput}\``,
       `Motivo informado: ${request.reason}`,
       approved ? `Aceito por: <@${interaction.user.id}>` : `Negado por: <@${interaction.user.id}>`,

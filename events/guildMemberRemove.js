@@ -18,11 +18,11 @@ module.exports = {
                 guild.client,
                 'Despedida de Membro',
                 [
-                    `**Usuario:** <@${member.id}>`,
+                    `**Usuário:** <@${member.id}>`,
                     `**Tag:** \`${member.user.tag}\``,
                     `**ID:** \`${member.id}\``,
                     '',
-                    'O usuario saiu do servidor. Desejamos boa sorte na caminhada.',
+                    'O usuário saiu do servidor. Desejamos boa sorte na caminhada.',
                     `Se qualquer coisa tiver acontecido ou se precisar conversar, entre em contato com <@${SUPPORT_USER_ID}> Duke | henryP1.`,
                 ].join('\n'),
                 '#ED4245'
@@ -33,7 +33,7 @@ module.exports = {
             });
 
             await deleteApprovedSetChannel(guild, member.id).catch((error) => {
-                logger.error('Erro ao remover canal de usuario aprovado:', error);
+                logger.error('Erro ao remover canal de usuário aprovado:', error);
             });
         } catch (error) {
             logger.error('Erro no evento guildMemberRemove:', error);

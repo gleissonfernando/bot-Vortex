@@ -18,7 +18,7 @@ const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 function buildAbsenceModal(interaction) {
   const modal = new ModalBuilder()
     .setCustomId('modal_ausencia_request')
-    .setTitle('Vortex | Solicitar Ausencia');
+    .setTitle('Vortex | Solicitar Ausência');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
@@ -43,7 +43,7 @@ function buildAbsenceModal(interaction) {
       new TextInputBuilder()
         .setCustomId('reason')
         .setLabel('MOTIVO')
-        .setPlaceholder('Explique o motivo da ausencia')
+        .setPlaceholder('Explique o motivo da ausência')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(900)
@@ -133,7 +133,7 @@ function buildAbsencePanel(interaction = null) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ausencia')
-    .setDescription('Abre o painel para solicitar ou retirar ausencia.'),
+    .setDescription('Abre o painel para solicitar ou retirar ausência.'),
 
   async execute(interaction) {
     return interaction.reply(buildAbsencePanel(interaction));

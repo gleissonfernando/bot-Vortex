@@ -82,8 +82,8 @@ async function sendRecruitmentResultDm(client, targetUser, {
         tipo ? `**Tipo de set:** ${tipo}` : null,
         nomeGame ? `**Nome em game:** ${nomeGame}` : null,
         idGame ? `**ID em game:** \`${idGame}\`` : null,
-        numeroGame ? `**Numero em game:** \`${numeroGame}\`` : null,
-        nivelGame ? `**Nivel em game:** \`${nivelGame}\`` : null,
+        numeroGame ? `**Número em game:** \`${numeroGame}\`` : null,
+        nivelGame ? `**Nível em game:** \`${nivelGame}\`` : null,
     ].filter(Boolean).join('\n');
 
     const nextSteps = approved
@@ -122,7 +122,7 @@ async function sendRecruitmentResultDm(client, targetUser, {
     } catch (error) {
         await notifyDmFailure(
             client,
-            targetUser.tag || targetUser.username || 'Usuario',
+            targetUser.tag || targetUser.username || 'Usuário',
             targetUser.id,
             error.message,
             approved ? 'DM de aprovação de set' : 'DM de reprovação de set'
@@ -174,7 +174,7 @@ module.exports = {
                         title: 'Comando Executado',
                         description: [
                             `**Comando:** /${interaction.commandName}`,
-                            `**Usuario:** <@${user.id}> (${user.id})`,
+                            `**Usuário:** <@${user.id}> (${user.id})`,
                             `**Canal:** ${interaction.channel ? `<#${interaction.channel.id}>` : 'N/A'}`,
                             `**Servidor:** ${guild ? `${guild.name} (${guild.id})` : 'DM'}`,
                         ].join('\n'),
@@ -211,7 +211,7 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('reason')
                         .setLabel('MOTIVO DE NAO FECHAR O PONTO')
-                        .setPlaceholder('Explique por que nao conseguiu fechar o ponto')
+                        .setPlaceholder('Explique por que não conseguiu fechar o ponto')
                         .setStyle(TextInputStyle.Paragraph)
                         .setRequired(true)
                         .setMaxLength(900)
@@ -260,7 +260,7 @@ module.exports = {
             const pointConfig = getPointConfig();
             if (interaction.channel.id !== pointConfig.actionChannelId) {
                 return interaction.reply({
-                    content: `Voce so pode bater ponto em <#${pointConfig.actionChannelId}>.`,
+                    content: `Você só pode bater ponto em <#${pointConfig.actionChannelId}>.`,
                     ephemeral: true
                 });
             }
@@ -301,7 +301,7 @@ module.exports = {
                 title: opening ? 'Ponto Aberto' : 'Ponto Fechado',
                 description: opening
                     ? `<@${user.id}> abriu o ponto as ${formatDate(result.data.activePointStartedAt)}.`
-                    : `<@${user.id}> fechou o ponto as ${formatDate(result.data.lastPointCloseAt)}. Duracao: ${formatDuration(result.durationMs)}.`,
+                    : `<@${user.id}> fechou o ponto às ${formatDate(result.data.lastPointCloseAt)}. Duração: ${formatDuration(result.durationMs)}.`,
                 color: opening ? '#57F287' : '#ED4245',
                 type: 'PONTO',
                 userId: user.id,
@@ -330,7 +330,7 @@ module.exports = {
         if (interaction.isButton() && interaction.customId === 'ausencia_request') {
             const ausencia = client.commands.get('ausencia');
             if (!ausencia?.buildAbsenceModal) {
-                return safeReply(interaction, { content: '❌ Sistema de ausencia indisponivel no momento.', ephemeral: true });
+                return safeReply(interaction, { content: '❌ Sistema de ausência indisponível no momento.', ephemeral: true });
             }
             return interaction.showModal(ausencia.buildAbsenceModal(interaction));
         }
@@ -342,7 +342,7 @@ module.exports = {
                 return interaction.editReply({ content: `❌ ${result.message}` });
             }
             return interaction.editReply({
-                content: `✅ Sua ausencia foi retirada. Retorno registrado em ${formatAbsenceDate(result.absence.removedAt)}.`,
+                content: `✅ Sua ausência foi retirada. Retorno registrado em ${formatAbsenceDate(result.absence.removedAt)}.`,
             });
         }
 
@@ -364,9 +364,9 @@ module.exports = {
 
             return safeEdit(interaction, {
                 content: [
-                    '✅ Ausencia registrada com sucesso.',
+                    '✅ Ausência registrada com sucesso.',
                     `Cargo aplicado: <@&${result.absence.roleId}>`,
-                    `Fim da ausencia: ${formatAbsenceDate(result.absence.endsAt)}`,
+                    `Fim da ausência: ${formatAbsenceDate(result.absence.endsAt)}`,
                 ].join('\n'),
             });
         }
@@ -436,7 +436,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id_game').setLabel('ID EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nome_game').setLabel('NOME EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('NIVEL EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('NÍVEL EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
             );
             return interaction.showModal(modal);
         }
@@ -566,7 +566,7 @@ module.exports = {
                             callChannelId: approvedChannel?.id || null,
                             approvedBy: user.id,
                         }).catch((error) => {
-                            approvedChannelMessage = `${approvedChannelMessage || 'Canal processado'} | perfil nao salvo: ${error.message}`;
+                            approvedChannelMessage = `${approvedChannelMessage || 'Canal processado'} | perfil não salvo: ${error.message}`;
                         });
                     }
                     dmSent = await sendRecruitmentResultDm(client, targetUser || target?.user, {
@@ -609,7 +609,7 @@ module.exports = {
                         `Resultado: ${isApp ? 'Aprovado' : 'Reprovado'}`,
                         `Staff: <@${user.id}>`,
                         `DM enviada: ${dmSent ? 'sim' : 'não'}`,
-                        isApp ? `Canal aprovado: ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'nao criado'}` : null,
+                        isApp ? `Canal aprovado: ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'não criado'}` : null,
                         '',
                         isApp
                             ? 'Canal mantido. Use o botão Apagar para remover.'
@@ -636,8 +636,8 @@ module.exports = {
                         `**Staff:** <@${user.id}>`,
                         `**Candidato:** <@${targetId}>`,
                         `**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}`,
-                        `**DM enviada:** ${dmSent ? 'sim' : 'nao'}`,
-                        isApp ? `**Canal aprovado:** ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'nao criado'}` : null,
+                        `**DM enviada:** ${dmSent ? 'sim' : 'não'}`,
+                        isApp ? `**Canal aprovado:** ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'não criado'}` : null,
                     ].filter(Boolean).join('\n'),
                     color: isApp ? '#57F287' : '#FF0055',
                     type: 'RECRUTAMENTO',

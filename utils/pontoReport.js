@@ -24,14 +24,14 @@ async function buildUserRegistroEmbed(guild, user) {
   return new EmbedBuilder()
     .setColor(data.activePointStartedAt ? '#57F287' : '#7000FF')
     .setAuthor({ name: 'VORTEX | Registro de Ponto' })
-    .setTitle('Registro do usuario')
+    .setTitle('Registro do usuário')
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
     .addFields(
-      { name: 'Usuario', value: `<@${user.id}>`, inline: true },
+      { name: 'Usuário', value: `<@${user.id}>`, inline: true },
       { name: 'Discord ID', value: `\`${user.id}\``, inline: true },
       { name: 'Status', value: statusText(data), inline: true },
       { name: 'Abertura atual', value: formatDate(data.activePointStartedAt), inline: false },
-      { name: 'Ultima abertura', value: formatDate(data.lastPointOpenAt), inline: true },
+      { name: 'Última abertura', value: formatDate(data.lastPointOpenAt), inline: true },
       { name: 'Ultimo fechamento', value: formatDate(data.lastPointCloseAt), inline: true },
       { name: 'Dias logados', value: String(getPointDays(data)), inline: true },
       { name: 'Tempo total', value: formatDuration(getEffectiveTotalMs(data)), inline: true },
@@ -47,8 +47,8 @@ function buildReportText(guild, rows, totals) {
     `Relatorio completo de ponto - ${guild.name}`,
     `Gerado em: ${formatDate(new Date())}`,
     '',
-    `Usuarios: ${totals.users}`,
-    `Usuarios online: ${totals.active}`,
+    `Usuários: ${totals.users}`,
+    `Usuários online: ${totals.active}`,
     `Sessoes fechadas: ${totals.sessions}`,
     `Ajustes de ponto: ${totals.corrections}`,
     `Tempo total: ${formatDuration(totals.totalMs)}`,
@@ -59,7 +59,7 @@ function buildReportText(guild, rows, totals) {
 
   for (const row of rows) {
     lines.push(
-      `Usuario: ${row.name}`,
+      `Usuário: ${row.name}`,
       `Discord ID: ${row.userId}`,
       `Mencao: ${row.mention}`,
       `Registro: ${row.registro}`,
@@ -69,7 +69,7 @@ function buildReportText(guild, rows, totals) {
       `Ajustes: ${row.corrections}`,
       `Tempo total: ${row.total}`,
       `Abertura atual: ${row.activeSince || 'N/A'}`,
-      `Ultima abertura: ${row.lastOpen}`,
+      `Última abertura: ${row.lastOpen}`,
       `Ultimo fechamento: ${row.lastClose}`,
       '--------------------------------------------------------------------------------',
     );
@@ -120,20 +120,20 @@ async function buildAllPointsReportPayload(guild) {
     .setAuthor({ name: 'VORTEX | Relatorio de Pontos' })
     .setTitle('Todos os pontos batidos')
     .setDescription([
-      `Usuarios no relatorio: **${totals.users}**`,
+      `Usuários no relatório: **${totals.users}**`,
       `Online agora: **${totals.active}**`,
       `Pontos fechados: **${totals.sessions}**`,
       `Ajustes registrados: **${totals.corrections}**`,
       `Tempo total: **${formatDuration(totals.totalMs)}**`,
       '',
-      '**Usuarios que menos logaram**',
+      '**Usuários que menos logaram**',
       leastLogged.length ? leastLogged.map((row) => `${row.mention} - ${row.total}`).join('\n') : 'Nenhum registro encontrado.',
       '',
       '```',
       `${pad('#', 2)} ${pad('USUARIO', 18)} ${pad('STATUS', 7)} ${pad('TOTAL', 10)} ${pad('PTS', 4)} ${pad('AJUS', 4)}`,
       ...previewRows,
       '```',
-      'O arquivo anexado contem abertura, fechamento, ultimo fechamento e ajustes de todos os usuarios.',
+      'O arquivo anexado contém abertura, fechamento, último fechamento e ajustes de todos os usuários.',
     ].join('\n').slice(0, 4096))
     .setTimestamp()
     .setFooter({ text: 'Vortex - Sistema de Ponto' });
