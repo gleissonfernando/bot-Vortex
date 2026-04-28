@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { ChannelType, PermissionFlagsBits } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { logger } = require('./logger');
 
 const APPROVED_SET_CATEGORY_ID = '1460410814744887531';
 const APPROVED_SET_CHANNELS_PATH = path.join(__dirname, '..', 'commands', 'approvedSetChannels.json');
+const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STAFF_ROLE_ID = '1497703127074345040';
 
 function ensureFile() {
@@ -38,6 +39,20 @@ function sanitizeChannelName(value) {
     .slice(0, 70) || 'usuario';
 }
 
+function getManagementRoleIds() {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8') || '{}');
+    const levels = config.VORTEX_ROLE_LEVELS || {};
+    return [
+      STAFF_ROLE_ID,
+      ...(Array.isArray(levels.admin) ? levels.admin : []),
+      ...(Array.isArray(levels.medio) ? levels.medio : []),
+    ].map(String).filter(Boolean).filter((roleId, index, list) => list.indexOf(roleId) === index);
+  } catch {
+    return [STAFF_ROLE_ID];
+  }
+}
+
 async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame = null, staffUserId = null } = {}) {
   const category = await guild.channels.fetch(APPROVED_SET_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
@@ -53,6 +68,7 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
 
   const displayName = nomeGame || member.displayName || member.user.username;
   const displayId = idGame || member.id;
+  const managementRoleIds = getManagementRoleIds();
   const channel = await guild.channels.create({
     name: `${sanitizeChannelName(displayName)}-${sanitizeChannelName(displayId)}`.slice(0, 100),
     type: ChannelType.GuildText,
@@ -61,9 +77,8 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
     permissionOverwrites: [
       {
         id: guild.id,
-        allow: [
+        deny: [
           PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.ReadMessageHistory,
         ],
       },
       {
@@ -83,14 +98,14 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
           PermissionFlagsBits.ReadMessageHistory,
         ],
       },
-      {
-        id: STAFF_ROLE_ID,
+      ...managementRoleIds.map((roleId) => ({
+        id: roleId,
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
           PermissionFlagsBits.ReadMessageHistory,
         ],
-      },
+      })),
     ],
     reason: `Canal criado para usuario aprovado no /set por ${staffUserId || 'sistema'}`,
   });
@@ -106,12 +121,93 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
   };
   writeChannels(data);
 
+  const embed = buildGuideEmbed(member.id, 1);
+
   await channel.send({
     content: `<@${member.id}>`,
+    embeds: [embed],
+    components: [buildGuideRow(1)],
     allowedMentions: { users: [member.id] },
   }).catch(() => null);
 
   return { ok: true, message: 'Canal criado para usuario aprovado.', channel };
+}
+
+function buildGuideEmbed(userId, step = 1) {
+  const pages = {
+    1: {
+      title: 'Canal exclusivo de metas',
+      description: [
+        `<@${userId}>, este canal foi criado exclusivamente para voce.`,
+        '',
+        'Somente voce e a gerencia conseguem visualizar e acessar este canal.',
+        'Fique de olho no seu privado: quando surgir uma mensagem do bot Vortex, responda ou siga a orientacao enviada por la.',
+      ],
+    },
+    2: {
+      title: 'Como funciona o /perfil',
+      description: [
+        'Use `/perfil` no seu canal cadastrado para ver seus dados.',
+        'Use `/perfil link:<link da foto> nivel:<numero>` para atualizar sua foto e seu nivel.',
+        'Perfil sem atualizar pode gerar cobrança e penalidade.',
+      ],
+    },
+    3: {
+      title: 'Como funciona o /ponto',
+      description: [
+        'Abra o ponto quando entrar em servico e feche quando sair.',
+        'Se esquecer de fechar, use o pedido de ajuste de ponto ou fale com a gerencia.',
+        'Quem ignora confirmacoes de ponto aberto por DM pode cair em correcao e penalidade.',
+      ],
+    },
+    4: {
+      title: 'Como funciona a /ausencia',
+      description: [
+        'Use `/ausencia` quando precisar ficar afastado.',
+        'Quem nao esta em ausencia e fica sem bater ponto pode receber cobranca.',
+        'Leia sempre as DMs do Vortex. Ignorar informacoes do bot pode causar penalidade.',
+      ],
+    },
+  };
+  const page = pages[step] || pages[1];
+  return new EmbedBuilder()
+    .setColor('#7000FF')
+    .setTitle(page.title)
+    .setDescription(page.description.join('\n'))
+    .setFooter({ text: `Vortex - Guia inicial ${step}/4` })
+    .setTimestamp();
+}
+
+function buildGuideRow(step = 1) {
+  const nextStep = Number(step) + 1;
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(nextStep > 4 ? 'approved_channel_guide_done' : `approved_channel_guide_${nextStep}`)
+      .setLabel(nextStep > 4 ? 'Finalizar' : 'Entendi, proximo')
+      .setStyle(nextStep > 4 ? ButtonStyle.Success : ButtonStyle.Primary)
+  );
+}
+
+async function handleApprovedChannelGuide(interaction) {
+  const done = interaction.customId === 'approved_channel_guide_done';
+  if (done) {
+    return interaction.update({
+      components: [],
+      embeds: [
+        new EmbedBuilder()
+          .setColor('#57F287')
+          .setTitle('Guia concluido')
+          .setDescription('Obrigado por confirmar. Fique atento as DMs do bot Vortex e siga as orientacoes da gerencia.')
+          .setTimestamp(),
+      ],
+    });
+  }
+
+  const step = Number(interaction.customId.replace('approved_channel_guide_', ''));
+  return interaction.update({
+    embeds: [buildGuideEmbed(interaction.user.id, step)],
+    components: [buildGuideRow(step)],
+  });
 }
 
 async function deleteApprovedSetChannel(guild, userId) {
@@ -137,4 +233,5 @@ module.exports = {
   APPROVED_SET_CATEGORY_ID,
   createApprovedSetChannel,
   deleteApprovedSetChannel,
+  handleApprovedChannelGuide,
 };

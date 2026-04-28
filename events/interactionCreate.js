@@ -7,8 +7,9 @@ const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
-const { createApprovedSetChannel } = require('../utils/approvedSetChannels');
-const { registerApprovedProfile } = require('../utils/profileManager');
+const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
+const { createApprovedSetChannel, handleApprovedChannelGuide } = require('../utils/approvedSetChannels');
+const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -30,6 +31,7 @@ function hasMasterPermission(member) {
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName === 'clear' || commandName === 'clipe') return true;
+    if (commandName === 'perfil' && getUserProfile(interaction.guildId, interaction.user.id)) return true;
     if (commandName !== 'painel' && !hasAnyVortexRole(interaction.member)) return false;
 
     const conf = loadJSON(CONFIG_PATH);
@@ -312,6 +314,19 @@ module.exports = {
             });
         }
 
+        if (interaction.isButton() && interaction.customId.startsWith('point_presence_confirm_')) {
+            return confirmPointPresence(interaction);
+        }
+
+        if (interaction.isButton() && (interaction.customId.startsWith('point_penalty_accept_') || interaction.customId.startsWith('point_penalty_reject_'))) {
+            if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+            return handlePenaltyButton(interaction);
+        }
+
+        if (interaction.isButton() && (interaction.customId.startsWith('approved_channel_guide_') || interaction.customId === 'approved_channel_guide_done')) {
+            return handleApprovedChannelGuide(interaction);
+        }
+
         if (interaction.isButton() && interaction.customId === 'ausencia_request') {
             const ausencia = client.commands.get('ausencia');
             if (!ausencia?.buildAbsenceModal) {
@@ -368,10 +383,10 @@ module.exports = {
             if (interaction.isRoleSelectMenu() && interaction.customId === 'avisos_select_role') {
                 return await avisos.handleSelectMenu(interaction);
             }
-            if (interaction.isButton() && (interaction.customId === 'avisos_send_guild' || interaction.customId === 'avisos_send_global')) {
+            if (interaction.isButton() && (interaction.customId === 'avisos_send_guild' || interaction.customId === 'avisos_send_global' || interaction.customId === 'avisos_send_direct')) {
                 return await avisos.handleButton(interaction);
             }
-            if (interaction.isModalSubmit() && (interaction.customId === 'avisos_modal_guild' || interaction.customId === 'avisos_modal_global')) {
+            if (interaction.isModalSubmit() && (interaction.customId === 'avisos_modal_guild' || interaction.customId === 'avisos_modal_global' || interaction.customId === 'avisos_modal_direct')) {
                 return await avisos.handleModal(interaction);
             }
         }
@@ -379,7 +394,7 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'show_all_points', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_toggle_billing'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'show_all_points', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation'].includes(interaction.customId))) {
                 return await painel.handleButton(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
@@ -388,7 +403,7 @@ module.exports = {
             if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel', 'select_update_channel'].includes(interaction.customId)) {
                 return await painel.handleSelectMenu(interaction);
             }
-            if (interaction.isStringSelectMenu() && interaction.customId === 'select_command_permission_target') {
+            if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_open_point_user')) {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
@@ -548,6 +563,7 @@ module.exports = {
                             idGame,
                             numeroGame,
                             nivelGame,
+                            callChannelId: approvedChannel?.id || null,
                             approvedBy: user.id,
                         }).catch((error) => {
                             approvedChannelMessage = `${approvedChannelMessage || 'Canal processado'} | perfil nao salvo: ${error.message}`;

@@ -97,7 +97,7 @@ function buildAbsencePanel() {
       .setStyle(ButtonStyle.Danger)
   );
 
-  return { embeds: [embed], components: [row], files, ephemeral: true };
+  return { embeds: [embed], components: [row], files };
 }
 
 module.exports = {

@@ -31,6 +31,7 @@ const CUSTOM_IDS = {
   selectCall: 'avisos_select_call',
   guild: 'avisos_send_guild',
   global: 'avisos_send_global',
+  direct: 'avisos_send_direct',
 };
 const selections = new Map();
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
@@ -110,14 +111,15 @@ function buildPanelEmbed(interaction) {
       '3. Selecione cargos extras para mencionar, alem dos cargos fixos do sistema.',
       '4. Selecione a call quando o aviso estiver ligado a uma reuniao ou atendimento.',
       '5. Se quiser, adicione um link de imagem do Discord para aparecer no aviso. Esse campo nao e obrigatorio.',
-      '6. Local publica no canal selecionado. Global envia DM para todos e tambem publica no canal.',
+      '6. Individual envia DM para o usuario selecionado. Local publica no canal selecionado. Global envia DM para todos.',
       '',
       '**Importante**',
       'A imagem oficial da Vortex continua fixa no aviso principal. Se um link de imagem for informado, ele sera exibido em um bloco extra do aviso. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.',
     ].join('\n'))
     .addFields(
-      { name: 'Local', value: 'Envia no canal selecionado e menciona os cargos configurados.', inline: true },
-      { name: 'Global Vortex', value: 'Envia DM para todos deste Discord e tambem publica no canal.', inline: true },
+      { name: 'Individual', value: 'Envia direto no privado do usuario selecionado.', inline: true },
+      { name: 'Local', value: 'Envia somente no canal selecionado.', inline: true },
+      { name: 'Global Vortex', value: 'Envia DM para todos deste Discord.', inline: true },
       { name: 'Usuario selecionado', value: 'Quando preenchido, aparece e pode ser mencionado no aviso local.', inline: true }
     )
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
@@ -162,6 +164,10 @@ function buildPanelComponents() {
 
   const buttonRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
+      .setCustomId(CUSTOM_IDS.direct)
+      .setLabel('Enviar Individual')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.guild)
       .setLabel('Enviar Local')
       .setStyle(ButtonStyle.Primary),
@@ -176,9 +182,10 @@ function buildPanelComponents() {
 
 function buildMessageModal(scope) {
   const isGlobal = scope === 'global';
+  const isDirect = scope === 'direct';
   const modal = new ModalBuilder()
     .setCustomId(`avisos_modal_${scope}`)
-    .setTitle(isGlobal ? 'Aviso Global Vortex' : 'Aviso para este Discord');
+    .setTitle(isGlobal ? 'Aviso Global Vortex' : isDirect ? 'Aviso Individual' : 'Aviso para este Discord');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
@@ -293,7 +300,7 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
     { name: 'Enviado por', value: `<@${interaction.user.id}>`, inline: true },
   ];
 
-  if (scope === 'guild' && selection.userId) {
+  if ((scope === 'guild' || scope === 'direct') && selection.userId) {
     fields.push({ name: 'Usuario relacionado', value: `<@${selection.userId}>`, inline: true });
   }
   if (selection.roleIds?.length) {
@@ -470,11 +477,6 @@ module.exports = {
       return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     }
 
-    const selectedChannel = await getSelectedChannel(interaction);
-    if (!selectedChannel) {
-      return safeReply(interaction, { content: '❌ Selecione um canal de texto antes de enviar o aviso.', ephemeral: true });
-    }
-
     if (interaction.customId === CUSTOM_IDS.global && loadConfig().DISABLE_NOTICE_DMS === true) {
       return safeReply(interaction, {
         content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.',
@@ -483,7 +485,19 @@ module.exports = {
     }
 
     if (interaction.customId === CUSTOM_IDS.guild) {
+      const selectedChannel = await getSelectedChannel(interaction);
+      if (!selectedChannel) {
+        return safeReply(interaction, { content: '❌ Selecione um canal de texto antes de enviar o aviso local.', ephemeral: true });
+      }
       return interaction.showModal(buildMessageModal('guild'));
+    }
+
+    if (interaction.customId === CUSTOM_IDS.direct) {
+      const selectedUser = await getSelectedUser(interaction);
+      if (!selectedUser) {
+        return safeReply(interaction, { content: '❌ Selecione um usuario antes de enviar o aviso individual.', ephemeral: true });
+      }
+      return interaction.showModal(buildMessageModal('direct'));
     }
 
     if (interaction.customId === CUSTOM_IDS.global) {
@@ -500,18 +514,15 @@ module.exports = {
 
     const scope = interaction.customId === 'avisos_modal_global'
       ? 'global'
-      : 'guild';
+      : interaction.customId === 'avisos_modal_direct'
+        ? 'direct'
+        : 'guild';
     const title = interaction.fields.getTextInputValue('title').trim();
     const message = interaction.fields.getTextInputValue('message').trim();
     const rawImageUrl = interaction.fields.getTextInputValue('image_url')?.trim();
-    const scopeLabel = scope === 'global' ? 'Global Vortex' : 'Local';
+    const scopeLabel = scope === 'global' ? 'Global Vortex' : scope === 'direct' ? 'Individual' : 'Local';
 
     await interaction.deferReply({ ephemeral: true });
-
-    const selectedChannel = await getSelectedChannel(interaction);
-    if (!selectedChannel) {
-      return interaction.editReply({ content: '❌ Selecione um canal de texto antes de enviar o aviso.' });
-    }
 
     if (scope === 'global' && loadConfig().DISABLE_NOTICE_DMS === true) {
       return interaction.editReply({ content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.' });
@@ -521,10 +532,26 @@ module.exports = {
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
     const imageEmbed = buildOptionalImageEmbed(interaction, imageUrl);
     const noticeEmbeds = imageEmbed ? [noticeEmbed, imageEmbed] : [noticeEmbed];
-    const channelSent = await sendChannelNotice(interaction, selectedChannel, withNoticeImage({ embeds: noticeEmbeds }), {
-      includeUser: scope === 'guild' && Boolean(getSelection(interaction).userId),
-    });
+    let channelSent = false;
     let result = { sent: 0, failed: 0, total: 0 };
+
+    if (scope === 'guild') {
+      const selectedChannel = await getSelectedChannel(interaction);
+      if (!selectedChannel) {
+        return interaction.editReply({ content: '❌ Selecione um canal de texto antes de enviar o aviso local.' });
+      }
+      channelSent = await sendChannelNotice(interaction, selectedChannel, withNoticeImage({ embeds: noticeEmbeds }), {
+        includeUser: Boolean(getSelection(interaction).userId),
+      });
+    }
+
+    if (scope === 'direct') {
+      const selectedUser = await getSelectedUser(interaction);
+      if (!selectedUser) {
+        return interaction.editReply({ content: '❌ Selecione um usuario antes de enviar o aviso individual.' });
+      }
+      result = await sendDmBatch([selectedUser], withNoticeImage({ embeds: noticeEmbeds }));
+    }
 
     if (scope === 'global') {
       const recipients = await getGuildRecipients(interaction.guild);
@@ -539,8 +566,8 @@ module.exports = {
       description: [
         `**Staff:** <@${interaction.user.id}> (${interaction.user.id})`,
         `**Alcance:** ${scopeLabel}`,
-        `**Canal:** <#${selectedChannel.id}> (${selectedChannel.id})`,
-        scope === 'guild' && getSelection(interaction).userId ? `**Usuario relacionado:** <@${getSelection(interaction).userId}> (${getSelection(interaction).userId})` : null,
+        scope === 'guild' && getSelection(interaction).channelId ? `**Canal:** <#${getSelection(interaction).channelId}> (${getSelection(interaction).channelId})` : null,
+        (scope === 'guild' || scope === 'direct') && getSelection(interaction).userId ? `**Usuario relacionado:** <@${getSelection(interaction).userId}> (${getSelection(interaction).userId})` : null,
         getSelection(interaction).roleIds?.length ? `**Cargos extras:** ${getSelection(interaction).roleIds.map((roleId) => `<@&${roleId}>`).join(' ')}` : null,
         getSelection(interaction).callId ? `**Call:** <#${getSelection(interaction).callId}> (${getSelection(interaction).callId})` : null,
         `**Titulo:** ${title}`,
@@ -558,21 +585,21 @@ module.exports = {
     const summary = [
       '✅ Aviso finalizado.',
       `Alcance: **${scopeLabel}**`,
-      `Canal: <#${selectedChannel.id}>`,
-      `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**`,
+      scope === 'guild' ? `Canal: <#${getSelection(interaction).channelId}>` : null,
+      scope === 'guild' ? `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**` : 'Mensagem no canal: **nao enviada**',
     ];
 
     if (imageUrl) {
       summary.push(`Imagem opcional: ${imageUrl}`);
     }
 
-    if (scope === 'guild' && getSelection(interaction).userId) {
+    if ((scope === 'guild' || scope === 'direct') && getSelection(interaction).userId) {
       summary.push(
         `Usuário relacionado: <@${getSelection(interaction).userId}>`
       );
     }
 
-    if (scope === 'global') {
+    if (scope === 'global' || scope === 'direct') {
       summary.push(
         `Total encontrado: **${result.total}**`,
         `DMs enviadas: **${result.sent}**`,

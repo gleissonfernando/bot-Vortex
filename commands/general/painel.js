@@ -16,12 +16,13 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { sendVortexLog } = require('../../utils/notifications');
-const { deleteUserPoint, adjustPointSession, formatDuration, formatDate } = require('../../utils/pontoManager');
+const { deleteUserPoint, adjustPointSession, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
-const { hasVortexLevel } = require('../../utils/permissions');
+const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck } = require('../../utils/pointAutomation');
+const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -49,7 +50,11 @@ function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } ca
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
 function hasStaffPermission(member) {
-    return hasVortexLevel(member, ['admin']);
+    return hasVortexLevel(member, ['admin', 'medio']);
+}
+
+function hasPanelAccess(member) {
+    return hasAnyVortexRole(member);
 }
 
 function hasMasterPermission(member) {
@@ -128,12 +133,16 @@ module.exports = {
     .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
-    return renderDashboard(interaction, hasStaffPermission(interaction.member) ? 'tab_stats' : 'config_set');
+    return renderDashboard(interaction, 'tab_stats');
   },
 
   async handleButton(interaction) {
     const customId = interaction.customId;
     const conf = loadJSON(CONFIG_PATH);
+
+    if (!hasPanelAccess(interaction.member)) {
+      return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no /painel para usar estes botões.', ephemeral: true });
+    }
 
     if (customId.startsWith('tab_')) {
       return renderDashboard(interaction, customId, true);
@@ -162,6 +171,62 @@ module.exports = {
       }).catch(() => {});
 
       return interaction.editReply(payload);
+    }
+
+    if (customId === 'toggle_point_monitor') {
+      const current = readAutomationConfig();
+      const next = updateAutomationConfig({ POINT_MONITOR_ENABLED: !current.pointMonitorEnabled });
+      return renderDashboard(interaction, 'tab_pontos', true);
+    }
+
+    if (customId === 'toggle_offline_charge') {
+      const current = readAutomationConfig();
+      const next = updateAutomationConfig({ POINT_OFFLINE_CHARGE_ENABLED: !current.offlineChargeEnabled });
+      return renderDashboard(interaction, 'tab_pontos', true);
+    }
+
+    if (customId === 'run_point_automation') {
+      await interaction.deferReply({ ephemeral: true });
+      await runPointAutomationCheck(interaction.client, { force: true });
+      return interaction.editReply({ content: '✅ Verificação de ponto, perfil e cobranças executada agora.' });
+    }
+
+    if (customId === 'close_selected_point') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
+      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuario primeiro.' });
+      const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
+      const result = await closePoint(interaction.guild.id, userId);
+      if (result.action === 'already_closed') {
+        return interaction.editReply({ content: `❌ <@${userId}> nao esta com ponto aberto.` });
+      }
+      await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+      if (targetUser) {
+        await targetUser.send({
+          content: [
+            '⚠️ Seu ponto foi fechado manualmente pela gerencia.',
+            `Fechado por: <@${interaction.user.id}>`,
+            `Horario registrado: ${formatDate(result.data.lastPointCloseAt)}`,
+            `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+            '',
+            'Se esse horario estiver errado, solicite a correcao de ponto pelo painel de ponto ou fale com a gerencia.',
+          ].join('\n'),
+          allowedMentions: { users: [interaction.user.id] },
+        }).catch(() => null);
+      }
+      sendVortexLog(interaction.client, {
+        title: 'Ponto fechado pela gerencia',
+        description: [
+          `Usuario: <@${userId}> (${userId})`,
+          `Gerente: <@${interaction.user.id}>`,
+          `Fechado em: ${formatDate(result.data.lastPointCloseAt)}`,
+          `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+        ].join('\n'),
+        color: '#ED4245',
+        type: 'PONTO',
+        userId: interaction.user.id,
+      }).catch(() => {});
+      return interaction.editReply({ content: `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.` });
     }
     
     if (customId === 'toggle_maint') {
@@ -421,6 +486,14 @@ module.exports = {
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
+                    .setCustomId('nivel_game')
+                    .setLabel('NIVEL EM GAME')
+                    .setPlaceholder('Ex: 12')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
                     .setCustomId('photo_link')
                     .setLabel('LINK DA FOTO')
                     .setPlaceholder('Cole o link da foto do Discord ou imagem')
@@ -447,6 +520,7 @@ module.exports = {
   },
 
   async handleSelectMenu(interaction) {
+    if (!hasPanelAccess(interaction.member)) return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no /painel para usar esta seleção.', ephemeral: true });
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
@@ -592,7 +666,7 @@ module.exports = {
         return renderDashboard(interaction, 'tab_commands', true);
     }
 
-    if (interaction.customId === 'select_point_readjust_user') {
+    if (interaction.customId === 'select_point_readjust_user' || interaction.customId === 'select_open_point_user') {
         pointReadjustSelections.set(getSelectionKey(interaction), interaction.values[0]);
         return renderDashboard(interaction, 'tab_pontos', true);
     }
@@ -617,6 +691,7 @@ module.exports = {
   },
 
   async handleModal(interaction) {
+    if (!hasPanelAccess(interaction.member)) return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no /painel para usar esta ação.', ephemeral: true });
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
@@ -790,6 +865,7 @@ module.exports = {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
         const name = interaction.fields.getTextInputValue('name').trim();
         const callChannelId = interaction.fields.getTextInputValue('call_channel_id').trim();
+        const nivelGame = interaction.fields.getTextInputValue('nivel_game').trim();
         const photoLink = interaction.fields.getTextInputValue('photo_link').trim();
 
         if (!/^\d{15,25}$/.test(userId)) {
@@ -807,6 +883,7 @@ module.exports = {
         const result = await registerManualProfile(interaction.guild, target, {
             name,
             callChannelId: callChannelId || null,
+            nivelGame: nivelGame || null,
             photoLink: photoLink || null,
             registeredBy: interaction.user.id,
         });
@@ -820,6 +897,7 @@ module.exports = {
                 '✅ Perfil cadastrado no sistema.',
                 `Usuário: <@${userId}>`,
                 `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
+                `Nivel: ${result.profile.nivelGame || 'N/A'}`,
                 `Call/Canal: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
                 `Fotos salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
                 `Data/hora real: ${formatDate(new Date())}`,
@@ -853,7 +931,8 @@ async function renderDashboard(interaction, tab, edit = false) {
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_ausencias').setLabel('Ausências').setStyle(tab === 'tab_ausencias' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_ausencias')),
     new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands')),
-    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil'))
+    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil')),
+    new ButtonBuilder().setCustomId('tab_cobrancas').setLabel('Cobranças').setStyle(tab === 'tab_cobrancas' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_cobrancas'))
   );
 
   const actionRow = new ActionRowBuilder();
@@ -1024,6 +1103,15 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'tab_pontos') {
     const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
+    const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[guild.id] || {};
+    const openPointOptions = Object.values(pointData)
+      .filter((point) => point?.activePointStartedAt)
+      .slice(0, 25)
+      .map((point) => ({
+        label: String(point.userName || point.userId).slice(0, 100),
+        description: `Aberto desde ${formatDate(point.activePointStartedAt)}`.slice(0, 100),
+        value: String(point.userId),
+      }));
     embed.setAuthor({ name: '🕒 VORTEX | GESTÃO DE PONTOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#ED4245')
       .setDescription([
@@ -1034,6 +1122,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Reajustar ponto`.',
         '',
         `**Usuario selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
+        `**Pontos abertos:** ${openPointOptions.length}`,
         '',
         '**Reajuste de ponto**',
         'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse periodo no total do usuario e salva em `commands/pontos.json`.',
@@ -1044,9 +1133,19 @@ async function renderDashboard(interaction, tab, edit = false) {
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('correct_point_close').setLabel('Reajustar ponto').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('clear_point_user').setLabel('🗑️ Deletar ponto de usuário').setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('clear_point_user').setLabel('🗑️ Deletar ponto').setStyle(ButtonStyle.Danger)
     );
     extraRows = [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_open_point_user')
+          .setPlaceholder(openPointOptions.length ? 'Selecionar ponto aberto para fechar' : 'Nenhum ponto aberto no momento')
+          .setMinValues(1)
+          .setMaxValues(1)
+          .setDisabled(openPointOptions.length === 0)
+          .addOptions(openPointOptions.length ? openPointOptions : [{ label: 'Nenhum ponto aberto', value: 'none', description: 'Nao ha usuarios com ponto aberto' }])
+      ),
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_point_readjust_user')
@@ -1054,15 +1153,30 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMinValues(1)
           .setMaxValues(1)
       ),
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_update_channel')
-          .setPlaceholder('Selecionar canal do sistema de atualizações')
-          .addChannelTypes(ChannelType.GuildText)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
     ];
+  } else if (tab === 'tab_cobrancas') {
+    const automationConfig = readAutomationConfig();
+    embed.setAuthor({ name: 'VORTEX | COBRANÇAS E PENALIDADES', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#FEE75C')
+      .setDescription([
+        '### Controle de cobranças automáticas',
+        '',
+        `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
+        `Cobrança de offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
+        `DM de ponto aberto a cada: **${automationConfig.pointMonitorDmIntervalHours}h**`,
+        `Fechamento automatico apos: **${automationConfig.pointMonitorAutoCloseHours}h sem confirmar**`,
+        `Tentativas antes de abrir correção: **${automationConfig.pointMonitorMaxDmAttempts}**`,
+        `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
+        `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
+        `Cobrança offline após: **${automationConfig.offlineThresholdHours}h**`,
+        '',
+        'Use `Verificar agora` para rodar a cobrança sem esperar o agendador.',
+      ].join('\n'));
+    actionRow.addComponents(
+      new ButtonBuilder().setCustomId('toggle_point_monitor').setLabel(automationConfig.pointMonitorEnabled ? 'Desligar confirmação' : 'Ligar confirmação').setStyle(automationConfig.pointMonitorEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('toggle_offline_charge').setLabel(automationConfig.offlineChargeEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(automationConfig.offlineChargeEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('run_point_automation').setLabel('Verificar agora').setStyle(ButtonStyle.Primary)
+    );
   } else if (tab === 'tab_commands') {
     const permissions = ensureCommandPermissions(conf);
     const selected = commandPermissionSelections.get(getSelectionKey(interaction)) || COMMAND_PERMISSION_OPTIONS[0].value;
@@ -1148,7 +1262,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         'Este módulo acompanha os usuarios aprovados no `/set`.',
         'Também permite cadastrar manualmente pessoas que já estão no Discord.',
-        'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto>`.',
+        'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto> nivel:<numero>`.',
         'Os links de foto ficam salvos no JSON mesmo se a imagem original for apagada.',
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         '',
@@ -1187,7 +1301,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
 
-  const options = withPanelImage({ embeds: [embed], components: components, ephemeral: true });
+  const options = withPanelImage({ embeds: [embed], components: components });
   if (edit) {
     return safeUpdate(interaction, options).catch(err => console.log('Erro ao atualizar painel:', err));
   } else {

@@ -7,11 +7,13 @@ const { logger } = require('./logger');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
+const PANEL_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const PROFILE_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const PROFILE_REMINDER_HOUR = 19;
 const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
 const PROFILE_ALERT_ROLE_IDS = ['1201238413676924979', '1201238799494152344', '1212944805055692840'];
+const MASTER_ROLE_ID = '1497703127074345040';
 
 let interval = null;
 
@@ -52,6 +54,53 @@ function readProfileConfig() {
 
 function writeProfileConfig(data) {
   fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+function readPanelConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(PANEL_CONFIG_PATH, 'utf8') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function getProfileManagementRoleIds() {
+  const levels = readPanelConfig().VORTEX_ROLE_LEVELS || {};
+  return [
+    MASTER_ROLE_ID,
+    ...(Array.isArray(levels.admin) ? levels.admin : []),
+    ...(Array.isArray(levels.medio) ? levels.medio : []),
+  ].map(String).filter(Boolean).filter((roleId, index, list) => list.indexOf(roleId) === index);
+}
+
+async function ensureProfileChannelAccess(guild, channelId, userId = null) {
+  if (!channelId) return;
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.permissionOverwrites?.edit) return;
+
+  const botId = guild.client.user.id;
+  await channel.permissionOverwrites.edit(botId, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    ManageChannels: true,
+  }, { reason: 'Garantir acesso do bot Vortex ao canal privado do perfil' }).catch(() => null);
+
+  if (userId) {
+    await channel.permissionOverwrites.edit(userId, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+    }, { reason: 'Garantir acesso do dono ao canal privado do perfil' }).catch(() => null);
+  }
+
+  for (const roleId of getProfileManagementRoleIds()) {
+    await channel.permissionOverwrites.edit(roleId, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+    }, { reason: 'Garantir acesso da gerencia ao canal privado do perfil' }).catch(() => null);
+  }
 }
 
 function setProfileBillingEnabled(enabled) {
@@ -140,6 +189,7 @@ async function registerApprovedProfile(guild, member, {
   idGame = null,
   numeroGame = null,
   nivelGame = null,
+  callChannelId = null,
   approvedBy = null,
 } = {}) {
   const data = readProfiles();
@@ -163,7 +213,7 @@ async function registerApprovedProfile(guild, member, {
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: existing.profileImageUrl || images.avatarUrl || null,
     photoLinks: existing.photoLinks || [],
-    callChannelId: existing.callChannelId || null,
+    callChannelId: callChannelId ? String(callChannelId) : existing.callChannelId || null,
     approvedBy: approvedBy ? String(approvedBy) : existing.approvedBy || null,
     approvedAt: existing.approvedAt || now.toISOString(),
     lastProfileUpdateAt: existing.lastProfileUpdateAt || now.toISOString(),
@@ -174,6 +224,7 @@ async function registerApprovedProfile(guild, member, {
 
   data[guild.id][member.id] = profile;
   writeProfiles(data);
+  await ensureProfileChannelAccess(guild, profile.callChannelId, member.id).catch(() => null);
   return profile;
 }
 
@@ -211,6 +262,7 @@ async function updateProfileLink(guild, user, link, updatedBy) {
 
   data[guild.id][user.id] = profile;
   writeProfiles(data);
+  await ensureProfileChannelAccess(guild, profile.callChannelId, user.id).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -254,11 +306,16 @@ async function registerManualProfile(guild, user, {
   name,
   callChannelId = null,
   photoLink = null,
+  nivelGame = null,
   registeredBy = null,
 } = {}) {
   const profileUrl = photoLink ? normalizeProfileUrl(photoLink) : null;
   if (photoLink && !profileUrl) {
     return { ok: false, message: 'Link da foto invalido. Use um link http/https.' };
+  }
+  const normalizedLevel = nivelGame ? normalizeProfileLevel(nivelGame) : null;
+  if (nivelGame && !normalizedLevel) {
+    return { ok: false, message: 'Nivel invalido. Use apenas numeros, exemplo: 12.' };
   }
 
   const member = await guild.members.fetch(user.id).catch(() => null);
@@ -276,6 +333,7 @@ async function registerManualProfile(guild, user, {
     displayName: name || member?.displayName || user.username,
     nomeGame: name || existing.nomeGame || member?.displayName || user.username,
     idGame: existing.idGame || user.id,
+    nivelGame: normalizedLevel || existing.nivelGame || null,
     avatarUrl: images.avatarUrl || existing.avatarUrl || null,
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: profileUrl || existing.profileImageUrl || images.avatarUrl || null,
@@ -414,6 +472,21 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
   return results;
 }
 
+async function ensureAllProfileChannelAccess(client) {
+  const data = readProfiles();
+  for (const [guildId, guildProfiles] of Object.entries(data)) {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) continue;
+
+    for (const profile of Object.values(guildProfiles || {})) {
+      if (!profile?.callChannelId) continue;
+      await ensureProfileChannelAccess(guild, profile.callChannelId, profile.userId).catch((error) => {
+        logger.error('Erro ao garantir acesso ao canal privado do perfil:', error);
+      });
+    }
+  }
+}
+
 function parseTestPeriod(amountInput, unitInput) {
   const amount = Number(amountInput);
   const unit = String(unitInput || '').trim().toLowerCase();
@@ -426,6 +499,7 @@ function parseTestPeriod(amountInput, unitInput) {
 
 function initProfileManager(client) {
   if (interval) clearInterval(interval);
+  ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
   checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no inicio:', error));
   interval = setInterval(() => {
     checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis:', error));
@@ -447,5 +521,7 @@ module.exports = {
   buildProfileEmbed,
   checkProfileUpdates,
   parseTestPeriod,
+  ensureProfileChannelAccess,
+  ensureAllProfileChannelAccess,
   initProfileManager,
 };

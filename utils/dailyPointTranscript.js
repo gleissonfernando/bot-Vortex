@@ -5,7 +5,7 @@ const { listGuildPoints, resetGuildPoints, formatDate } = require('./pontoManage
 const { updateStatusPanel } = require('./pontoPanel');
 const { logger } = require('./logger');
 
-const DAILY_POINT_CHANNEL_ID = '1498473417144533255';
+const DAILY_POINT_CHANNEL_ID = '1497776750233391204';
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'dailyPointTranscriptState.json');
 const TIME_ZONE = 'America/Sao_Paulo';
 
