@@ -243,6 +243,92 @@ function hasBrazilDate(input) {
   return /^\s*\d{1,2}[/-]\d{1,2}[/-]\d{4}\s+/.test(String(input || ''));
 }
 
+function parseFlexibleDateToken(token, now = new Date()) {
+  const raw = String(token || '').trim();
+  const match = raw.match(/^(\d{1,2})(?:[/-](\d{1,2})(?:[/-](\d{2,4}))?)?$/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = match[2] ? Number(match[2]) - 1 : now.getMonth();
+  let year = match[3] ? Number(match[3]) : now.getFullYear();
+  if (year < 100) year += 2000;
+  if (day < 1 || day > 31 || month < 0 || month > 11) return null;
+
+  const date = new Date(year, month, day, 0, 0, 0, 0);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getDate() !== day ||
+    date.getMonth() !== month ||
+    date.getFullYear() !== year
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function extractFlexibleDateTokens(input) {
+  return String(input || '')
+    .match(/\b\d{1,2}(?:[/-]\d{1,2}(?:[/-]\d{2,4})?)?\b/g) || [];
+}
+
+function parseFlexibleTimeToken(token) {
+  const raw = String(token || '').trim().toLowerCase();
+  const match = raw.match(/^(\d{1,2})(?:(?::|h)(\d{1,2}))?h?$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function extractFlexibleTimeTokens(input) {
+  return String(input || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .match(/\b\d{1,2}(?:(?::|h)\d{1,2})?h?\b/g) || [];
+}
+
+function buildDateWithTime(date, time) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    time.hour,
+    time.minute,
+    0,
+    0
+  );
+}
+
+function parseFlexiblePointAdjustment(dateInput, timeRangeInput, now = new Date()) {
+  const dateTokens = extractFlexibleDateTokens(dateInput);
+  const startDateBase = parseFlexibleDateToken(dateTokens[0], now);
+  if (!startDateBase) {
+    return { ok: false, message: 'Data invalida. Use `23`, `23/04`, `23/04/2026` ou `23 ate 24`.' };
+  }
+
+  const explicitEndDateBase = dateTokens[1] ? parseFlexibleDateToken(dateTokens[1], startDateBase) : null;
+  const timeTokens = extractFlexibleTimeTokens(timeRangeInput);
+  const startTime = parseFlexibleTimeToken(timeTokens[0]);
+  const endTime = parseFlexibleTimeToken(timeTokens[1]);
+  if (!startTime || !endTime) {
+    return { ok: false, message: 'Horario invalido. Use algo como `23 as 02`, `23:00 ate 02:00` ou `23h 02h`.' };
+  }
+
+  const startedAt = buildDateWithTime(startDateBase, startTime);
+  let closedAt = buildDateWithTime(explicitEndDateBase || startDateBase, endTime);
+  if (!explicitEndDateBase && closedAt.getTime() <= startedAt.getTime()) {
+    closedAt = new Date(closedAt.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  if (closedAt.getTime() <= startedAt.getTime()) {
+    return { ok: false, message: 'O horario de fechamento precisa ser depois da abertura. Se virou o dia, informe a segunda data ou deixe o sistema virar automaticamente.' };
+  }
+
+  return { ok: true, startedAt, closedAt };
+}
+
 async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correctedBy = null) {
   const current = await getUserPoint(guildId, userId);
   if (!current.activePointStartedAt) {
@@ -377,6 +463,76 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
         ...buildSessionMetadata(startedAt, closedAt),
         adjustedBy: adjustedBy ? String(adjustedBy) : null,
         adjustedAt: nowIso,
+      },
+    ].slice(-100),
+  });
+
+  return {
+    ok: true,
+    action: 'readjusted',
+    durationMs,
+    startedAt: startedAt.toISOString(),
+    closedAt: closedAt.toISOString(),
+    data: next,
+  };
+}
+
+async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeInput, adjustedBy = null) {
+  const parsed = parseFlexiblePointAdjustment(dateInput, timeRangeInput);
+  const current = await getUserPoint(guildId, userId);
+  if (!parsed.ok) {
+    return { ok: false, code: 'invalid_flexible_adjustment', message: parsed.message, data: current };
+  }
+
+  const startedAt = parsed.startedAt;
+  const closedAt = parsed.closedAt;
+
+  if (closedAt.getTime() > Date.now()) {
+    return { ok: false, code: 'future_close', message: 'O horário de fechamento não pode estar no futuro.', data: current };
+  }
+
+  const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
+  const nowIso = new Date().toISOString();
+  const session = {
+    startedAt: startedAt.toISOString(),
+    closedAt: closedAt.toISOString(),
+    durationMs,
+    ...buildSessionMetadata(startedAt, closedAt),
+    adjusted: true,
+    corrected: true,
+    adjustedBy: adjustedBy ? String(adjustedBy) : null,
+    correctedBy: adjustedBy ? String(adjustedBy) : null,
+    adjustedAt: nowIso,
+    flexibleInput: {
+      date: String(dateInput || '').trim(),
+      timeRange: String(timeRangeInput || '').trim(),
+    },
+  };
+
+  const previousActiveStartedAt = current.activePointStartedAt;
+  const next = await saveUserPoint(guildId, userId, {
+    ...current,
+    firstPointAt: current.firstPointAt || startedAt.toISOString(),
+    lastPointOpenAt: startedAt.toISOString(),
+    lastPointCloseAt: closedAt.toISOString(),
+    activePointStartedAt: null,
+    activePointDate: null,
+    activePointDay: null,
+    activePointStartTime: null,
+    totalMs: Number(current.totalMs || 0) + durationMs,
+    sessions: [...(current.sessions || []), session].slice(-300),
+    corrections: [
+      ...(current.corrections || []),
+      {
+        type: 'manual_readjust_flexible',
+        startedAt: startedAt.toISOString(),
+        closedAt: closedAt.toISOString(),
+        previousActiveStartedAt,
+        durationMs,
+        ...buildSessionMetadata(startedAt, closedAt),
+        adjustedBy: adjustedBy ? String(adjustedBy) : null,
+        adjustedAt: nowIso,
+        flexibleInput: session.flexibleInput,
       },
     ].slice(-100),
   });
@@ -536,7 +692,9 @@ module.exports = {
   resetGuildPoints,
   correctOpenPointCloseTime,
   adjustPointSession,
+  adjustPointSessionFlexible,
   parseBrazilDateTime,
+  parseFlexiblePointAdjustment,
   togglePoint,
   openPoint,
   closePoint,

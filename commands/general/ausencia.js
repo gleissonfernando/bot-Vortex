@@ -61,22 +61,52 @@ function buildAbsenceModal(interaction) {
   return modal;
 }
 
-function buildAbsencePanel() {
+function buildAbsencePanel(interaction = null) {
+  const iconURL = interaction?.guild?.iconURL?.({ dynamic: true, size: 256 })
+    || interaction?.client?.user?.displayAvatarURL?.()
+    || null;
+
   const embed = new EmbedBuilder()
     .setColor('#7000FF')
-    .setAuthor({ name: '🌪️ VORTEX | Sistema de Ausencia' })
-    .setTitle('🛡️ Painel de Ausencia')
+    .setAuthor({ name: '🌪️ VORTEX • Sistema de Ausência', iconURL: iconURL || undefined })
+    .setTitle('Painel de Ausência')
     .setDescription([
-      'Escolha uma acao abaixo para gerenciar sua ausencia.',
+      'Use este painel para solicitar afastamento temporário ou retirar uma ausência ativa.',
       '',
-      '📌 **Periodo aceito na solicitacao**',
-      '⏰ `12:00` para 12 horas.',
-      '⏱️ `12h` para 12 horas.',
-      '📅 `12/01` para dia e mes.',
-      '🗓️ `12/01/2026` para data completa.',
+      'Ao solicitar, o sistema registra o motivo, calcula o retorno e aplica o cargo de ausência configurado pela gerência.',
     ].join('\n'))
-    .setFooter({ text: 'Vortex - Sistema de Ausencia' })
+    .addFields(
+      {
+        name: 'Como solicitar',
+        value: [
+          '`1.` Clique em **Solicitar ausência**.',
+          '`2.` Informe nome, ID, motivo e período.',
+          '`3.` Aguarde o registro automático do sistema.',
+        ].join('\n'),
+        inline: false,
+      },
+      {
+        name: 'Formatos aceitos',
+        value: [
+          '`12:00` ou `12h` para horas',
+          '`12/01` para dia e mês',
+          '`12/01/2026` para data completa',
+        ].join('\n'),
+        inline: true,
+      },
+      {
+        name: 'Retorno',
+        value: [
+          'Use **Retirar ausência** quando voltar antes do prazo.',
+          'A gerência pode alterar o retorno pelo `/painel`.',
+        ].join('\n'),
+        inline: true,
+      }
+    )
+    .setFooter({ text: 'Vortex • Sistema de Ausência' })
     .setTimestamp();
+
+  if (iconURL) embed.setThumbnail(iconURL);
 
   const files = [];
   if (fs.existsSync(VORTEX_PANEL_IMAGE)) {
@@ -87,14 +117,14 @@ function buildAbsencePanel() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ausencia_request')
-      .setLabel('Solicitar ausencia')
+      .setLabel('Solicitar ausência')
       .setEmoji('📝')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('ausencia_remove')
-      .setLabel('Retirar ausencia')
-      .setEmoji('✅')
-      .setStyle(ButtonStyle.Danger)
+      .setLabel('Retirar ausência')
+      .setEmoji('↩️')
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row], files };
@@ -106,7 +136,7 @@ module.exports = {
     .setDescription('Abre o painel para solicitar ou retirar ausencia.'),
 
   async execute(interaction) {
-    return interaction.reply(buildAbsencePanel());
+    return interaction.reply(buildAbsencePanel(interaction));
   },
 
   buildAbsenceModal,

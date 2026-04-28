@@ -16,7 +16,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { sendVortexLog } = require('../../utils/notifications');
-const { deleteUserPoint, adjustPointSession, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
+const { deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
@@ -350,17 +350,17 @@ module.exports = {
             modal.addComponents(
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
-                        .setCustomId('started_at')
-                        .setLabel('HORARIO QUE ABRIU O PONTO')
-                        .setPlaceholder('Obrigatorio: 27/04/2026 14:00:00')
+                        .setCustomId('point_date')
+                        .setLabel('DATA DO PONTO')
+                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
-                        .setCustomId('closed_at')
-                        .setLabel('HORARIO QUE FECHOU O PONTO')
-                        .setPlaceholder('Obrigatorio: 27/04/2026 18:30:00')
+                        .setCustomId('time_range')
+                        .setLabel('HORARIO DO PONTO')
+                        .setPlaceholder('Ex: 23 as 02, 23:00 ate 02:00 ou 12 as 23')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 )
@@ -722,14 +722,14 @@ module.exports = {
 
     if (interaction.customId === 'modal_correct_point_close') {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
-        const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
-        const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
+        const dateInput = interaction.fields.getTextInputValue('point_date').trim();
+        const timeRangeInput = interaction.fields.getTextInputValue('time_range').trim();
 
         if (!/^\d{15,25}$/.test(userId)) {
             return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
         }
 
-        const result = await adjustPointSession(interaction.guild.id, userId, startedAtInput, closedAtInput, interaction.user.id);
+        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, timeRangeInput, interaction.user.id);
         if (!result.ok) {
             return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
         }
