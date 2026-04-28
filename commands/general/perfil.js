@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const {
   getUserProfile,
   updateProfileLink,
+  updateProfileLevel,
   buildProfileEmbed,
 } = require('../../utils/profileManager');
 
@@ -18,6 +19,11 @@ module.exports = {
       option
         .setName('link')
         .setDescription('Link da foto do perfil para atualizar')
+        .setRequired(false))
+    .addStringOption((option) =>
+      option
+        .setName('nivel')
+        .setDescription('Numero do nivel em game para atualizar')
         .setRequired(false)),
 
   async execute(interaction) {
@@ -25,8 +31,9 @@ module.exports = {
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const link = interaction.options.getString('link');
+    const nivel = interaction.options.getString('nivel');
 
-    if (link && target.id !== interaction.user.id) {
+    if ((link || nivel) && target.id !== interaction.user.id) {
       return interaction.editReply({
         content: '❌ Voce so pode atualizar o seu proprio perfil.',
       });
@@ -34,6 +41,11 @@ module.exports = {
 
     if (link) {
       const result = await updateProfileLink(interaction.guild, target, link, interaction.user.id);
+      if (!result.ok) return interaction.editReply({ content: `❌ ${result.message}` });
+    }
+
+    if (nivel) {
+      const result = await updateProfileLevel(interaction.guild, target, nivel, interaction.user.id);
       if (!result.ok) return interaction.editReply({ content: `❌ ${result.message}` });
     }
 

@@ -9,6 +9,8 @@ const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
 const PROFILE_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const PROFILE_REMINDER_HOUR = 19;
+const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
 const PROFILE_ALERT_ROLE_IDS = ['1201238413676924979', '1201238799494152344', '1212944805055692840'];
 
 let interval = null;
@@ -95,6 +97,35 @@ function addPhotoLink(existingLinks, link, addedBy = null) {
   return links.slice(-100);
 }
 
+function normalizeProfileLevel(input) {
+  const value = String(input || '').trim();
+  if (!/^\d{1,6}$/.test(value)) return null;
+  return value;
+}
+
+function getSaoPauloDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: PROFILE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function getSaoPauloDateKey(date = new Date()) {
+  const parts = getSaoPauloDateParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function canSendScheduledProfileReminder(date = new Date()) {
+  const hour = Number(getSaoPauloDateParts(date).hour);
+  return Number.isFinite(hour) && hour >= PROFILE_REMINDER_HOUR;
+}
+
 async function getUserImages(user) {
   const fetched = await user.fetch?.(true).catch(() => user) || user;
   return {
@@ -172,6 +203,42 @@ async function updateProfileLink(guild, user, link, updatedBy) {
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: profileUrl,
     photoLinks: addPhotoLink(existing.photoLinks, profileUrl, updatedBy || user.id),
+    lastProfileUpdateAt: now.toISOString(),
+    lastReminderAt: null,
+    updatedBy: updatedBy ? String(updatedBy) : user.id,
+    updatedAt: now.toISOString(),
+  };
+
+  data[guild.id][user.id] = profile;
+  writeProfiles(data);
+  return { ok: true, profile };
+}
+
+async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
+  const normalizedLevel = normalizeProfileLevel(nivelGame);
+  if (!normalizedLevel) {
+    return { ok: false, message: 'Nivel invalido. Use apenas numeros, exemplo: 12.' };
+  }
+
+  const data = readProfiles();
+  if (!data[guild.id]) data[guild.id] = {};
+
+  const now = new Date();
+  const existing = data[guild.id][user.id] || {};
+  if (!existing.approvedAt) {
+    return { ok: false, message: 'Este usuario ainda nao possui perfil aprovado salvo pelo /set.' };
+  }
+
+  const images = await getUserImages(user);
+  const profile = {
+    ...existing,
+    guildId: guild.id,
+    userId: user.id,
+    discordTag: user.tag,
+    displayName: existing.displayName || user.username,
+    avatarUrl: images.avatarUrl || existing.avatarUrl || null,
+    bannerUrl: images.bannerUrl || existing.bannerUrl || null,
+    nivelGame: normalizedLevel,
     lastProfileUpdateAt: now.toISOString(),
     lastReminderAt: null,
     updatedBy: updatedBy ? String(updatedBy) : user.id,
@@ -268,13 +335,18 @@ function buildProfileEmbed({ guild, user, member, profile }) {
 async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE_UPDATE_INTERVAL_MS, force = false) {
   const config = readProfileConfig();
   if (!config.billingDmEnabled) return { sent: false, reason: 'billing_disabled' };
+  if (!force && !canSendScheduledProfileReminder(new Date())) {
+    return { sent: false, reason: 'before_19h' };
+  }
 
   const now = Date.now();
   const lastUpdateMs = profile.lastProfileUpdateAt ? new Date(profile.lastProfileUpdateAt).getTime() : 0;
   const lastReminderMs = profile.lastReminderAt ? new Date(profile.lastReminderAt).getTime() : 0;
   if (!lastUpdateMs) return { sent: false, reason: 'missing_update' };
   if (!force && now - lastUpdateMs < thresholdMs) return { sent: false, reason: 'not_due' };
-  if (!force && lastReminderMs && now - lastReminderMs < PROFILE_UPDATE_INTERVAL_MS) return { sent: false, reason: 'already_reminded' };
+  if (!force && lastReminderMs && getSaoPauloDateKey(new Date(lastReminderMs)) === getSaoPauloDateKey(new Date())) {
+    return { sent: false, reason: 'already_reminded_today' };
+  }
 
   const user = await client.users.fetch(profile.userId).catch(() => null);
   if (!user) return { sent: false, reason: 'missing_user' };
@@ -289,13 +361,18 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Tempo sem atualizar:** ${formatDuration(now - lastUpdateMs)}`,
       `**Horario do aviso:** ${formatDate(new Date())}`,
       '',
-      'Use `/perfil link:<link da imagem>` para atualizar.',
+      'Use `/perfil link:<link da imagem> nivel:<numero>` para atualizar.',
     ].join('\n'))
     .setTimestamp();
 
-  await user.send({ embeds: [embed] });
+  await user.send({ embeds: [embed] }).catch(() => null);
 
-  const channel = await client.channels.fetch(getLogChannelId()).catch(() => null);
+  const profileChannel = profile.callChannelId
+    ? await client.channels.fetch(profile.callChannelId).catch(() => null)
+    : null;
+  const channel = profileChannel?.isTextBased?.()
+    ? profileChannel
+    : await client.channels.fetch(getLogChannelId()).catch(() => null);
   if (channel?.isTextBased?.()) {
     const roleMentions = PROFILE_ALERT_ROLE_IDS.map((id) => `<@&${id}>`).join(' ');
     await channel.send({
@@ -366,6 +443,7 @@ module.exports = {
   registerApprovedProfile,
   registerManualProfile,
   updateProfileLink,
+  updateProfileLevel,
   buildProfileEmbed,
   checkProfileUpdates,
   parseTestPeriod,

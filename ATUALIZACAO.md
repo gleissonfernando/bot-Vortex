@@ -14,7 +14,7 @@ O painel possui:
 - Selecao de canal de texto.
 - Selecao de usuario relacionado.
 - Selecao de cargos extras para mencao.
-- Selecao de call relacionada.
+- Selecao de c1all relacionada.
 - Dois botoes principais:
   - `Enviar Local`
   - `Enviar Global Vortex`
