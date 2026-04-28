@@ -1,6 +1,7 @@
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -8,6 +9,11 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+
+const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
+const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 
 function buildAbsenceModal(interaction) {
   const modal = new ModalBuilder()
@@ -58,32 +64,40 @@ function buildAbsenceModal(interaction) {
 function buildAbsencePanel() {
   const embed = new EmbedBuilder()
     .setColor('#7000FF')
-    .setAuthor({ name: 'VORTEX | Sistema de Ausencia' })
-    .setTitle('Painel de Ausencia')
+    .setAuthor({ name: '🌪️ VORTEX | Sistema de Ausencia' })
+    .setTitle('🛡️ Painel de Ausencia')
     .setDescription([
-      'Escolha uma acao abaixo.',
+      'Escolha uma acao abaixo para gerenciar sua ausencia.',
       '',
-      '**Periodo aceito na solicitacao**',
-      '`12:00` para 12 horas.',
-      '`12h` para 12 horas.',
-      '`12/01` para dia e mes.',
-      '`12/01/2026` para data completa.',
+      '📌 **Periodo aceito na solicitacao**',
+      '⏰ `12:00` para 12 horas.',
+      '⏱️ `12h` para 12 horas.',
+      '📅 `12/01` para dia e mes.',
+      '🗓️ `12/01/2026` para data completa.',
     ].join('\n'))
     .setFooter({ text: 'Vortex - Sistema de Ausencia' })
     .setTimestamp();
+
+  const files = [];
+  if (fs.existsSync(VORTEX_PANEL_IMAGE)) {
+    embed.setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`);
+    files.push(new AttachmentBuilder(VORTEX_PANEL_IMAGE, { name: VORTEX_PANEL_IMAGE_NAME }));
+  }
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ausencia_request')
       .setLabel('Solicitar ausencia')
+      .setEmoji('📝')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('ausencia_remove')
       .setLabel('Retirar ausencia')
+      .setEmoji('✅')
       .setStyle(ButtonStyle.Danger)
   );
 
-  return { embeds: [embed], components: [row], ephemeral: true };
+  return { embeds: [embed], components: [row], files, ephemeral: true };
 }
 
 module.exports = {
