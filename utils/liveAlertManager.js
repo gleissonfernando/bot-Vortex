@@ -6,8 +6,9 @@ const axios = require('axios');
 const config = require('../config/config');
 
 const DATA_PATH = path.join(__dirname, '..', 'commands', 'liveLinks.json');
-const ALERT_CHANNEL_ID = '1202251715865489459';
-const TWITCH_POLL_INTERVAL_MS = 60_000;
+const ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
+const TWITCH_POLL_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
+const DISCORD_MENTION = process.env.DISCORD_MENTION || '';
 const LIVE_TERMS_BASE_URL = process.env.LIVE_TERMS_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://bot-vortex.shardweb.app';
 const activeStreams = new Set();
 const twitchOnlineStreams = new Set();
@@ -240,6 +241,14 @@ function getTwitchConfig() {
   };
 }
 
+function getEnvTwitchStreamers() {
+  return (process.env.TWITCH_STREAMERS || '')
+    .split(',')
+    .map((streamer) => streamer.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((streamer, index, list) => list.indexOf(streamer) === index);
+}
+
 function hasTwitchCredentials() {
   const { clientId, clientSecret } = getTwitchConfig();
   return Boolean(clientId && clientSecret);
@@ -353,6 +362,34 @@ function buildLiveAlertEmbed({ member, user, activity, link, place }) {
   return embed;
 }
 
+function buildTwitchStreamEmbed(stream) {
+  const streamUrl = `https://www.twitch.tv/${stream.user_login}`;
+  const thumbnail = stream.thumbnail_url
+    ? stream.thumbnail_url
+        .replace('{width}', '1280')
+        .replace('{height}', '720') + `?r=${Date.now()}`
+    : null;
+
+  const embed = new EmbedBuilder()
+    .setColor('#1D7DFF')
+    .setAuthor({
+      name: `${stream.user_name || stream.user_login} está AO VIVO!`,
+      url: streamUrl,
+    })
+    .setTitle(stream.title || 'Live sem titulo')
+    .setURL(streamUrl)
+    .addFields(
+      { name: 'Jogo', value: stream.game_name || 'Nao informado', inline: true },
+      { name: 'Viewers', value: Number(stream.viewer_count || 0).toLocaleString('pt-BR'), inline: true },
+      { name: 'Assistir', value: `[Entrar na live agora!](${streamUrl})`, inline: false },
+    )
+    .setFooter({ text: 'Vortex Twitch Live Alert' })
+    .setTimestamp(stream.started_at ? new Date(stream.started_at) : new Date());
+
+  if (thumbnail) embed.setImage(thumbnail);
+  return embed;
+}
+
 async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null, force = false }) {
   if (!guild || !user || user.bot) return false;
 
@@ -413,6 +450,26 @@ async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, stre
     streamKeyOverride: streamKey,
     force,
   });
+}
+
+async function sendEnvTwitchLiveAlert(client, stream) {
+  const channel = await client.channels.fetch(ALERT_CHANNEL_ID).catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    console.warn(`[LIVE ALERT] Canal Discord invalido ou inacessivel: ${ALERT_CHANNEL_ID}`);
+    return false;
+  }
+
+  const streamUrl = `https://www.twitch.tv/${stream.user_login}`;
+  const mention = DISCORD_MENTION ? `${DISCORD_MENTION} ` : '';
+  await channel.send({
+    content: `${mention}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
+    embeds: [buildTwitchStreamEmbed(stream)],
+  }).catch((error) => {
+    console.warn(`[LIVE ALERT] Falha ao enviar alerta Twitch de ${stream.user_login}: ${error.message}`);
+    return null;
+  });
+
+  return true;
 }
 
 async function checkUserTwitchLinks(client, guildId, userId, { sendIfOnline = false } = {}) {
@@ -488,6 +545,14 @@ function getConfiguredTwitchTargets() {
   const data = getAllLiveLinks();
   const targets = [];
 
+  for (const streamer of getEnvTwitchStreamers()) {
+    targets.push({
+      source: 'env',
+      twitchLogin: streamer,
+      link: `https://www.twitch.tv/${streamer}`,
+    });
+  }
+
   for (const [guildId, guildConfig] of Object.entries(data)) {
     for (const [userId, entry] of Object.entries(guildConfig || {})) {
       const normalized = normalizeLiveEntry(entry);
@@ -497,6 +562,7 @@ function getConfiguredTwitchTargets() {
         const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
         if (!twitchLogin || !link?.url) continue;
         targets.push({
+          source: 'user',
           guildId,
           userId,
           link: link.url,
@@ -519,7 +585,9 @@ async function pollTwitchLiveAlerts(client) {
 
     const streams = await fetchTwitchStreams(targets.map((target) => target.twitchLogin));
     for (const target of targets) {
-      const streamKey = `${target.guildId}:${target.userId}:twitch:${target.twitchLogin}`;
+      const streamKey = target.source === 'env'
+        ? `env:twitch:${target.twitchLogin}`
+        : `${target.guildId}:${target.userId}:twitch:${target.twitchLogin}`;
       const stream = streams.get(target.twitchLogin);
 
       if (!stream) {
@@ -530,13 +598,17 @@ async function pollTwitchLiveAlerts(client) {
 
       if (twitchOnlineStreams.has(streamKey)) continue;
 
-      await sendTwitchLiveAlert(client, {
-        guildId: target.guildId,
-        userId: target.userId,
-        link: target.link,
-        stream,
-        streamKey,
-      });
+      if (target.source === 'env') {
+        await sendEnvTwitchLiveAlert(client, stream);
+      } else {
+        await sendTwitchLiveAlert(client, {
+          guildId: target.guildId,
+          userId: target.userId,
+          link: target.link,
+          stream,
+          streamKey,
+        });
+      }
       twitchOnlineStreams.add(streamKey);
     }
   } catch (error) {
@@ -554,6 +626,10 @@ function initTwitchLiveMonitor(client) {
   }
 
   if (twitchPollTimer) clearInterval(twitchPollTimer);
+  const envStreamers = getEnvTwitchStreamers();
+  if (envStreamers.length) {
+    console.log(`[LIVE ALERT] Monitorando streamers do .env: ${envStreamers.join(', ')}`);
+  }
   pollTwitchLiveAlerts(client).catch(() => null);
   twitchPollTimer = setInterval(() => {
     pollTwitchLiveAlerts(client).catch(() => null);
