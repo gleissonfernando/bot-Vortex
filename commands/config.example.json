@@ -39,6 +39,7 @@
     "ponto": [],
     "ausencia": [],
     "perfil": [],
-    "ativarponto": []
+    "ativarponto": [],
+    "live_remove": []
   }
 }

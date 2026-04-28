@@ -45,6 +45,7 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
+    { label: 'Remover /live', value: 'live_remove', description: 'Quem pode remover links de live cadastrados' },
 ];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
@@ -1103,6 +1104,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Avisos', value: formatRoleList(permissions.avisos, '`Sem filtro extra`'), inline: true },
         { name: 'Registro', value: formatRoleList(permissions.registro, '`Sem filtro extra`'), inline: true },
         { name: 'Ponto', value: formatRoleList(permissions.ponto, '`Sem filtro extra`'), inline: true },
+        { name: 'Remover live', value: formatRoleList(permissions.live_remove, '`Não configurado`'), inline: true },
         { name: 'Ajuste de ponto', value: formatRoleList(conf.POINT_ADJUST_STAFF_ROLES, '`Admin Vortex`'), inline: true }
       );
 

@@ -30,7 +30,7 @@ function hasMasterPermission(member) {
 
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
-    if (commandName === 'clear' || commandName === 'clipe') return true;
+    if (commandName === 'clear' || commandName === 'clipe' || commandName === 'live') return true;
     if (commandName === 'perfil' && getUserProfile(interaction.guildId, interaction.user.id)) return true;
 
     const conf = loadJSON(CONFIG_PATH);
@@ -390,6 +390,16 @@ module.exports = {
             }
             if (interaction.isModalSubmit() && (interaction.customId === 'avisos_modal_guild' || interaction.customId === 'avisos_modal_global' || interaction.customId === 'avisos_modal_direct')) {
                 return await avisos.handleModal(interaction);
+            }
+        }
+
+        const live = client.commands.get('live');
+        if (live) {
+            if (interaction.isButton() && (interaction.customId === 'live_alert_set_link' || interaction.customId === 'live_alert_remove_link')) {
+                return await live.handleButton(interaction);
+            }
+            if (interaction.isModalSubmit() && interaction.customId === 'live_alert_link_modal') {
+                return await live.handleModal(interaction);
             }
         }
 
