@@ -64,12 +64,12 @@ function getStreamingActivity(presence) {
   return presence?.activities?.find((activity) => activity.type === ActivityType.Streaming) || null;
 }
 
-function getStreamPlace(activity) {
+function getStreamPlace(activity, fallback = 'Live') {
   return [
     activity?.name,
     activity?.details,
     activity?.state,
-  ].filter(Boolean).join(' | ') || 'Live';
+  ].filter(Boolean).join(' | ') || fallback;
 }
 
 function buildLivePanelEmbed(interaction, link) {
@@ -90,9 +90,9 @@ function buildLivePanelEmbed(interaction, link) {
     .setTimestamp();
 }
 
-function buildLiveAlertEmbed({ member, user, activity, link }) {
+function buildLiveAlertEmbed({ member, user, activity, link, place }) {
   const displayName = member?.displayName || user.username;
-  const place = getStreamPlace(activity);
+  const streamPlace = place || getStreamPlace(activity);
   const activityUrl = activity?.url && activity.url !== link ? activity.url : null;
 
   const embed = new EmbedBuilder()
@@ -106,7 +106,7 @@ function buildLiveAlertEmbed({ member, user, activity, link }) {
       `<@${user.id}> começou uma transmissão.`,
       '',
       `**Link:** ${link}`,
-      `**Onde:** ${place}`,
+      `**Onde:** ${streamPlace}`,
       activityUrl ? `**Detectado pelo Discord:** ${activityUrl}` : null,
     ].filter(Boolean).join('\n'))
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
@@ -114,6 +114,48 @@ function buildLiveAlertEmbed({ member, user, activity, link }) {
     .setTimestamp();
 
   return embed;
+}
+
+async function sendLiveAlert({ guild, user, member, activity = null, place = null }) {
+  if (!guild || !user || user.bot) return false;
+
+  const guildId = guild.id;
+  const userId = user.id;
+  const streamKey = `${guildId}:${userId}`;
+  if (activeStreams.has(streamKey)) return false;
+
+  const link = getLiveLink(guildId, userId);
+  if (!link) {
+    activeStreams.add(streamKey);
+    return false;
+  }
+
+  const channel = await guild.channels.fetch(ALERT_CHANNEL_ID).catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    console.warn(`[LIVE ALERT] Canal de alerta invalido ou inacessivel: ${ALERT_CHANNEL_ID}`);
+    activeStreams.add(streamKey);
+    return false;
+  }
+
+  const guildMember = member || await guild.members.fetch(userId).catch(() => null);
+
+  await channel.send({
+    content: `<@${userId}> está fazendo live: ${link}`,
+    embeds: [buildLiveAlertEmbed({
+      member: guildMember,
+      user,
+      activity,
+      link,
+      place,
+    })],
+    allowedMentions: { users: [userId] },
+  }).catch((error) => {
+    console.warn(`[LIVE ALERT] Falha ao enviar alerta de live de ${userId}: ${error.message}`);
+    return null;
+  });
+
+  activeStreams.add(streamKey);
+  return true;
 }
 
 async function handlePresenceLiveAlert(oldPresence, newPresence) {
@@ -130,38 +172,48 @@ async function handlePresenceLiveAlert(oldPresence, newPresence) {
     return;
   }
 
-  if (oldStreaming || activeStreams.has(streamKey)) {
+  if (oldStreaming) {
     activeStreams.add(streamKey);
     return;
   }
 
-  const link = getLiveLink(guildId, userId);
-  if (!link) {
+  await sendLiveAlert({
+    guild: newPresence.guild,
+    user: newPresence.user,
+    member: newPresence.member,
+    activity: newStreaming,
+  });
+}
+
+async function handleVoiceLiveAlert(oldState, newState) {
+  const guild = newState?.guild;
+  const member = newState?.member;
+  const user = member?.user;
+  if (!guild || !member || !user || user.bot) return;
+
+  const guildId = guild.id;
+  const userId = user.id;
+  const streamKey = `${guildId}:${userId}`;
+  const wasStreaming = Boolean(oldState?.streaming);
+  const isStreaming = Boolean(newState?.streaming);
+
+  if (!isStreaming) {
+    activeStreams.delete(streamKey);
+    return;
+  }
+
+  if (wasStreaming) {
     activeStreams.add(streamKey);
     return;
   }
 
-  const channel = await newPresence.guild.channels.fetch(ALERT_CHANNEL_ID).catch(() => null);
-  if (!channel?.isTextBased?.()) {
-    activeStreams.add(streamKey);
-    return;
-  }
-
-  const member = newPresence.member
-    || await newPresence.guild.members.fetch(userId).catch(() => null);
-
-  await channel.send({
-    content: `<@${userId}> está fazendo live: ${link}`,
-    embeds: [buildLiveAlertEmbed({
-      member,
-      user: newPresence.user,
-      activity: newStreaming,
-      link,
-    })],
-    allowedMentions: { users: [userId] },
-  }).catch(() => null);
-
-  activeStreams.add(streamKey);
+  const voiceChannel = newState.channel;
+  await sendLiveAlert({
+    guild,
+    user,
+    member,
+    place: voiceChannel ? `<#${voiceChannel.id}>` : 'Call do Discord',
+  });
 }
 
 module.exports = {
@@ -169,6 +221,7 @@ module.exports = {
   buildLivePanelEmbed,
   getLiveLink,
   handlePresenceLiveAlert,
+  handleVoiceLiveAlert,
   isValidLiveUrl,
   removeLiveLink,
   setLiveLink,
