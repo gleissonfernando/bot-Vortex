@@ -414,7 +414,9 @@ async function safeReply(interaction, options) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('avisos')
-    .setDescription('Abre o painel para enviar avisos por DM.'),
+    .setDescription('Abre o painel para enviar avisos por DM.')
+    .setDefaultMemberPermissions(null)
+    .setDMPermission(false),
 
   async execute(interaction) {
     if (!canUseAvisos(interaction)) {
@@ -424,7 +426,6 @@ module.exports = {
     return safeReply(interaction, withPanelImage({
       embeds: [buildPanelEmbed(interaction)],
       components: buildPanelComponents(),
-      ephemeral: true,
     }));
   },
 
