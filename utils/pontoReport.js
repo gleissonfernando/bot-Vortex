@@ -45,7 +45,7 @@ async function buildUserRegistroEmbed(guild, user) {
 function buildReportText(guild, rows, totals) {
   const lines = [
     `Relatorio completo de ponto - ${guild.name}`,
-    `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+    `Gerado em: ${formatDate(new Date())}`,
     '',
     `Usuarios: ${totals.users}`,
     `Usuarios online: ${totals.active}`,

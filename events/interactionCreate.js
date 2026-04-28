@@ -3,9 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
 const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled } = require('../utils/notifications');
-const { openPoint, closePoint, formatDuration, formatDate, formatTime } = require('../utils/pontoManager');
+const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
-const { createAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
+const { createAbsence, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
 const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
 
@@ -197,7 +197,7 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('closed_at')
                         .setLabel('HORARIO QUE FICOU EM GAME')
-                        .setPlaceholder('Ex: 18:30 ou 27/04/2026 18:30')
+                        .setPlaceholder('Ex: 18:30:45 ou 27/04/2026 18:30:45')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
@@ -295,7 +295,7 @@ module.exports = {
                 title: opening ? 'Ponto Aberto' : 'Ponto Fechado',
                 description: opening
                     ? `<@${user.id}> abriu o ponto as ${formatDate(result.data.activePointStartedAt)}.`
-                    : `<@${user.id}> fechou o ponto. Duracao: ${formatDuration(result.durationMs)}.`,
+                    : `<@${user.id}> fechou o ponto as ${formatDate(result.data.lastPointCloseAt)}. Duracao: ${formatDuration(result.durationMs)}.`,
                 color: opening ? '#57F287' : '#ED4245',
                 type: 'PONTO',
                 userId: user.id,
@@ -303,8 +303,27 @@ module.exports = {
 
             return interaction.editReply({
                 content: opening
-                    ? `✅ Você entrou em serviço às ${formatTime(result.data.activePointStartedAt)}.`
-                    : `Ponto fechado. Tempo deste ponto: ${formatDuration(result.durationMs)}.`,
+                    ? `✅ Você entrou em serviço em ${formatDate(result.data.activePointStartedAt)}.`
+                    : `Ponto fechado em ${formatDate(result.data.lastPointCloseAt)}. Tempo deste ponto: ${formatDuration(result.durationMs)}.`,
+            });
+        }
+
+        if (interaction.isButton() && interaction.customId === 'ausencia_request') {
+            const ausencia = client.commands.get('ausencia');
+            if (!ausencia?.buildAbsenceModal) {
+                return safeReply(interaction, { content: '❌ Sistema de ausencia indisponivel no momento.', ephemeral: true });
+            }
+            return interaction.showModal(ausencia.buildAbsenceModal(interaction));
+        }
+
+        if (interaction.isButton() && interaction.customId === 'ausencia_remove') {
+            await interaction.deferReply({ ephemeral: true });
+            const result = await removeOwnAbsence(interaction);
+            if (!result.ok) {
+                return interaction.editReply({ content: `❌ ${result.message}` });
+            }
+            return interaction.editReply({
+                content: `✅ Sua ausencia foi retirada. Retorno registrado em ${formatAbsenceDate(result.absence.removedAt)}.`,
             });
         }
 
@@ -369,6 +388,9 @@ module.exports = {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
+                return await painel.handleSelectMenu(interaction);
+            }
+            if (interaction.isUserSelectMenu() && interaction.customId === 'select_point_readjust_user') {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return')) {

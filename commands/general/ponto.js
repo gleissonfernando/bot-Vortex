@@ -20,7 +20,7 @@ function statusText(data) {
 function buildReportText(guild, rows, totals) {
   const lines = [
     `Relatorio de ponto - ${guild.name}`,
-    `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+    `Gerado em: ${formatDate(new Date())}`,
     '',
     `Usuarios no relatorio: ${totals.users}`,
     `Usuarios em servico: ${totals.active}`,

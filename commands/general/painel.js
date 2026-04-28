@@ -6,6 +6,7 @@ const {
   ButtonStyle, 
   ChannelSelectMenuBuilder, 
   RoleSelectMenuBuilder,
+  UserSelectMenuBuilder,
   StringSelectMenuBuilder,
   ChannelType,
   ModalBuilder,
@@ -15,7 +16,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { sendVortexLog } = require('../../utils/notifications');
-const { deleteUserPoint, correctOpenPointCloseTime, formatDuration, formatDate } = require('../../utils/pontoManager');
+const { deleteUserPoint, adjustPointSession, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
@@ -30,6 +31,7 @@ const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 const commandPermissionSelections = new Map();
+const pointReadjustSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
@@ -265,28 +267,40 @@ module.exports = {
     }
 
     if (customId === 'clear_point_user' || customId === 'correct_point_close') {
+        const selectedUserId = pointReadjustSelections.get(getSelectionKey(interaction));
         const modal = new ModalBuilder()
             .setCustomId(customId === 'clear_point_user' ? 'modal_clear_point_user' : 'modal_correct_point_close')
-            .setTitle(customId === 'clear_point_user' ? 'Deletar Dados de Ponto' : 'Corrigir Fechamento de Ponto');
+            .setTitle(customId === 'clear_point_user' ? 'Deletar Dados de Ponto' : 'Reajustar Ponto');
 
         modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder()
                 .setCustomId('user_id')
                 .setLabel('ID DO USUARIO')
-                .setPlaceholder('Cole o ID Discord do usuario')
+                .setPlaceholder('Selecione no painel ou cole o ID Discord')
+                .setValue(selectedUserId || '')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
         ));
 
         if (customId === 'correct_point_close') {
-            modal.addComponents(new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('closed_at')
-                    .setLabel('HORARIO CORRETO DE FECHAMENTO')
-                    .setPlaceholder('Ex: 18:30 ou 27/04/2026 18:30')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true)
-            ));
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('started_at')
+                        .setLabel('HORARIO QUE ABRIU O PONTO')
+                        .setPlaceholder('Ex: 14:00:00 ou 27/04/2026 14:00:00')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('closed_at')
+                        .setLabel('HORARIO QUE FECHOU O PONTO')
+                        .setPlaceholder('Ex: 18:30:00 ou 27/04/2026 18:30:00')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                )
+            );
         }
 
         return interaction.showModal(modal);
@@ -329,7 +343,7 @@ module.exports = {
                 new TextInputBuilder()
                     .setCustomId('return_period')
                     .setLabel('NOVO RETORNO')
-                    .setPlaceholder('Data: 30/04/2026 | Dias: 3 | Horas: 12h')
+                    .setPlaceholder('Data: 30/04 ou 30/04/2026 | Dias: 3 | Horas: 12:00')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
             )
@@ -469,6 +483,11 @@ module.exports = {
 
         return renderDashboard(interaction, 'tab_commands', true);
     }
+
+    if (interaction.customId === 'select_point_readjust_user') {
+        pointReadjustSelections.set(getSelectionKey(interaction), interaction.values[0]);
+        return renderDashboard(interaction, 'tab_pontos', true);
+    }
   },
 
   async handleModal(interaction) {
@@ -502,13 +521,14 @@ module.exports = {
 
     if (interaction.customId === 'modal_correct_point_close') {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
+        const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
         const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
 
         if (!/^\d{15,25}$/.test(userId)) {
             return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
         }
 
-        const result = await correctOpenPointCloseTime(interaction.guild.id, userId, closedAtInput, interaction.user.id);
+        const result = await adjustPointSession(interaction.guild.id, userId, startedAtInput, closedAtInput, interaction.user.id);
         if (!result.ok) {
             return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
         }
@@ -516,12 +536,13 @@ module.exports = {
         await updateStatusPanel(interaction.client, interaction.guild.id);
 
         sendVortexLog(interaction.client, {
-            title: 'Fechamento de Ponto Corrigido',
+            title: 'Ponto Reajustado',
             description: [
-                `O ponto aberto de <@${userId}> (${userId}) foi corrigido por <@${interaction.user.id}>.`,
+                `O ponto de <@${userId}> (${userId}) foi reajustado por <@${interaction.user.id}>.`,
+                `Abertura aplicada: ${formatDate(result.startedAt)}`,
                 `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                 `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-                'A correção foi salva em `commands/pontos.json`.',
+                'O reajuste foi salvo em `commands/pontos.json`.',
             ].join('\n'),
             color: '#FEE75C',
             type: 'PONTO',
@@ -530,11 +551,12 @@ module.exports = {
 
         return safeReply(interaction, {
             content: [
-                '✅ Fechamento de ponto corrigido.',
+                '✅ Ponto reajustado.',
                 `Usuário: <@${userId}>`,
+                `Abertura aplicada: ${formatDate(result.startedAt)}`,
                 `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                 `Tempo somado: ${formatDuration(result.durationMs)}`,
-                'O ponto foi salvo no JSON e não ficará aberto se o bot reiniciar.',
+                'O reajuste foi salvo no JSON.',
             ].join('\n'),
             ephemeral: true
         });
@@ -795,15 +817,38 @@ async function renderDashboard(interaction, tab, edit = false) {
       pointRoleRow,
     ];
   } else if (tab === 'tab_pontos') {
+    const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
     embed.setAuthor({ name: '🕒 VORTEX | GESTÃO DE PONTOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#ED4245')
-      .setDescription('### Controle de dados de ponto\n\n**Como funciona**\nUse esta aba para deletar os dados de ponto de um usuário ou corrigir um ponto que ficou aberto porque a pessoa esqueceu de fechar.\n\nA correção fecha o ponto aberto no horário informado, soma o tempo ao total do usuário e salva tudo em `commands/pontos.json`. Mesmo se o bot cair depois, o ajuste continua salvo.\n\nFormato aceito para corrigir: `HH:mm` para hoje ou `DD/MM/AAAA HH:mm` para uma data específica.');
+      .setDescription([
+        '### Controle de dados de ponto',
+        '',
+        '**Como funciona**',
+        'Use esta aba para deletar dados de ponto ou fazer um reajuste manual.',
+        'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Reajustar ponto`.',
+        '',
+        `**Usuario selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
+        '',
+        '**Reajuste de ponto**',
+        'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse periodo no total do usuario e salva em `commands/pontos.json`.',
+        '',
+        'Formato aceito: `HH:mm:ss` para hoje ou `DD/MM/AAAA HH:mm:ss` para uma data específica. Os segundos são opcionais.',
+      ].join('\n'));
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('correct_point_close').setLabel('Corrigir fechamento').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('correct_point_close').setLabel('Reajustar ponto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('clear_point_user').setLabel('🗑️ Deletar ponto de usuário').setStyle(ButtonStyle.Danger)
     );
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId('select_point_readjust_user')
+          .setPlaceholder('Selecionar usuario para reajustar ponto')
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+    ];
   } else if (tab === 'tab_commands') {
     const permissions = ensureCommandPermissions(conf);
     const selected = commandPermissionSelections.get(getSelectionKey(interaction)) || COMMAND_PERMISSION_OPTIONS[0].value;
@@ -860,7 +905,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '**Ausencias ativas**',
         activeList,
         '',
-        'Para horas, informe o retorno como `12h`. Para dia/data, use `DD/MM/AAAA` ou uma quantidade de dias como `3`.',
+        'Para horas, informe o retorno como `12:00` ou `12h`. Para dia/data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use uma quantidade como `3`.',
       ].join('\n'))
       .addFields(
         { name: 'Cargo de ausência', value: `<@&${absenceConfig.roleId}>`, inline: true },

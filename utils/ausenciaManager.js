@@ -76,6 +76,16 @@ function formatDuration(ms = 0) {
 
 function parsePeriod(input, now = new Date()) {
   const raw = String(input || '').trim().toLowerCase();
+  const hoursTimeMatch = raw.match(/^(\d{1,3}):(\d{2})$/);
+  if (hoursTimeMatch) {
+    const hours = Number(hoursTimeMatch[1]);
+    const minutes = Number(hoursTimeMatch[2]);
+    if (hours < 0 || minutes < 0 || minutes > 59) return null;
+    const totalMs = (hours * 60 + minutes) * 60 * 1000;
+    if (totalMs <= 0) return null;
+    return new Date(now.getTime() + totalMs);
+  }
+
   const hoursMatch = raw.match(/^(\d{1,4})\s*h$/i);
   if (hoursMatch) {
     const hours = Number(hoursMatch[1]);
@@ -90,14 +100,19 @@ function parsePeriod(input, now = new Date()) {
     return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   }
 
-  const dateMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  const dateMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?$/);
   if (dateMatch) {
     const day = Number(dateMatch[1]);
     const month = Number(dateMatch[2]) - 1;
-    const year = Number(dateMatch[3]);
-    const end = new Date(year, month, day, 23, 59, 59, 999);
+    let year = dateMatch[3] ? Number(dateMatch[3]) : now.getFullYear();
+    let end = new Date(year, month, day, 23, 59, 59, 999);
     if (Number.isNaN(end.getTime())) return null;
     if (end.getDate() !== day || end.getMonth() !== month || end.getFullYear() !== year) return null;
+    if (!dateMatch[3] && end.getTime() <= now.getTime()) {
+      year += 1;
+      end = new Date(year, month, day, 23, 59, 59, 999);
+      if (end.getDate() !== day || end.getMonth() !== month || end.getFullYear() !== year) return null;
+    }
     if (end.getTime() <= now.getTime()) return null;
     return end;
   }
@@ -137,14 +152,17 @@ async function sendAbsenceLog(client, guildId, absence, action = 'created') {
 
   const isCreated = action === 'created';
   const isUpdated = action === 'updated';
+  const isRemoved = action === 'removed';
   const embed = new EmbedBuilder()
-    .setColor(isCreated ? '#7000FF' : isUpdated ? '#FEE75C' : '#57F287')
-    .setTitle(isCreated ? 'Ausencia Registrada' : isUpdated ? 'Retorno de Ausencia Alterado' : 'Ausencia Finalizada')
+    .setColor(isCreated ? '#7000FF' : isUpdated ? '#FEE75C' : isRemoved ? '#ED4245' : '#57F287')
+    .setTitle(isCreated ? 'Ausencia Registrada' : isUpdated ? 'Retorno de Ausencia Alterado' : isRemoved ? 'Ausencia Retirada' : 'Ausencia Finalizada')
     .setDescription(isCreated
       ? `O usuario <@${absence.userId}> entrou em modo ausencia e recebeu o cargo <@&${absence.roleId}>.`
       : isUpdated
         ? `A data de retorno de <@${absence.userId}> foi alterada por <@${absence.updatedBy}>.`
-        : `A ausencia de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
+        : isRemoved
+          ? `O usuario <@${absence.userId}> retirou a propria ausencia e o cargo <@&${absence.roleId}> foi removido.`
+          : `A ausencia de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
     .addFields(
       { name: 'Nome', value: absence.name || 'N/A', inline: true },
       { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
@@ -168,7 +186,7 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
   if (!endsAt) {
     return {
       ok: false,
-      message: 'Periodo invalido. Para dias, use uma data `DD/MM/AAAA` ou quantidade como `3`. Para horas, use `2h`, `12h` ou similar.',
+      message: 'Periodo invalido. Para horas, use `12:00`, `2h`, `12h` ou similar. Para data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use quantidade como `3`.',
     };
   }
 
@@ -223,6 +241,35 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
   return { ok: true, absence };
 }
 
+async function removeOwnAbsence(interaction) {
+  const data = readAbsences();
+  const absence = data[interaction.guild.id]?.[interaction.user.id];
+  if (!absence || absence.status !== 'active') {
+    return { ok: false, message: 'Voce nao possui ausencia ativa para retirar.' };
+  }
+
+  const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  if (member && absence.roleId) {
+    await member.roles.remove(absence.roleId, 'Ausencia retirada pelo usuario no sistema Vortex').catch(() => null);
+  }
+
+  const now = new Date();
+  const next = {
+    ...absence,
+    status: 'removed',
+    removedBy: interaction.user.id,
+    removedAt: now.toISOString(),
+    finishedAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  data[interaction.guild.id][interaction.user.id] = next;
+  writeAbsences(data);
+  await sendAbsenceLog(interaction.client, interaction.guild.id, next, 'removed');
+
+  return { ok: true, absence: next };
+}
+
 async function notifyAbsenceReturnChanged(client, guild, absence, oldEndsAt) {
   const user = await client.users.fetch(absence.userId).catch(() => null);
   if (!user) return false;
@@ -255,7 +302,7 @@ async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) 
   if (!nextEndsAt) {
     return {
       ok: false,
-      message: 'Retorno invalido. Use data `DD/MM/AAAA`, quantidade de dias como `3` ou horas como `12h`.',
+      message: 'Retorno invalido. Use data `DD/MM` ou `DD/MM/AAAA`, quantidade de dias como `3`, ou horas como `12:00`/`12h`.',
     };
   }
 
@@ -351,6 +398,7 @@ module.exports = {
   getActiveGuildAbsences,
   createAbsence,
   updateAbsenceReturn,
+  removeOwnAbsence,
   initAbsenceManager,
   parsePeriod,
   formatDate,
