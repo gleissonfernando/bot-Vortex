@@ -4,6 +4,8 @@ module.exports = {
     token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN,
     clientId: process.env.VITE_DISCORD_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '',
     guildId: process.env.VITE_DISCORD_GUILD_ID || process.env.DISCORD_GUILD_ID || '1201193356810780773',
+    twitchClientId: process.env.TWITCH_CLIENT_ID || '',
+    twitchClientSecret: process.env.TWITCH_CLIENT_SECRET || '',
     
     // IDs Fixos Vortex
     pendingRoleId: '1449514118292967578',

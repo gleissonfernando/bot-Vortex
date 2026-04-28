@@ -1,10 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 const { ActivityType, EmbedBuilder } = require('discord.js');
+const axios = require('axios');
+const config = require('../config/config');
 
 const DATA_PATH = path.join(__dirname, '..', 'commands', 'liveLinks.json');
 const ALERT_CHANNEL_ID = '1202251715865489459';
+const TWITCH_POLL_INTERVAL_MS = 60_000;
 const activeStreams = new Set();
+const twitchOnlineStreams = new Set();
+let twitchToken = null;
+let twitchTokenExpiresAt = 0;
+let twitchPollTimer = null;
+let twitchPollRunning = false;
 
 function loadLiveLinks() {
   try {
@@ -24,9 +32,30 @@ function getGuildConfig(guildId) {
   return data[String(guildId)] || {};
 }
 
+function getAllLiveLinks() {
+  return loadLiveLinks();
+}
+
 function getLiveLink(guildId, userId) {
   const guildConfig = getGuildConfig(guildId);
   return guildConfig[String(userId)]?.url || null;
+}
+
+function parseTwitchLogin(url) {
+  try {
+    const parsed = new URL(String(url).trim());
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (hostname !== 'twitch.tv' && hostname !== 'm.twitch.tv') return null;
+
+    const [login] = parsed.pathname.split('/').filter(Boolean);
+    if (!login || ['directory', 'downloads', 'jobs', 'p', 'popout', 'settings', 'subscriptions', 'turbo', 'videos'].includes(login.toLowerCase())) {
+      return null;
+    }
+
+    return /^[a-z0-9_]{3,25}$/i.test(login) ? login.toLowerCase() : null;
+  } catch {
+    return null;
+  }
 }
 
 function setLiveLink(guildId, userId, url, updatedBy) {
@@ -35,8 +64,11 @@ function setLiveLink(guildId, userId, url, updatedBy) {
   const userKey = String(userId);
   if (!data[guildKey]) data[guildKey] = {};
 
+  const twitchLogin = parseTwitchLogin(url);
   data[guildKey][userKey] = {
     url,
+    platform: twitchLogin ? 'twitch' : 'other',
+    twitchLogin,
     updatedBy: String(updatedBy),
     updatedAt: new Date().toISOString(),
   };
@@ -70,6 +102,66 @@ function getStreamPlace(activity, fallback = 'Live') {
     activity?.details,
     activity?.state,
   ].filter(Boolean).join(' | ') || fallback;
+}
+
+function getTwitchConfig() {
+  return {
+    clientId: config.twitchClientId || process.env.TWITCH_CLIENT_ID,
+    clientSecret: config.twitchClientSecret || process.env.TWITCH_CLIENT_SECRET,
+  };
+}
+
+async function getTwitchAppToken() {
+  const { clientId, clientSecret } = getTwitchConfig();
+  if (!clientId || !clientSecret) return null;
+
+  if (twitchToken && Date.now() < twitchTokenExpiresAt - 60_000) {
+    return twitchToken;
+  }
+
+  const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+    params: {
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials',
+    },
+    timeout: 15_000,
+  });
+
+  twitchToken = response.data?.access_token || null;
+  const expiresInMs = Number(response.data?.expires_in || 0) * 1000;
+  twitchTokenExpiresAt = Date.now() + Math.max(expiresInMs, 0);
+  return twitchToken;
+}
+
+async function fetchTwitchStreams(logins) {
+  const uniqueLogins = [...new Set(logins.map(String).map((login) => login.toLowerCase()).filter(Boolean))];
+  if (uniqueLogins.length === 0) return new Map();
+
+  const token = await getTwitchAppToken();
+  const { clientId } = getTwitchConfig();
+  if (!token || !clientId) return new Map();
+
+  const streams = new Map();
+  for (let index = 0; index < uniqueLogins.length; index += 100) {
+    const batch = uniqueLogins.slice(index, index + 100);
+    const params = new URLSearchParams();
+    for (const login of batch) params.append('user_login', login);
+
+    const response = await axios.get(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
+      headers: {
+        'Client-ID': clientId,
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: 15_000,
+    });
+
+    for (const stream of response.data?.data || []) {
+      streams.set(String(stream.user_login).toLowerCase(), stream);
+    }
+  }
+
+  return streams;
 }
 
 function buildLivePanelEmbed(interaction, link) {
@@ -158,6 +250,94 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   return true;
 }
 
+async function sendTwitchLiveAlert(client, { guildId, userId, link, stream }) {
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+  if (!guild) return false;
+
+  const user = await client.users.fetch(userId).catch(() => null);
+  if (!user) return false;
+
+  const member = await guild.members.fetch(userId).catch(() => null);
+  const category = stream.game_name ? `Twitch | ${stream.game_name}` : 'Twitch';
+  return sendLiveAlert({
+    guild,
+    user,
+    member,
+    link,
+    place: category,
+  });
+}
+
+function getConfiguredTwitchTargets() {
+  const data = getAllLiveLinks();
+  const targets = [];
+
+  for (const [guildId, guildConfig] of Object.entries(data)) {
+    for (const [userId, entry] of Object.entries(guildConfig || {})) {
+      const twitchLogin = entry?.twitchLogin || parseTwitchLogin(entry?.url);
+      if (!twitchLogin || !entry?.url) continue;
+      targets.push({
+        guildId,
+        userId,
+        link: entry.url,
+        twitchLogin,
+      });
+    }
+  }
+
+  return targets;
+}
+
+async function pollTwitchLiveAlerts(client) {
+  if (twitchPollRunning) return;
+  twitchPollRunning = true;
+
+  try {
+    const targets = getConfiguredTwitchTargets();
+    if (targets.length === 0) return;
+
+    const streams = await fetchTwitchStreams(targets.map((target) => target.twitchLogin));
+    for (const target of targets) {
+      const streamKey = `${target.guildId}:${target.userId}:twitch:${target.twitchLogin}`;
+      const stream = streams.get(target.twitchLogin);
+
+      if (!stream) {
+        twitchOnlineStreams.delete(streamKey);
+        activeStreams.delete(`${target.guildId}:${target.userId}`);
+        continue;
+      }
+
+      if (twitchOnlineStreams.has(streamKey)) continue;
+
+      await sendTwitchLiveAlert(client, {
+        guildId: target.guildId,
+        userId: target.userId,
+        link: target.link,
+        stream,
+      });
+      twitchOnlineStreams.add(streamKey);
+    }
+  } catch (error) {
+    console.warn(`[LIVE ALERT] Falha ao consultar Twitch: ${error.message}`);
+  } finally {
+    twitchPollRunning = false;
+  }
+}
+
+function initTwitchLiveMonitor(client) {
+  const { clientId, clientSecret } = getTwitchConfig();
+  if (!clientId || !clientSecret) {
+    console.warn('[LIVE ALERT] TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes. Monitor da Twitch desativado.');
+    return;
+  }
+
+  if (twitchPollTimer) clearInterval(twitchPollTimer);
+  pollTwitchLiveAlerts(client).catch(() => null);
+  twitchPollTimer = setInterval(() => {
+    pollTwitchLiveAlerts(client).catch(() => null);
+  }, TWITCH_POLL_INTERVAL_MS);
+}
+
 async function handlePresenceLiveAlert(oldPresence, newPresence) {
   if (!newPresence?.guild || !newPresence.user || newPresence.user.bot) return;
 
@@ -222,7 +402,9 @@ module.exports = {
   getLiveLink,
   handlePresenceLiveAlert,
   handleVoiceLiveAlert,
+  initTwitchLiveMonitor,
   isValidLiveUrl,
+  parseTwitchLogin,
   removeLiveLink,
   setLiveLink,
 };

@@ -25,6 +25,7 @@ O aviso informa:
 - `utils/liveAlertManager.js`
   - Salva os links em `commands/liveLinks.json`.
   - Detecta a atividade de streaming.
+  - Consulta a Twitch Helix quando o link cadastrado for da Twitch.
   - Monta o embed do aviso de live.
   - Evita avisos repetidos enquanto o usuario continua na mesma live.
 
@@ -36,6 +37,23 @@ O aviso informa:
   - Escuta mudancas em call/canal de voz.
   - Dispara o alerta quando o usuario inicia uma live dentro de uma call do Discord.
   - Usa a propria call como o lugar onde a live esta acontecendo.
+
+## Monitor Twitch
+
+Quando o link cadastrado no `/live` for da Twitch, o bot extrai o nome do canal pelo link e consulta a Twitch Helix a cada 60 segundos.
+
+Se a Twitch retornar a stream como online, o bot envia o alerta no canal configurado:
+
+`1202251715865489459`
+
+Para esse monitor funcionar, o `.env` precisa ter:
+
+```env
+TWITCH_CLIENT_ID=seu_client_id
+TWITCH_CLIENT_SECRET=seu_client_secret
+```
+
+Essas credenciais sao de um app criado no painel de desenvolvedor da Twitch.
 
 ## Arquivos alterados
 
@@ -68,6 +86,7 @@ O cargo master tambem continua tendo permissao pela regra interna do sistema.
 
 - O bot ja esta com `GatewayIntentBits.GuildPresences` no `index.js`.
 - O bot tambem ja esta com `GatewayIntentBits.GuildVoiceStates`, usado para detectar live em call do Discord.
+- O monitor Twitch nao depende do Discord mostrar a atividade de live, mas precisa das credenciais `TWITCH_CLIENT_ID` e `TWITCH_CLIENT_SECRET`.
 - O intent de Presence tambem precisa estar ativado no Developer Portal do Discord.
 - Para o comando `/live` aparecer no Discord, e necessario reiniciar o bot ou redeployar os comandos.
 - Se o arquivo `commands/liveLinks.json` nao existir no ambiente onde o bot esta rodando, o usuario precisa cadastrar o link novamente usando `/live`.

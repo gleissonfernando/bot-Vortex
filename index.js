@@ -15,6 +15,7 @@ const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
 const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
+const { initTwitchLiveMonitor } = require('./utils/liveAlertManager');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || 3000);
@@ -118,6 +119,7 @@ client.once(Events.ClientReady, async () => {
     initProfileManager(client);
     initDailyPointTranscript(client);
     initPointAutomation(client);
+    initTwitchLiveMonitor(client);
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',
