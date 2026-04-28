@@ -385,7 +385,7 @@ module.exports = {
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
                 return await painel.handleSelectMenu(interaction);
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel', 'select_update_channel'].includes(interaction.customId)) {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_command_permission_target') {

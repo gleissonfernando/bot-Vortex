@@ -514,6 +514,22 @@ module.exports = {
         return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
+    if (interaction.customId === 'select_update_channel') {
+        if (!hasMasterPermission(interaction.member)) return safeReply(interaction, { content: `❌ Somente o cargo <@&${SUPERIOR_ID}> pode configurar atualizações.`, ephemeral: true });
+        data.UPDATE_LOG_CHANNEL_ID = String(interaction.values[0]);
+        saveJSON(CONFIG_PATH, data);
+
+        sendVortexLog(interaction.client, {
+            title: 'Canal de Atualizacoes Alterado',
+            description: `O canal do sistema de atualizações foi alterado para <#${data.UPDATE_LOG_CHANNEL_ID}> por <@${interaction.user.id}>.`,
+            color: '#57F287',
+            type: 'ATUALIZAÇÕES',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_manutencao', true);
+    }
+
     if (interaction.customId === 'select_point_adjust_role') {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ajuste de ponto.', ephemeral: true });
         data.POINT_ADJUST_STAFF_ROLES = interaction.values.map(String);
@@ -837,8 +853,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_ausencias').setLabel('Ausências').setStyle(tab === 'tab_ausencias' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_ausencias')),
     new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands')),
-    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil')),
-    new ButtonBuilder().setCustomId('tab_updates').setLabel('Atualizações').setStyle(tab === 'tab_updates' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_updates'))
+    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil'))
   );
 
   const actionRow = new ActionRowBuilder();
@@ -909,7 +924,9 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '📩 Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
           { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
-          { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true }
+          { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
+          { name: 'Canal de atualizações', value: conf.UPDATE_LOG_CHANNEL_ID ? `<#${conf.UPDATE_LOG_CHANNEL_ID}>` : '`Padrao do sistema`', inline: true },
+          { name: 'Atualizações recentes', value: readUpdatesSummary().slice(0, 900), inline: false }
       )
 
     actionRow.addComponents(
@@ -1037,6 +1054,14 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMinValues(1)
           .setMaxValues(1)
       ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_update_channel')
+          .setPlaceholder('Selecionar canal do sistema de atualizações')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
     ];
   } else if (tab === 'tab_commands') {
     const permissions = ensureCommandPermissions(conf);
@@ -1156,16 +1181,6 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMaxValues(1)
       ),
     ];
-  } else if (tab === 'tab_updates') {
-    embed.setAuthor({ name: 'VORTEX | ATUALIZAÇÕES', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
-      .setColor('#57F287')
-      .setDescription([
-        '### Correções e Atualizações',
-        '',
-        readUpdatesSummary(),
-        '',
-        `Data/hora real: ${formatDate(new Date())}`,
-      ].join('\n').slice(0, 4096));
   }
 
   let components = ['tab_config', 'config_set', 'config_avisos'].includes(tab) ? [mainRow] : [mainRow, navRow];

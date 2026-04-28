@@ -27,7 +27,9 @@ module.exports = {
     const link = interaction.options.getString('link');
 
     if (link && target.id !== interaction.user.id) {
-      return interaction.editReply({ content: '❌ Voce so pode atualizar o link do seu proprio perfil.' });
+      return interaction.editReply({
+        content: '❌ Voce so pode atualizar o seu proprio perfil.',
+      });
     }
 
     if (link) {

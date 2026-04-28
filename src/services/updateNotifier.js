@@ -3,11 +3,12 @@ const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { formatDate } = require('../../utils/pontoManager');
 
-const DEFAULT_UPDATE_LOG_CHANNEL_ID = '14977767502333912041';
+const DEFAULT_UPDATE_LOG_CHANNEL_ID = '1497776750233391204';
 const DEFAULT_UPDATE_NOTIFY_ROLE_ID = '1201235607549124639';
 const VORTEX_BANNER_PATH = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_BANNER_NAME = 'IMG_4234.png';
 const UPDATE_SUMMARY_PATH = path.join(__dirname, '..', '..', 'logs', 'vortex-update-summary.txt');
+const CONFIG_PATH = path.join(__dirname, '..', '..', 'commands', 'config.json');
 
 let sentThisBoot = false;
 
@@ -19,10 +20,19 @@ function getVersion() {
   return process.env.BOT_VERSION || '1.0.0';
 }
 
+function getConfiguredUpdateChannelId() {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8') || '{}');
+    return config.UPDATE_LOG_CHANNEL_ID || config.UPDATE_CHANNEL_ID || null;
+  } catch {
+    return null;
+  }
+}
+
 async function notifyBotUpdate(client) {
   if (sentThisBoot) return false;
 
-  const channelId = process.env.UPDATE_LOG_CHANNEL_ID || DEFAULT_UPDATE_LOG_CHANNEL_ID;
+  const channelId = process.env.UPDATE_LOG_CHANNEL_ID || getConfiguredUpdateChannelId() || DEFAULT_UPDATE_LOG_CHANNEL_ID;
   const roleId = process.env.UPDATE_NOTIFY_ROLE_ID || DEFAULT_UPDATE_NOTIFY_ROLE_ID;
 
   try {
