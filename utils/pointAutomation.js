@@ -12,6 +12,7 @@ const { listGuildPoints, formatDate, formatDuration } = require('./pontoManager'
 const { getGuildProfiles } = require('./profileManager');
 const { getActiveGuildAbsences } = require('./ausenciaManager');
 const { logger } = require('./logger');
+const { sendVortexLog } = require('./notifications');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -190,8 +191,10 @@ async function createPointCorrectionChannel(client, guild, point, state, details
     allowedMentions: { users: [point.userId], roles: staffRoleIds },
   }).catch(() => null);
 
-  await sendPenaltyChannelMessage(client, guild, point.userId, embed, [buildPenaltyRow(point.userId)]);
-  await sendManagerDm(client, embed);
+  if (details.notifyManagement) {
+    await sendPenaltyChannelMessage(client, guild, point.userId, embed, [buildPenaltyRow(point.userId)]);
+    await sendManagerDm(client, embed);
+  }
   return channel;
 }
 
@@ -218,6 +221,18 @@ async function openPointCorrectionForClosedPoint(client, guild, point, {
     ].filter(Boolean),
   };
   const channel = await createPointCorrectionChannel(client, guild, point, state[key] || {}, details);
+  await sendVortexLog(client, {
+    title: 'Canal de correcao de ponto aberto',
+    description: [
+      `Usuario: <@${point.userId}> (${point.userId})`,
+      `Motivo: ${reason}`,
+      closedBy ? `Fechado por: <@${closedBy}>` : null,
+      closedAt ? `Fechamento registrado: ${formatDate(closedAt)}` : null,
+      channel ? `Canal: <#${channel.id}>` : 'Canal: nao criado',
+    ].filter(Boolean).join('\n'),
+    color: '#FEE75C',
+    type: 'PONTO',
+  }).catch(() => null);
   state[key] = {
     ...(state[key] || {}),
     ticketChannelId: channel?.id || null,
@@ -294,7 +309,18 @@ async function checkOpenPointConfirmations(client, guild, state) {
       continue;
     }
 
-    const channel = await createPointCorrectionChannel(client, guild, point, item).catch((error) => {
+    const channel = await createPointCorrectionChannel(client, guild, point, item, {
+      notifyManagement: true,
+      title: 'Terceira falha de ponto',
+      descriptionLines: [
+        `<@${point.userId}> ficou 3 vezes sem confirmar/fechar o ponto.`,
+        '',
+        `Ponto aberto desde: **${formatDate(point.activePointStartedAt)}**`,
+        `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
+        '',
+        'A gerencia deve conferir o horario correto e aplicar a correcao se necessario.',
+      ],
+    }).catch((error) => {
       logger.error('Erro ao criar canal de correcao de ponto:', error);
       return null;
     });

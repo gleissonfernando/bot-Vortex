@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
-const { getLogChannelId } = require('./notifications');
 const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
 
@@ -14,6 +13,7 @@ const PROFILE_REMINDER_HOUR = 19;
 const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
 const PROFILE_ALERT_ROLE_IDS = ['1201238413676924979', '1201238799494152344', '1212944805055692840'];
 const MASTER_ROLE_ID = '1497703127074345040';
+const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1483169256727122050';
 
 let interval = null;
 
@@ -71,6 +71,11 @@ function getProfileManagementRoleIds() {
     ...(Array.isArray(levels.admin) ? levels.admin : []),
     ...(Array.isArray(levels.medio) ? levels.medio : []),
   ].map(String).filter(Boolean).filter((roleId, index, list) => list.indexOf(roleId) === index);
+}
+
+function getProfileManagementChannelId() {
+  const config = readPanelConfig();
+  return String(config.POINT_PENALTY_CHANNEL_ID || DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID);
 }
 
 async function ensureProfileChannelAccess(guild, channelId, userId = null) {
@@ -425,19 +430,17 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
 
   await user.send({ embeds: [embed] }).catch(() => null);
 
-  const profileChannel = profile.callChannelId
-    ? await client.channels.fetch(profile.callChannelId).catch(() => null)
-    : null;
-  const channel = profileChannel?.isTextBased?.()
-    ? profileChannel
-    : await client.channels.fetch(getLogChannelId()).catch(() => null);
-  if (channel?.isTextBased?.()) {
+  const shouldNotifyManagement = now - lastUpdateMs >= PROFILE_UPDATE_INTERVAL_MS;
+  if (shouldNotifyManagement) {
+    const channel = await client.channels.fetch(getProfileManagementChannelId()).catch(() => null);
     const roleMentions = PROFILE_ALERT_ROLE_IDS.map((id) => `<@&${id}>`).join(' ');
-    await channel.send({
-      content: `${roleMentions} <@${profile.userId}>`,
-      embeds: [embed],
-      allowedMentions: { users: [profile.userId], roles: PROFILE_ALERT_ROLE_IDS },
-    }).catch(() => null);
+    if (channel?.isTextBased?.()) {
+      await channel.send({
+        content: `${roleMentions} <@${profile.userId}>`,
+        embeds: [embed],
+        allowedMentions: { users: [profile.userId], roles: PROFILE_ALERT_ROLE_IDS },
+      }).catch(() => null);
+    }
   }
 
   const data = readProfiles();

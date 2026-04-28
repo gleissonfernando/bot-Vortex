@@ -783,6 +783,19 @@ module.exports = {
         }
 
         await updateStatusPanel(interaction.client, interaction.guild.id);
+        const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
+        if (targetUser) {
+            await targetUser.send({
+                content: [
+                    '✅ Seu ponto foi ajustado pela gerencia.',
+                    `Abertura aplicada: ${formatDate(result.startedAt)}`,
+                    `Fechamento aplicado: ${formatDate(result.closedAt)}`,
+                    `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+                    '',
+                    'O sistema foi alterado com a correcao informada. Caso ainda exista divergencia, fale com a gerencia.',
+                ].join('\n'),
+            }).catch(() => null);
+        }
 
         sendVortexLog(interaction.client, {
             title: 'Ponto Reajustado',
