@@ -70,6 +70,23 @@ Essa pagina mostra os termos e direciona para:
 
 Quando essa rota recebe um token valido, o usuario fica marcado como aceito em `commands/liveLinks.json`. Depois disso, o painel `/live` libera o botao para adicionar links.
 
+## Termos e privacidade
+
+A pagina de termos informa que o Bot Vortex pode coletar e armazenar:
+
+- ID do usuario no Discord.
+- Nome de usuario.
+- ID do servidor.
+- Canal da Twitch vinculado.
+
+Esses dados sao usados exclusivamente para:
+
+- Identificar o usuario dentro do sistema.
+- Enviar alertas automaticos de live.
+- Exibir informacoes no painel administrativo.
+
+A politica de privacidade informa que os dados nao sao vendidos nem compartilhados com terceiros, e que o usuario pode solicitar a remocao dos dados ao administrador do bot.
+
 ## Arquivos alterados
 
 - `events/interactionCreate.js`
