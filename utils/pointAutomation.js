@@ -21,6 +21,7 @@ const DEFAULT_PENALTY_CHANNEL_ID = '1483169256727122050';
 const DEFAULT_MANAGER_DM_USER_IDS = ['730925532958425240', '289227932432334869'];
 const MASTER_ROLE_ID = '1497703127074345040';
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
 let interval = null;
 
@@ -58,6 +59,8 @@ function readAutomationConfig() {
       ? config.POINT_MANAGER_DM_USER_IDS.map(String)
       : DEFAULT_MANAGER_DM_USER_IDS,
     offlineThresholdHours: Number(config.POINT_OFFLINE_THRESHOLD_HOURS || 12),
+    offlineChargeIntervalDays: Number(config.POINT_OFFLINE_CHARGE_INTERVAL_DAYS || 2),
+    offlineChargeHour: Number(config.POINT_OFFLINE_CHARGE_HOUR || 19),
   };
 }
 
@@ -332,47 +335,53 @@ async function checkOpenPointConfirmations(client, guild, state) {
   }
 }
 
-async function checkOfflineUsers(client, guild, state) {
+function getAutomationHour(date = new Date()) {
+  const hour = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: AUTOMATION_TIME_ZONE,
+    hour: '2-digit',
+    hour12: false,
+  }).format(date);
+  return Number(hour);
+}
+
+async function checkOfflineUsers(client, guild, state, force = false) {
   const config = readAutomationConfig();
   if (!config.offlineChargeEnabled) return;
+  if (!force && getAutomationHour() !== config.offlineChargeHour) return;
 
   const profiles = Object.values(getGuildProfiles(guild.id));
   const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
   const points = await listGuildPoints(guild.id);
   const pointByUser = new Map(points.map((point) => [point.userId, point]));
-  const thresholdMs = config.offlineThresholdHours * 60 * 60 * 1000;
-  const oncePerDayMs = 24 * 60 * 60 * 1000;
+  const intervalMs = Math.max(1, config.offlineChargeIntervalDays) * 24 * 60 * 60 * 1000;
 
   for (const profile of profiles) {
     if (!profile?.userId || activeAbsences.has(profile.userId)) continue;
     const point = pointByUser.get(profile.userId);
     if (point?.activePointStartedAt) continue;
     const lastActivity = point?.lastPointCloseAt || point?.lastPointOpenAt || profile.approvedAt || profile.updatedAt;
-    if (!lastActivity || Date.now() - new Date(lastActivity).getTime() < thresholdMs) continue;
+    if (!lastActivity || Date.now() - new Date(lastActivity).getTime() < intervalMs) continue;
 
     const key = `${getStateKey(guild.id, profile.userId)}:offline`;
     const item = state[key] || {};
-    if (item.lastChargeAt && Date.now() - new Date(item.lastChargeAt).getTime() < oncePerDayMs) continue;
+    if (!force && item.lastChargeAt && Date.now() - new Date(item.lastChargeAt).getTime() < intervalMs) continue;
 
     const embed = new EmbedBuilder()
       .setColor('#ED4245')
       .setTitle('Cobrança de atividade')
       .setDescription([
-        `<@${profile.userId}> está há muito tempo sem ponto aberto e não está em ausência.`,
+        'Você está há 2 dias sem presença registrada e não está em ausência.',
         '',
         `Última atividade de ponto: **${formatDate(lastActivity)}**`,
-        `Limite configurado: **${config.offlineThresholdHours}h**`,
+        `Cobrança automática: **a cada ${config.offlineChargeIntervalDays} dias às ${String(config.offlineChargeHour).padStart(2, '0')}:00**`,
         '',
-        'Oriente o usuário a abrir ponto quando estiver em serviço, solicitar ausência quando precisar se afastar ou pedir correção se esqueceu de fechar ponto.',
+        'Abra seu ponto quando estiver em serviço. Se precisar se afastar, solicite ausência pelo `/ausencia`.',
       ].join('\n'))
       .setTimestamp();
 
     const user = await client.users.fetch(profile.userId).catch(() => null);
-    if (user) await user.send({ embeds: [embed] }).catch(() => null);
-    await sendPenaltyChannelMessage(client, guild, profile.userId, embed);
-    await sendManagerDm(client, embed);
-    await notifyProfileChannel(client, profile, embed);
-    state[key] = { ...item, lastChargeAt: new Date().toISOString() };
+    const sent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
+    state[key] = { ...item, lastChargeAt: new Date().toISOString(), lastDmSent: sent };
   }
 }
 

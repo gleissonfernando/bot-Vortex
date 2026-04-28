@@ -1304,7 +1304,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Se o usuário confirmar, a contagem zera e começa outro ciclo de 4h. Se ignorar as 3 DMs, o ponto fecha automaticamente.',
         `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
         `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
-        `Cobrança offline após: **${automationConfig.offlineThresholdHours}h**`,
+        `Cobrança offline: **DM às ${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00 a cada ${automationConfig.offlineChargeIntervalDays} dias**`,
+        'Usuários em ausência não recebem essa cobrança.',
         '',
         'Use `Verificar agora` para rodar a cobrança sem esperar o agendador.',
       ].join('\n'));
