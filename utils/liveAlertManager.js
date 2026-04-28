@@ -8,6 +8,7 @@ const config = require('../config/config');
 const DATA_PATH = path.join(__dirname, '..', 'commands', 'liveLinks.json');
 const ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const TWITCH_POLL_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
+const DISCORD_MENTION_ROLE_ID = process.env.DISCORD_MENTION_ROLE_ID || '';
 const DISCORD_MENTION = process.env.DISCORD_MENTION || '';
 const LIVE_TERMS_BASE_URL = process.env.LIVE_TERMS_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://bot-vortex.shardweb.app';
 const activeStreams = new Set();
@@ -254,22 +255,51 @@ function hasTwitchCredentials() {
   return Boolean(clientId && clientSecret);
 }
 
+function formatTwitchError(error, fallback = 'Falha ao consultar Twitch') {
+  const status = error?.response?.status;
+  const data = error?.response?.data;
+
+  if (data && typeof data === 'object') {
+    const parts = [];
+    if (data.message) parts.push(String(data.message));
+    if (data.error) parts.push(String(data.error));
+    if (data.status && !status) parts.push(`status ${data.status}`);
+    if (parts.length) return `${fallback}: ${parts.join(' | ')}`;
+  }
+
+  if (status) {
+    return `${fallback}: HTTP ${status}${error?.message ? ` (${error.message})` : ''}`;
+  }
+
+  return `${fallback}: ${error?.message || 'erro desconhecido'}`;
+}
+
 async function getTwitchAppToken() {
   const { clientId, clientSecret } = getTwitchConfig();
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    const error = new Error('TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes no ambiente.');
+    error.code = 'TWITCH_ENV_MISSING';
+    throw error;
+  }
 
   if (twitchToken && Date.now() < twitchTokenExpiresAt - 60_000) {
     return twitchToken;
   }
 
-  const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
-    params: {
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: 'client_credentials',
-    },
-    timeout: 15_000,
-  });
+  let response;
+  try {
+    response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+      params: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials',
+      },
+      timeout: 15_000,
+    });
+  } catch (error) {
+    error.message = formatTwitchError(error, 'Erro ao obter token da Twitch');
+    throw error;
+  }
 
   twitchToken = response.data?.access_token || null;
   const expiresInMs = Number(response.data?.expires_in || 0) * 1000;
@@ -283,7 +313,11 @@ async function fetchTwitchStreams(logins) {
 
   const token = await getTwitchAppToken();
   const { clientId } = getTwitchConfig();
-  if (!token || !clientId) return new Map();
+  if (!token || !clientId) {
+    const error = new Error('TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes no ambiente.');
+    error.code = 'TWITCH_ENV_MISSING';
+    throw error;
+  }
 
   const streams = new Map();
   for (let index = 0; index < uniqueLogins.length; index += 100) {
@@ -291,13 +325,19 @@ async function fetchTwitchStreams(logins) {
     const params = new URLSearchParams();
     for (const login of batch) params.append('user_login', login);
 
-    const response = await axios.get(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
-      headers: {
-        'Client-ID': clientId,
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: 15_000,
-    });
+    let response;
+    try {
+      response = await axios.get(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
+        headers: {
+          'Client-ID': clientId,
+          Authorization: `Bearer ${token}`,
+        },
+        timeout: 15_000,
+      });
+    } catch (error) {
+      error.message = formatTwitchError(error, 'Erro ao consultar streams da Twitch');
+      throw error;
+    }
 
     for (const stream of response.data?.data || []) {
       streams.set(String(stream.user_login).toLowerCase(), stream);
@@ -390,6 +430,14 @@ function buildTwitchStreamEmbed(stream) {
   return embed;
 }
 
+function buildMentionText() {
+  if (DISCORD_MENTION_ROLE_ID) {
+    return `<@&${DISCORD_MENTION_ROLE_ID}>`;
+  }
+
+  return DISCORD_MENTION || '';
+}
+
 async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null, force = false }) {
   if (!guild || !user || user.bot) return false;
 
@@ -460,9 +508,9 @@ async function sendEnvTwitchLiveAlert(client, stream) {
   }
 
   const streamUrl = `https://www.twitch.tv/${stream.user_login}`;
-  const mention = DISCORD_MENTION ? `${DISCORD_MENTION} ` : '';
+  const mention = buildMentionText();
   await channel.send({
-    content: `${mention}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
+    content: `${mention ? `${mention} ` : ''}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
     embeds: [buildTwitchStreamEmbed(stream)],
   }).catch((error) => {
     console.warn(`[LIVE ALERT] Falha ao enviar alerta Twitch de ${stream.user_login}: ${error.message}`);
@@ -630,6 +678,7 @@ function initTwitchLiveMonitor(client) {
   if (envStreamers.length) {
     console.log(`[LIVE ALERT] Monitorando streamers do .env: ${envStreamers.join(', ')}`);
   }
+  console.log(`[LIVE ALERT] Credenciais Twitch carregadas: client_id=${clientId ? 'sim' : 'nao'} secret=${clientSecret ? 'sim' : 'nao'}`);
   pollTwitchLiveAlerts(client).catch(() => null);
   twitchPollTimer = setInterval(() => {
     pollTwitchLiveAlerts(client).catch(() => null);
@@ -704,9 +753,11 @@ module.exports = {
   handlePresenceLiveAlert,
   handleVoiceLiveAlert,
   checkUserTwitchLinks,
+  buildMentionText,
   hasAcceptedLiveTerms,
   initTwitchLiveMonitor,
   isValidLiveUrl,
+  formatTwitchError,
   parseTwitchLogin,
   parseLiveTermsToken,
   removeLiveLink,
