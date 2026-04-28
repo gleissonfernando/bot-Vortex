@@ -14,7 +14,7 @@ const {
 } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
-const { isGerencia } = require('../../utils/permissions');
+const { hasAnyVortexRole, hasVortexLevel, hasCommandRole } = require('../../utils/permissions');
 const { sendVortexLog } = require('../../utils/notifications');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -36,6 +36,12 @@ const CUSTOM_IDS = {
 const selections = new Map();
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
+
+function canUseAvisos(interaction) {
+  return hasAnyVortexRole(interaction.member)
+    || hasVortexLevel(interaction.member, ['admin', 'medio'])
+    || hasCommandRole(interaction.member, 'avisos');
+}
 
 function loadConfig() {
   try {
@@ -411,8 +417,8 @@ module.exports = {
     .setDescription('Abre o painel para enviar avisos por DM.'),
 
   async execute(interaction) {
-    if (!isGerencia(interaction)) {
-      return safeReply(interaction, { content: '❌ Você não tem permissão para usar o sistema de avisos.', ephemeral: true });
+    if (!canUseAvisos(interaction)) {
+      return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no sistema para usar o /avisos.', ephemeral: true });
     }
 
     return safeReply(interaction, withPanelImage({
@@ -423,7 +429,7 @@ module.exports = {
   },
 
   async handleSelectMenu(interaction) {
-    if (!isGerencia(interaction)) {
+    if (!canUseAvisos(interaction)) {
       return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     }
 
@@ -473,7 +479,7 @@ module.exports = {
   },
 
   async handleButton(interaction) {
-    if (!isGerencia(interaction)) {
+    if (!canUseAvisos(interaction)) {
       return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     }
 
@@ -508,7 +514,7 @@ module.exports = {
   },
 
   async handleModal(interaction) {
-    if (!isGerencia(interaction)) {
+    if (!canUseAvisos(interaction)) {
       return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     }
 

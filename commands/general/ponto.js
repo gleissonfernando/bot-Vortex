@@ -6,7 +6,7 @@ const {
   formatDuration,
   formatDate,
 } = require('../../utils/pontoManager');
-const { isGerencia } = require('../../utils/permissions');
+const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 
 function pad(value, size) {
   const text = String(value || '');
@@ -57,7 +57,7 @@ module.exports = {
     .setDescription('Mostra o relatório geral de ponto de todos os usuários.'),
 
   async execute(interaction) {
-    if (!isGerencia(interaction)) {
+    if (!isGerencia(interaction) && !hasCommandRole(interaction.member, 'ponto')) {
       return interaction.reply({
         content: '❌ Você não tem permissão para ver o relatório de ponto.',
         ephemeral: true,

@@ -7,7 +7,7 @@ const {
   getPointConfig,
   savePanel,
 } = require('../../utils/pontoPanel');
-const { isGerencia } = require('../../utils/permissions');
+const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
@@ -27,7 +27,7 @@ module.exports = {
       });
     }
 
-    if (!isGerencia(interaction)) {
+    if (!isGerencia(interaction) && !hasCommandRole(interaction.member, 'ativarponto')) {
       return interaction.reply({ content: '❌ Você não tem permissão para ativar o painel de ponto.', ephemeral: true });
     }
 

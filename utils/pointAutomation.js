@@ -45,11 +45,12 @@ function writeJSON(filePath, data) {
 
 function readAutomationConfig() {
   const config = readJSON(CONFIG_PATH, {});
+  const dmIntervalHours = Number(config.POINT_MONITOR_DM_INTERVAL_HOURS || 4);
   return {
     pointMonitorEnabled: config.POINT_MONITOR_ENABLED !== false,
     offlineChargeEnabled: config.POINT_OFFLINE_CHARGE_ENABLED !== false,
-    pointMonitorDmIntervalHours: Number(config.POINT_MONITOR_DM_INTERVAL_HOURS || 4),
-    pointMonitorAutoCloseHours: Number(config.POINT_MONITOR_AUTO_CLOSE_HOURS || 6),
+    pointMonitorDmIntervalHours: dmIntervalHours,
+    pointMonitorAutoCloseHours: Number(config.POINT_MONITOR_AUTO_CLOSE_HOURS || dmIntervalHours),
     pointMonitorMaxDmAttempts: Number(config.POINT_MONITOR_MAX_DM_ATTEMPTS || 3),
     pointCorrectionCategoryId: String(config.POINT_MONITOR_CORRECTION_CATEGORY_ID || DEFAULT_POINT_CORRECTION_CATEGORY_ID),
     penaltyChannelId: String(config.POINT_PENALTY_CHANNEL_ID || DEFAULT_PENALTY_CHANNEL_ID),
@@ -137,10 +138,9 @@ async function sendOpenPointDm(client, guild, point, attempts) {
       '',
       `Abertura: **${formatDate(point.activePointStartedAt)}**`,
       `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
-      `Tempo restante para fechamento automático: **${Math.max(0, Math.round((readAutomationConfig().pointMonitorAutoCloseHours * 60 * 60 * 1000 - (Date.now() - new Date(point.activePointStartedAt).getTime())) / 60000))} minutos**`,
-      `Tentativa: **${attempts}/3**`,
+      `Tentativa: **${attempts}/${readAutomationConfig().pointMonitorMaxDmAttempts}**`,
       '',
-      'Clique no botão para confirmar que você ainda está online. Se não confirmar até o limite, o ponto será fechado automaticamente e a gerência será avisada.',
+      'Clique no botão para confirmar que você ainda está online. Se não responder as tentativas deste ciclo, o ponto será fechado automaticamente.',
     ].join('\n'))
     .setTimestamp();
   await user.send({ embeds: [embed], components: [buildConfirmRow(guild.id)] });
@@ -251,50 +251,69 @@ async function notifyProfileChannel(client, profile, embed) {
   return true;
 }
 
+function getPointCycleStartMs(point, item) {
+  const pointStartMs = new Date(point.activePointStartedAt).getTime();
+  const confirmedMs = item.confirmedPointStartedAt === point.activePointStartedAt && item.lastConfirmedAt
+    ? new Date(item.lastConfirmedAt).getTime()
+    : 0;
+  return Math.max(pointStartMs, Number.isNaN(confirmedMs) ? 0 : confirmedMs);
+}
+
+async function closeUnconfirmedPoint(client, guild, point, item, state, key, reason) {
+  const { closePoint } = require('./pontoManager');
+  const result = await closePoint(guild.id, point.userId).catch(() => null);
+  const embed = new EmbedBuilder()
+    .setColor('#ED4245')
+    .setTitle('Ponto fechado automaticamente')
+    .setDescription([
+      `<@${point.userId}> não confirmou o alerta de ponto aberto.`,
+      '',
+      `Abertura: **${formatDate(point.activePointStartedAt)}**`,
+      result?.data?.lastPointCloseAt ? `Fechamento automático: **${formatDate(result.data.lastPointCloseAt)}**` : null,
+      result?.durationMs ? `Tempo contabilizado: **${formatDuration(result.durationMs)}**` : null,
+      '',
+      'Se o horário estiver errado, o usuário deve solicitar correção de ponto.',
+    ].filter(Boolean).join('\n'))
+    .setTimestamp();
+  const user = await client.users.fetch(point.userId).catch(() => null);
+  if (user) await user.send({ embeds: [embed] }).catch(() => null);
+  const channel = await openPointCorrectionForClosedPoint(client, guild, point, {
+    reason,
+    closedAt: result?.data?.lastPointCloseAt || new Date().toISOString(),
+    durationMs: result?.durationMs ?? null,
+  }).catch((error) => {
+    logger.error('Erro ao abrir correção após fechamento automático:', error);
+    return null;
+  });
+  state[key] = {
+    ...item,
+    attempts: 0,
+    autoClosedAt: new Date().toISOString(),
+    ticketChannelId: channel?.id || item.ticketChannelId || null,
+    lastPromptAt: null,
+  };
+}
+
 async function checkOpenPointConfirmations(client, guild, state) {
   const config = readAutomationConfig();
   if (!config.pointMonitorEnabled) return;
   const points = await listGuildPoints(guild.id);
   const minOpenMs = config.pointMonitorDmIntervalHours * 60 * 60 * 1000;
-  const autoCloseMs = config.pointMonitorAutoCloseHours * 60 * 60 * 1000;
   const retryMs = 15 * 60 * 1000;
 
   for (const point of points.filter((item) => item.activePointStartedAt)) {
     const key = getStateKey(guild.id, point.userId);
     const item = state[key] || {};
-    const openedMs = Date.now() - new Date(point.activePointStartedAt).getTime();
-    if (openedMs >= autoCloseMs && item.confirmedPointStartedAt !== point.activePointStartedAt) {
-      const { closePoint } = require('./pontoManager');
-      const result = await closePoint(guild.id, point.userId).catch(() => null);
-      const embed = new EmbedBuilder()
-        .setColor('#ED4245')
-        .setTitle('Ponto fechado automaticamente')
-        .setDescription([
-          `<@${point.userId}> não confirmou o alerta de ponto aberto.`,
-          '',
-          `Abertura: **${formatDate(point.activePointStartedAt)}**`,
-          result?.data?.lastPointCloseAt ? `Fechamento automático: **${formatDate(result.data.lastPointCloseAt)}**` : null,
-          result?.durationMs ? `Tempo contabilizado: **${formatDuration(result.durationMs)}**` : null,
-          '',
-          'Se o horário estiver errado, o usuário deve solicitar correção de ponto.',
-        ].filter(Boolean).join('\n'))
-        .setTimestamp();
-      const user = await client.users.fetch(point.userId).catch(() => null);
-      if (user) await user.send({ embeds: [embed] }).catch(() => null);
-      const channel = await openPointCorrectionForClosedPoint(client, guild, point, {
-        reason: 'Fechamento automático por falta de confirmação',
-        closedAt: result?.data?.lastPointCloseAt || new Date().toISOString(),
-        durationMs: result?.durationMs ?? null,
-      }).catch((error) => {
-        logger.error('Erro ao abrir correção após fechamento automático:', error);
-        return null;
-      });
+    const cycleStartMs = getPointCycleStartMs(point, item);
+    const openedMs = Date.now() - cycleStartMs;
+    if (item.pointStartedAt !== point.activePointStartedAt) {
       state[key] = {
         ...item,
+        pointStartedAt: point.activePointStartedAt,
         attempts: 0,
-        autoClosedAt: new Date().toISOString(),
-        ticketChannelId: channel?.id || item.ticketChannelId || null,
         lastPromptAt: null,
+        confirmedPointStartedAt: null,
+        lastConfirmedAt: null,
       };
       continue;
     }
@@ -309,27 +328,7 @@ async function checkOpenPointConfirmations(client, guild, state) {
       continue;
     }
 
-    const channel = await createPointCorrectionChannel(client, guild, point, item, {
-      notifyManagement: true,
-      title: 'Terceira falha de ponto',
-      descriptionLines: [
-        `<@${point.userId}> ficou 3 vezes sem confirmar/fechar o ponto.`,
-        '',
-        `Ponto aberto desde: **${formatDate(point.activePointStartedAt)}**`,
-        `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
-        '',
-        'A gerência deve conferir o horário correto e aplicar a correção se necessário.',
-      ],
-    }).catch((error) => {
-      logger.error('Erro ao criar canal de correção de ponto:', error);
-      return null;
-    });
-    state[key] = {
-      ...item,
-      attempts,
-      ticketChannelId: channel?.id || item.ticketChannelId || null,
-      escalatedAt: new Date().toISOString(),
-    };
+    await closeUnconfirmedPoint(client, guild, point, { ...item, attempts }, state, key, 'Fechamento automático após 3 DMs sem confirmação');
   }
 }
 
@@ -401,7 +400,31 @@ async function confirmPointPresence(interaction) {
     lastPromptAt: null,
   };
   writeJSON(STATE_PATH, state);
-  return interaction.reply({ content: '✅ Confirmado. A gerência não será acionada por esta verificação.', ephemeral: true });
+  return interaction.reply({ content: '✅ Confirmado. A contagem foi zerada e uma nova verificação começará daqui a 4 horas.', ephemeral: true });
+}
+
+async function deletePointCorrectionChannels(client, guild, userId, deletedBy = null) {
+  const state = readJSON(STATE_PATH, {});
+  const prefix = `${getStateKey(guild.id, userId)}`;
+  const deleted = [];
+
+  for (const [key, item] of Object.entries(state)) {
+    if (!key.startsWith(prefix) || !item?.ticketChannelId) continue;
+    const channel = await guild.channels.fetch(item.ticketChannelId).catch(() => null);
+    if (channel) {
+      await channel.delete('Call/canal de ajuste de ponto deletado pelo painel').catch(() => null);
+      deleted.push(item.ticketChannelId);
+    }
+    state[key] = {
+      ...item,
+      ticketChannelId: null,
+      correctionChannelDeletedAt: new Date().toISOString(),
+      correctionChannelDeletedBy: deletedBy ? String(deletedBy) : null,
+    };
+  }
+
+  writeJSON(STATE_PATH, state);
+  return deleted;
 }
 
 async function handlePenaltyButton(interaction) {
@@ -435,6 +458,7 @@ module.exports = {
   updateAutomationConfig,
   runPointAutomationCheck,
   openPointCorrectionForClosedPoint,
+  deletePointCorrectionChannels,
   confirmPointPresence,
   handlePenaltyButton,
   initPointAutomation,

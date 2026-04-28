@@ -46,6 +46,15 @@ function hasVortexLevel(member, levels = []) {
     return memberHasAnyRole(member, getVortexRoleIds(levels));
 }
 
+function hasCommandRole(member, commandName) {
+    if (!member?.roles?.cache || !commandName) return false;
+    if (member.roles.cache.has(MASTER_ROLE_ID)) return true;
+    const panelConfig = getPanelConfig();
+    const permissions = panelConfig.COMMAND_ROLE_PERMISSIONS || {};
+    const roleIds = normalizeIds(permissions[commandName] || []);
+    return memberHasAnyRole(member, roleIds);
+}
+
 function isRegisteredUser(interaction) {
     if (!interaction || !interaction.user) return false;
     return hasAnyVortexRole(interaction.member) || hasVortexLevel(interaction.member, []);
@@ -68,5 +77,6 @@ module.exports = {
     isGerencia,
     hasAnyVortexRole,
     hasVortexLevel,
+    hasCommandRole,
     denyNotRegistered
 };

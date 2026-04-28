@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
-const { isRegisteredUser, denyNotRegistered } = require('../../utils/permissions');
+const { isRegisteredUser, hasCommandRole, denyNotRegistered } = require('../../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -17,7 +17,7 @@ module.exports = {
 
     async execute(interaction) {
         // 1. Verificar autorização
-        if (!isRegisteredUser(interaction)) {
+        if (!isRegisteredUser(interaction) && !hasCommandRole(interaction.member, 'set')) {
             return denyNotRegistered(interaction);
         }
 

@@ -32,14 +32,16 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName === 'clear' || commandName === 'clipe') return true;
     if (commandName === 'perfil' && getUserProfile(interaction.guildId, interaction.user.id)) return true;
-    if (commandName !== 'painel' && !hasAnyVortexRole(interaction.member)) return false;
 
     const conf = loadJSON(CONFIG_PATH);
     const permissions = conf.COMMAND_ROLE_PERMISSIONS || {};
     const allowedRoles = Array.isArray(permissions[commandName]) ? permissions[commandName].map(String) : [];
     if (interaction.member.roles.cache.has(SUPERIOR_ID)) return true;
-    if (allowedRoles.length === 0) return true;
-    return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
+    if (allowedRoles.length > 0) {
+        return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
+    }
+    if (commandName === 'painel') return true;
+    return hasAnyVortexRole(interaction.member);
 }
 
 async function safeReply(interaction, options) {
@@ -394,7 +396,7 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'cancel_close_point', 'show_all_points', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation'].includes(interaction.customId))) {
                 return await painel.handleButton(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {

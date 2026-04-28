@@ -11,7 +11,8 @@ const {
   ChannelType,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  AttachmentBuilder
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +22,7 @@ const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
-const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint } = require('../../utils/pointAutomation');
+const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
@@ -127,6 +128,28 @@ function readUpdatesSummary() {
     }
 }
 
+function buildRegisteredProfilesReport(guild, profiles) {
+    const rows = Object.values(profiles)
+        .sort((a, b) => String(a.nomeGame || a.displayName || '').localeCompare(String(b.nomeGame || b.displayName || ''), 'pt-BR'))
+        .map((profile, index) => [
+            `${index + 1}. ${profile.nomeGame || profile.displayName || 'Sem nome'}`,
+            `Discord: ${profile.discordTag || profile.userId}`,
+            `ID: ${profile.userId}`,
+            `Status: ${profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set'}`,
+            `Nivel: ${profile.nivelGame || 'N/A'}`,
+            `Call/Canal: ${profile.callChannelId || 'N/A'}`,
+            `Ultima atualizacao: ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`,
+        ].join(' | '));
+
+    return [
+        `Usuarios cadastrados - ${guild.name}`,
+        `Total: ${rows.length}`,
+        `Gerado em: ${formatDate(new Date())}`,
+        '',
+        rows.length ? rows.join('\n') : 'Nenhum usuario cadastrado.',
+    ].join('\n');
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
@@ -218,6 +241,31 @@ module.exports = {
           'Ao confirmar, o ponto será fechado agora, o usuário receberá DM e será aberto um canal de correção de ponto.',
         ].join('\n'),
         components: [confirmRow],
+      });
+    }
+
+    if (customId === 'delete_point_correction_channel') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
+      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+      const deleted = await deletePointCorrectionChannels(interaction.client, interaction.guild, userId, interaction.user.id);
+
+      sendVortexLog(interaction.client, {
+        title: 'Call de ajuste de ponto deletada',
+        description: [
+          `Usuário: <@${userId}> (${userId})`,
+          `Gerente: <@${interaction.user.id}>`,
+          `Canais deletados: ${deleted.length ? deleted.map((id) => `#${id}`).join(', ') : 'nenhum'}`,
+        ].join('\n'),
+        color: '#ED4245',
+        type: 'PONTO',
+        userId: interaction.user.id,
+      }).catch(() => {});
+
+      return interaction.editReply({
+        content: deleted.length
+          ? `✅ Call/canal de ajuste de <@${userId}> deletado. Total: ${deleted.length}.`
+          : `⚠️ Nenhuma call/canal de ajuste encontrada para <@${userId}>.`,
       });
     }
 
@@ -563,6 +611,19 @@ module.exports = {
             userId: interaction.user.id
         }).catch(() => {});
         return renderDashboard(interaction, 'tab_perfil', true);
+    }
+
+    if (customId === 'profile_list_registered') {
+        await interaction.deferReply({ ephemeral: true });
+        const profiles = getGuildProfiles(interaction.guild.id);
+        const report = buildRegisteredProfilesReport(interaction.guild, profiles);
+        const file = new AttachmentBuilder(Buffer.from(report, 'utf8'), {
+            name: `usuarios-cadastrados-${interaction.guild.id}.txt`,
+        });
+        return interaction.editReply({
+            content: `✅ Relatório gerado com **${Object.keys(profiles).length}** usuários cadastrados.`,
+            files: [file],
+        });
     }
 
   },
@@ -953,6 +1014,19 @@ module.exports = {
             return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
         }
 
+        await target.send({
+            content: [
+                '✅ Você foi cadastrado no sistema Vortex.',
+                `Servidor: ${interaction.guild.name}`,
+                `Cadastrado por: <@${interaction.user.id}>`,
+                `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
+                result.profile.callChannelId ? `Call/Canal vinculado: <#${result.profile.callChannelId}>` : null,
+                '',
+                'Agora você pode usar os recursos liberados para usuários cadastrados, como `/perfil` e os comandos autorizados pela equipe.',
+            ].filter(Boolean).join('\n'),
+            allowedMentions: { users: [interaction.user.id] },
+        }).catch(() => null);
+
         return safeReply(interaction, {
             content: [
                 '✅ Perfil cadastrado no sistema.',
@@ -1195,7 +1269,8 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('correct_point_close').setLabel('Reajustar ponto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('clear_point_user').setLabel('🗑️ Deletar ponto').setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger)
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
@@ -1224,9 +1299,9 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
         `Cobrança de offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
-        `DM de ponto aberto a cada: **${automationConfig.pointMonitorDmIntervalHours}h**`,
-        `Fechamento automático após: **${automationConfig.pointMonitorAutoCloseHours}h sem confirmar**`,
-        `Tentativas antes de abrir correção: **${automationConfig.pointMonitorMaxDmAttempts}**`,
+        `Ciclo de confirmação: **${automationConfig.pointMonitorDmIntervalHours}h**`,
+        `Tentativas por ciclo: **${automationConfig.pointMonitorMaxDmAttempts} DMs**`,
+        'Se o usuário confirmar, a contagem zera e começa outro ciclo de 4h. Se ignorar as 3 DMs, o ponto fecha automaticamente.',
         `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
         `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
         `Cobrança offline após: **${automationConfig.offlineThresholdHours}h**`,
@@ -1337,6 +1412,7 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Ver cadastrados').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('profile_test').setLabel('Testar perfil').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
