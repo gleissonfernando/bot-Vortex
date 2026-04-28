@@ -146,7 +146,7 @@ async function sendOpenPointDm(client, guild, point, attempts) {
   return true;
 }
 
-async function createPointCorrectionChannel(client, guild, point, state) {
+async function createPointCorrectionChannel(client, guild, point, state, details = {}) {
   const config = readAutomationConfig();
   const category = await guild.channels.fetch(config.pointCorrectionCategoryId).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) return null;
@@ -173,15 +173,15 @@ async function createPointCorrectionChannel(client, guild, point, state) {
 
   const embed = new EmbedBuilder()
     .setColor('#ED4245')
-    .setTitle('Correção de ponto necessária')
-    .setDescription([
-      `<@${point.userId}> nao respondeu as 3 confirmacoes de ponto aberto.`,
+    .setTitle(details.title || 'Correção de ponto necessária')
+    .setDescription((details.descriptionLines || [
+      `<@${point.userId}> precisa corrigir o ponto.`,
       '',
       `Ponto aberto desde: **${formatDate(point.activePointStartedAt)}**`,
       `Tempo aberto: **${formatDuration(Date.now() - new Date(point.activePointStartedAt).getTime())}**`,
       '',
       'A gerencia deve conferir o horario correto de saida e aplicar a correcao de ponto.',
-    ].join('\n'))
+    ]).join('\n'))
     .setTimestamp();
 
   await channel.send({
@@ -192,6 +192,39 @@ async function createPointCorrectionChannel(client, guild, point, state) {
 
   await sendPenaltyChannelMessage(client, guild, point.userId, embed, [buildPenaltyRow(point.userId)]);
   await sendManagerDm(client, embed);
+  return channel;
+}
+
+async function openPointCorrectionForClosedPoint(client, guild, point, {
+  reason = 'Ponto fechado automaticamente',
+  closedAt = null,
+  durationMs = null,
+  closedBy = null,
+} = {}) {
+  const state = readJSON(STATE_PATH, {});
+  const key = `${getStateKey(guild.id, point.userId)}:closed:${Date.now()}`;
+  const details = {
+    title: 'Correção de ponto aberta',
+    descriptionLines: [
+      `<@${point.userId}> teve o ponto fechado e precisa confirmar se o horario esta correto.`,
+      '',
+      `Motivo: **${reason}**`,
+      closedBy ? `Fechado por: <@${closedBy}>` : null,
+      `Abertura registrada: **${formatDate(point.activePointStartedAt || point.lastPointOpenAt)}**`,
+      closedAt ? `Fechamento registrado: **${formatDate(closedAt)}**` : null,
+      durationMs !== null ? `Tempo contabilizado: **${formatDuration(durationMs)}**` : null,
+      '',
+      'Se o horario estiver errado, a gerencia deve aplicar o reajuste pela aba Pontos do /painel.',
+    ].filter(Boolean),
+  };
+  const channel = await createPointCorrectionChannel(client, guild, point, state[key] || {}, details);
+  state[key] = {
+    ...(state[key] || {}),
+    ticketChannelId: channel?.id || null,
+    createdAt: new Date().toISOString(),
+    reason,
+  };
+  writeJSON(STATE_PATH, state);
   return channel;
 }
 
@@ -233,12 +266,19 @@ async function checkOpenPointConfirmations(client, guild, state) {
         .setTimestamp();
       const user = await client.users.fetch(point.userId).catch(() => null);
       if (user) await user.send({ embeds: [embed] }).catch(() => null);
-      await sendPenaltyChannelMessage(client, guild, point.userId, embed, [buildPenaltyRow(point.userId)]);
-      await sendManagerDm(client, embed);
+      const channel = await openPointCorrectionForClosedPoint(client, guild, point, {
+        reason: 'Fechamento automatico por falta de confirmacao',
+        closedAt: result?.data?.lastPointCloseAt || new Date().toISOString(),
+        durationMs: result?.durationMs ?? null,
+      }).catch((error) => {
+        logger.error('Erro ao abrir correcao apos fechamento automatico:', error);
+        return null;
+      });
       state[key] = {
         ...item,
         attempts: 0,
         autoClosedAt: new Date().toISOString(),
+        ticketChannelId: channel?.id || item.ticketChannelId || null,
         lastPromptAt: null,
       };
       continue;
@@ -368,6 +408,7 @@ module.exports = {
   readAutomationConfig,
   updateAutomationConfig,
   runPointAutomationCheck,
+  openPointCorrectionForClosedPoint,
   confirmPointPresence,
   handlePenaltyButton,
   initPointAutomation,

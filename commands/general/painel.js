@@ -21,7 +21,7 @@ const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
-const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck } = require('../../utils/pointAutomation');
+const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
@@ -195,6 +195,40 @@ module.exports = {
       await interaction.deferReply({ ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
       if (!userId) return interaction.editReply({ content: '❌ Selecione um usuario primeiro.' });
+      const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId];
+      if (!pointData?.activePointStartedAt) {
+        return interaction.editReply({ content: `❌ <@${userId}> nao esta com ponto aberto.` });
+      }
+      const confirmRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`confirm_close_point_${userId}`)
+          .setLabel('Confirmar fechamento')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('cancel_close_point')
+          .setLabel('Cancelar')
+          .setStyle(ButtonStyle.Secondary)
+      );
+      return interaction.editReply({
+        content: [
+          '⚠️ Confirme o fechamento manual do ponto.',
+          `Usuario: <@${userId}>`,
+          `Aberto desde: ${formatDate(pointData.activePointStartedAt)}`,
+          '',
+          'Ao confirmar, o ponto sera fechado agora, o usuario recebera DM e sera aberto um canal de correcao de ponto.',
+        ].join('\n'),
+        components: [confirmRow],
+      });
+    }
+
+    if (customId === 'cancel_close_point') {
+      return safeReply(interaction, { content: '✅ Fechamento manual cancelado.', ephemeral: true });
+    }
+
+    if (customId.startsWith('confirm_close_point_')) {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = customId.replace('confirm_close_point_', '');
+      const pointBeforeClose = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId] || {};
       const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
       const result = await closePoint(interaction.guild.id, userId);
       if (result.action === 'already_closed') {
@@ -214,6 +248,15 @@ module.exports = {
           allowedMentions: { users: [interaction.user.id] },
         }).catch(() => null);
       }
+      const correctionChannel = await openPointCorrectionForClosedPoint(interaction.client, interaction.guild, {
+        ...pointBeforeClose,
+        userId,
+      }, {
+        reason: 'Fechamento manual pela gerencia',
+        closedAt: result.data.lastPointCloseAt,
+        durationMs: result.durationMs,
+        closedBy: interaction.user.id,
+      }).catch(() => null);
       sendVortexLog(interaction.client, {
         title: 'Ponto fechado pela gerencia',
         description: [
@@ -226,7 +269,12 @@ module.exports = {
         type: 'PONTO',
         userId: interaction.user.id,
       }).catch(() => {});
-      return interaction.editReply({ content: `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.` });
+      return interaction.editReply({
+        content: [
+          `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.`,
+          correctionChannel ? `Canal de correcao: <#${correctionChannel.id}>` : 'Canal de correcao: nao criado.',
+        ].join('\n'),
+      });
     }
     
     if (customId === 'toggle_maint') {
