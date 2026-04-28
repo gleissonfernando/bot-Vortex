@@ -24,6 +24,7 @@ const API_HOST = process.env.API_HOST || '0.0.0.0';
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+app.use('/assets', express.static(path.join(__dirname, 'foto')));
 
 const client = new Client({
     intents: [
@@ -42,6 +43,10 @@ setDiscordClient(client);
 
 app.get('/health', (req, res) => {
     res.json({ ok: true, service: 'vortex-bot' });
+});
+
+app.get(['/twitch', '/live/termos'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'twitch-terms.html'));
 });
 
 // Carregar Comandos
