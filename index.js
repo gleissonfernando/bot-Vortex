@@ -15,7 +15,7 @@ const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
 const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
-const { initTwitchLiveMonitor } = require('./utils/liveAlertManager');
+const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || 3000);
@@ -46,7 +46,33 @@ app.get('/health', (req, res) => {
 });
 
 app.get(['/twitch', '/live/termos'], (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'twitch-terms.html'));
+    const token = String(req.query.token || '');
+    if (!parseLiveTermsToken(token)) {
+        return res.status(400).send('Link de aceite invalido ou expirado. Abra o /live novamente no Discord.');
+    }
+
+    const htmlPath = path.join(__dirname, 'public', 'twitch-terms.html');
+    const html = fs.readFileSync(htmlPath, 'utf8')
+        .replaceAll('__ACCEPT_URL__', `/twitch/webhook?token=${encodeURIComponent(token)}`);
+    return res.type('html').send(html);
+});
+
+app.get('/twitch/webhook', (req, res) => {
+    const accepted = acceptLiveTermsToken(req.query.token);
+    if (!accepted) {
+        return res.status(400).send('Link de aceite invalido ou expirado. Abra o /live novamente no Discord.');
+    }
+
+    return res.type('html').send([
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<title>Vortex | Termos aceitos</title>',
+        '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090d;color:#f5f7fb;font-family:Arial,Helvetica,sans-serif}.box{max-width:520px;border:1px solid #262637;border-radius:8px;background:#14141c;padding:28px}h1{margin:0 0 12px;font-size:28px}p{color:#a9afc3;line-height:1.5}</style>',
+        '</head><body><main class="box">',
+        '<h1>Termos aceitos</h1>',
+        '<p>Seu acesso para cadastrar links de live foi liberado. Volte ao Discord, use /live e clique em Adicionar link.</p>',
+        '</main></body></html>',
+    ].join(''));
 });
 
 // Carregar Comandos

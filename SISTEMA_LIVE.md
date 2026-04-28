@@ -4,7 +4,9 @@
 
 Foi criado um sistema de alerta automatico de live usando o comando `/live`.
 
-Qualquer usuario pode abrir o painel do `/live` e cadastrar ou alterar o proprio link da live. Quando o Discord detectar que esse usuario entrou em transmissao, o bot envia um aviso automatico no canal:
+Qualquer usuario pode abrir o painel do `/live`, mas primeiro precisa aceitar os termos pela pagina web gerada pelo proprio painel. Depois do aceite, o cadastro de links e liberado.
+
+O usuario pode cadastrar quantos links quiser. Quando o Discord ou a Twitch detectar que um dos canais entrou em transmissao, o bot envia um aviso automatico no canal:
 
 `1202251715865489459`
 
@@ -18,8 +20,9 @@ O aviso informa:
 
 - `commands/general/live.js`
   - Comando `/live`.
-  - Abre o painel para cadastrar, alterar ou remover o link.
-  - Cadastro e alteracao ficam liberados para qualquer usuario.
+  - Abre o painel para aceitar termos e cadastrar links.
+  - Antes do aceite, mostra o link de termos.
+  - Depois do aceite, libera adicionar varios links.
   - Remocao exige permissao configurada no `/painel`.
 
 - `utils/liveAlertManager.js`
@@ -55,6 +58,18 @@ TWITCH_CLIENT_SECRET=seu_client_secret
 
 Essas credenciais sao de um app criado no painel de desenvolvedor da Twitch.
 
+## Aceite de termos
+
+O `/live` gera um link unico por servidor e usuario:
+
+`/twitch?token=...`
+
+Essa pagina mostra os termos e direciona para:
+
+`/twitch/webhook?token=...`
+
+Quando essa rota recebe um token valido, o usuario fica marcado como aceito em `commands/liveLinks.json`. Depois disso, o painel `/live` libera o botao para adicionar links.
+
 ## Arquivos alterados
 
 - `events/interactionCreate.js`
@@ -70,13 +85,13 @@ Essas credenciais sao de um app criado no painel de desenvolvedor da Twitch.
 
 ## Regras de permissao
 
-### Cadastrar ou alterar link
+### Cadastrar links
 
-Qualquer pessoa pode usar `/live` para cadastrar ou alterar o proprio link.
+Qualquer pessoa pode usar `/live`, aceitar os termos e cadastrar quantos links quiser.
 
 ### Remover link
 
-Para remover o link, o usuario precisa ter um cargo configurado no `/painel` em:
+Para remover os links, o usuario precisa ter um cargo configurado no `/painel` em:
 
 `Remover /live`
 

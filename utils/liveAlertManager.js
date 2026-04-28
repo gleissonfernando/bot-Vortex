@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { ActivityType, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
 const config = require('../config/config');
@@ -7,6 +8,7 @@ const config = require('../config/config');
 const DATA_PATH = path.join(__dirname, '..', 'commands', 'liveLinks.json');
 const ALERT_CHANNEL_ID = '1202251715865489459';
 const TWITCH_POLL_INTERVAL_MS = 60_000;
+const LIVE_TERMS_BASE_URL = process.env.LIVE_TERMS_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://bot-vortex.shardweb.app';
 const activeStreams = new Set();
 const twitchOnlineStreams = new Set();
 let twitchToken = null;
@@ -36,9 +38,49 @@ function getAllLiveLinks() {
   return loadLiveLinks();
 }
 
+function normalizeLiveEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return { termsAcceptedAt: null, links: [] };
+  }
+
+  const links = Array.isArray(entry.links)
+    ? entry.links
+    : entry.url
+      ? [{
+          url: entry.url,
+          platform: entry.platform,
+          twitchLogin: entry.twitchLogin,
+          createdAt: entry.updatedAt,
+          createdBy: entry.updatedBy,
+        }]
+      : [];
+
+  return {
+    ...entry,
+    termsAcceptedAt: entry.termsAcceptedAt || null,
+    termsAcceptedBy: entry.termsAcceptedBy || null,
+    links: links
+      .filter((item) => item?.url)
+      .map((item) => {
+        const twitchLogin = item.twitchLogin || parseTwitchLogin(item.url);
+        return {
+          url: item.url,
+          platform: twitchLogin ? 'twitch' : item.platform || 'other',
+          twitchLogin,
+          createdAt: item.createdAt || item.updatedAt || new Date().toISOString(),
+          createdBy: item.createdBy || item.updatedBy || null,
+        };
+      }),
+  };
+}
+
 function getLiveLink(guildId, userId) {
+  return getLiveLinks(guildId, userId)[0]?.url || null;
+}
+
+function getLiveLinks(guildId, userId) {
   const guildConfig = getGuildConfig(guildId);
-  return guildConfig[String(userId)]?.url || null;
+  return normalizeLiveEntry(guildConfig[String(userId)]).links;
 }
 
 function parseTwitchLogin(url) {
@@ -58,6 +100,74 @@ function parseTwitchLogin(url) {
   }
 }
 
+function getTokenSecret() {
+  return config.token || process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || 'vortex-live-alerts';
+}
+
+function signLiveTermsPayload(guildId, userId) {
+  return crypto
+    .createHmac('sha256', getTokenSecret())
+    .update(`${guildId}:${userId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+function buildLiveTermsToken(guildId, userId) {
+  const payload = Buffer.from(JSON.stringify({
+    guildId: String(guildId),
+    userId: String(userId),
+    sig: signLiveTermsPayload(guildId, userId),
+  })).toString('base64url');
+  return payload;
+}
+
+function parseLiveTermsToken(token) {
+  try {
+    const parsed = JSON.parse(Buffer.from(String(token || ''), 'base64url').toString('utf8'));
+    if (!parsed.guildId || !parsed.userId || !parsed.sig) return null;
+    if (parsed.sig !== signLiveTermsPayload(parsed.guildId, parsed.userId)) return null;
+    return {
+      guildId: String(parsed.guildId),
+      userId: String(parsed.userId),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildLiveTermsUrl(guildId, userId) {
+  const token = buildLiveTermsToken(guildId, userId);
+  return `${LIVE_TERMS_BASE_URL.replace(/\/$/, '')}/twitch?token=${encodeURIComponent(token)}`;
+}
+
+function hasAcceptedLiveTerms(guildId, userId) {
+  const guildConfig = getGuildConfig(guildId);
+  return Boolean(normalizeLiveEntry(guildConfig[String(userId)]).termsAcceptedAt);
+}
+
+function acceptLiveTerms(guildId, userId) {
+  const data = loadLiveLinks();
+  const guildKey = String(guildId);
+  const userKey = String(userId);
+  if (!data[guildKey]) data[guildKey] = {};
+  const current = normalizeLiveEntry(data[guildKey][userKey]);
+
+  data[guildKey][userKey] = {
+    ...current,
+    termsAcceptedAt: new Date().toISOString(),
+    termsAcceptedBy: userKey,
+  };
+  saveLiveLinks(data);
+  return data[guildKey][userKey];
+}
+
+function acceptLiveTermsToken(token) {
+  const parsed = parseLiveTermsToken(token);
+  if (!parsed) return null;
+  acceptLiveTerms(parsed.guildId, parsed.userId);
+  return parsed;
+}
+
 function setLiveLink(guildId, userId, url, updatedBy) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
@@ -65,15 +175,28 @@ function setLiveLink(guildId, userId, url, updatedBy) {
   if (!data[guildKey]) data[guildKey] = {};
 
   const twitchLogin = parseTwitchLogin(url);
-  data[guildKey][userKey] = {
-    url,
+  const current = normalizeLiveEntry(data[guildKey][userKey]);
+  const normalizedUrl = String(url).trim();
+  const existing = current.links.find((item) => item.url.toLowerCase() === normalizedUrl.toLowerCase());
+  if (existing) return existing;
+
+  const nextLink = {
+    url: normalizedUrl,
     platform: twitchLogin ? 'twitch' : 'other',
     twitchLogin,
+    createdBy: String(updatedBy),
+    createdAt: new Date().toISOString(),
+  };
+
+  data[guildKey][userKey] = {
+    ...current,
+    links: [...current.links, nextLink],
     updatedBy: String(updatedBy),
     updatedAt: new Date().toISOString(),
   };
+
   saveLiveLinks(data);
-  return data[guildKey][userKey];
+  return nextLink;
 }
 
 function removeLiveLink(guildId, userId) {
@@ -82,8 +205,14 @@ function removeLiveLink(guildId, userId) {
   const userKey = String(userId);
   if (!data[guildKey]?.[userKey]) return false;
 
-  delete data[guildKey][userKey];
-  if (Object.keys(data[guildKey]).length === 0) delete data[guildKey];
+  const current = normalizeLiveEntry(data[guildKey][userKey]);
+  if (current.links.length === 0) return false;
+
+  data[guildKey][userKey] = {
+    ...current,
+    links: [],
+    updatedAt: new Date().toISOString(),
+  };
   saveLiveLinks(data);
   return true;
 }
@@ -164,7 +293,15 @@ async function fetchTwitchStreams(logins) {
   return streams;
 }
 
-function buildLivePanelEmbed(interaction, link) {
+function formatLiveLinks(links) {
+  if (!links.length) return '`Nenhum link cadastrado`';
+  return links
+    .map((item, index) => `${index + 1}. ${item.url}`)
+    .join('\n')
+    .slice(0, 1000);
+}
+
+function buildLivePanelEmbed(interaction, links = [], termsAccepted = false) {
   return new EmbedBuilder()
     .setColor('#9146FF')
     .setAuthor({
@@ -172,11 +309,14 @@ function buildLivePanelEmbed(interaction, link) {
       iconURL: interaction.client.user.displayAvatarURL(),
     })
     .setTitle('Painel de live')
-    .setDescription('Configure o link da sua live para o bot avisar automaticamente quando você começar a transmitir.')
+    .setDescription(termsAccepted
+      ? 'Termos aceitos. Cadastre quantos links de live quiser para o bot avisar automaticamente quando um canal ficar online.'
+      : 'Aceite os termos para liberar o cadastro de links de live.')
     .addFields(
       { name: 'Usuário', value: `<@${interaction.user.id}>`, inline: true },
       { name: 'Canal de alerta', value: `<#${ALERT_CHANNEL_ID}>`, inline: true },
-      { name: 'Link cadastrado', value: link || '`Nenhum link cadastrado`', inline: false },
+      { name: 'Termos', value: termsAccepted ? '`Aceitos`' : '`Pendente`', inline: true },
+      { name: 'Links cadastrados', value: formatLiveLinks(links), inline: false },
     )
     .setFooter({ text: 'Vortex Live Alerts' })
     .setTimestamp();
@@ -208,16 +348,16 @@ function buildLiveAlertEmbed({ member, user, activity, link, place }) {
   return embed;
 }
 
-async function sendLiveAlert({ guild, user, member, activity = null, place = null }) {
+async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null }) {
   if (!guild || !user || user.bot) return false;
 
   const guildId = guild.id;
   const userId = user.id;
-  const streamKey = `${guildId}:${userId}`;
+  const streamKey = streamKeyOverride || `${guildId}:${userId}`;
   if (activeStreams.has(streamKey)) return false;
 
-  const link = getLiveLink(guildId, userId);
-  if (!link) {
+  const alertLink = link || getLiveLink(guildId, userId);
+  if (!alertLink) {
     activeStreams.add(streamKey);
     return false;
   }
@@ -232,12 +372,12 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   const guildMember = member || await guild.members.fetch(userId).catch(() => null);
 
   await channel.send({
-    content: `<@${userId}> está fazendo live: ${link}`,
+    content: `<@${userId}> está fazendo live: ${alertLink}`,
     embeds: [buildLiveAlertEmbed({
       member: guildMember,
       user,
       activity,
-      link,
+      link: alertLink,
       place,
     })],
     allowedMentions: { users: [userId] },
@@ -250,7 +390,7 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   return true;
 }
 
-async function sendTwitchLiveAlert(client, { guildId, userId, link, stream }) {
+async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, streamKey }) {
   const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return false;
 
@@ -265,6 +405,7 @@ async function sendTwitchLiveAlert(client, { guildId, userId, link, stream }) {
     member,
     link,
     place: category,
+    streamKeyOverride: streamKey,
   });
 }
 
@@ -274,14 +415,19 @@ function getConfiguredTwitchTargets() {
 
   for (const [guildId, guildConfig] of Object.entries(data)) {
     for (const [userId, entry] of Object.entries(guildConfig || {})) {
-      const twitchLogin = entry?.twitchLogin || parseTwitchLogin(entry?.url);
-      if (!twitchLogin || !entry?.url) continue;
-      targets.push({
-        guildId,
-        userId,
-        link: entry.url,
-        twitchLogin,
-      });
+      const normalized = normalizeLiveEntry(entry);
+      if (!normalized.termsAcceptedAt) continue;
+
+      for (const link of normalized.links) {
+        const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
+        if (!twitchLogin || !link?.url) continue;
+        targets.push({
+          guildId,
+          userId,
+          link: link.url,
+          twitchLogin,
+        });
+      }
     }
   }
 
@@ -303,7 +449,7 @@ async function pollTwitchLiveAlerts(client) {
 
       if (!stream) {
         twitchOnlineStreams.delete(streamKey);
-        activeStreams.delete(`${target.guildId}:${target.userId}`);
+        activeStreams.delete(streamKey);
         continue;
       }
 
@@ -314,6 +460,7 @@ async function pollTwitchLiveAlerts(client) {
         userId: target.userId,
         link: target.link,
         stream,
+        streamKey,
       });
       twitchOnlineStreams.add(streamKey);
     }
@@ -398,13 +545,18 @@ async function handleVoiceLiveAlert(oldState, newState) {
 
 module.exports = {
   ALERT_CHANNEL_ID,
+  acceptLiveTermsToken,
   buildLivePanelEmbed,
+  buildLiveTermsUrl,
   getLiveLink,
+  getLiveLinks,
   handlePresenceLiveAlert,
   handleVoiceLiveAlert,
+  hasAcceptedLiveTerms,
   initTwitchLiveMonitor,
   isValidLiveUrl,
   parseTwitchLogin,
+  parseLiveTermsToken,
   removeLiveLink,
   setLiveLink,
 };

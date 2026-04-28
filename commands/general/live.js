@@ -9,8 +9,10 @@ const {
 } = require('discord.js');
 const {
   ALERT_CHANNEL_ID,
+  buildLiveTermsUrl,
   buildLivePanelEmbed,
-  getLiveLink,
+  getLiveLinks,
+  hasAcceptedLiveTerms,
   isValidLiveUrl,
   removeLiveLink,
   setLiveLink,
@@ -23,23 +25,46 @@ const CUSTOM_IDS = {
   modal: 'live_alert_link_modal',
 };
 
-function buildLiveComponents(hasLink) {
-  return [
-    new ActionRowBuilder().addComponents(
+function buildLiveComponents({ hasLinks, termsAccepted, termsUrl }) {
+  const rows = [
+    new ActionRowBuilder(),
+  ];
+
+  if (!termsAccepted) {
+    rows[0].addComponents(
+      new ButtonBuilder()
+        .setLabel('Aceitar termos')
+        .setStyle(ButtonStyle.Link)
+        .setURL(termsUrl),
+    );
+    return rows;
+  }
+
+  rows[0].addComponents(
       new ButtonBuilder()
         .setCustomId(CUSTOM_IDS.set)
-        .setLabel(hasLink ? 'Alterar link' : 'Cadastrar link')
+        .setLabel('Adicionar link')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(CUSTOM_IDS.remove)
-        .setLabel('Remover link')
+        .setLabel('Remover todos')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(!hasLink),
+        .setDisabled(!hasLinks),
+    );
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Ver termos')
+        .setStyle(ButtonStyle.Link)
+        .setURL(termsUrl),
     ),
-  ];
+  );
+
+  return rows;
 }
 
-function buildLinkModal(currentLink) {
+function buildLinkModal() {
   const input = new TextInputBuilder()
     .setCustomId('url')
     .setLabel('LINK DO CANAL DA LIVE')
@@ -48,11 +73,9 @@ function buildLinkModal(currentLink) {
     .setRequired(true)
     .setMaxLength(300);
 
-  if (currentLink) input.setValue(currentLink);
-
   return new ModalBuilder()
     .setCustomId(CUSTOM_IDS.modal)
-    .setTitle('Configurar alerta de live')
+    .setTitle('Adicionar link de live')
     .addComponents(new ActionRowBuilder().addComponents(input));
 }
 
@@ -70,18 +93,25 @@ module.exports = {
     .setDMPermission(false),
 
   async execute(interaction) {
-    const link = getLiveLink(interaction.guildId, interaction.user.id);
+    const links = getLiveLinks(interaction.guildId, interaction.user.id);
+    const termsAccepted = hasAcceptedLiveTerms(interaction.guildId, interaction.user.id);
+    const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
     return safeReply(interaction, {
-      embeds: [buildLivePanelEmbed(interaction, link)],
-      components: buildLiveComponents(Boolean(link)),
+      embeds: [buildLivePanelEmbed(interaction, links, termsAccepted)],
+      components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted, termsUrl }),
       ephemeral: true,
     });
   },
 
   async handleButton(interaction) {
     if (interaction.customId === CUSTOM_IDS.set) {
-      const currentLink = getLiveLink(interaction.guildId, interaction.user.id);
-      return interaction.showModal(buildLinkModal(currentLink));
+      if (!hasAcceptedLiveTerms(interaction.guildId, interaction.user.id)) {
+        return safeReply(interaction, {
+          content: `❌ Aceite os termos antes de cadastrar links: ${buildLiveTermsUrl(interaction.guildId, interaction.user.id)}`,
+          ephemeral: true,
+        });
+      }
+      return interaction.showModal(buildLinkModal());
     }
 
     if (interaction.customId === CUSTOM_IDS.remove) {
@@ -93,13 +123,15 @@ module.exports = {
       }
 
       const removed = removeLiveLink(interaction.guildId, interaction.user.id);
-      const link = getLiveLink(interaction.guildId, interaction.user.id);
+      const links = getLiveLinks(interaction.guildId, interaction.user.id);
+      const termsAccepted = hasAcceptedLiveTerms(interaction.guildId, interaction.user.id);
+      const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
       return safeReply(interaction, {
         content: removed
-          ? `✅ Link de live removido. Não vou mais avisar em <#${ALERT_CHANNEL_ID}> quando você entrar em live.`
-          : '❌ Você não tinha link de live cadastrado.',
-        embeds: [buildLivePanelEmbed(interaction, link)],
-        components: buildLiveComponents(Boolean(link)),
+          ? `✅ Links de live removidos. Não vou mais avisar em <#${ALERT_CHANNEL_ID}> quando seus canais entrarem em live.`
+          : '❌ Você não tinha links de live cadastrados.',
+        embeds: [buildLivePanelEmbed(interaction, links, termsAccepted)],
+        components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted, termsUrl }),
         ephemeral: true,
       });
     }
@@ -110,6 +142,12 @@ module.exports = {
   async handleModal(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
+    if (!hasAcceptedLiveTerms(interaction.guildId, interaction.user.id)) {
+      return interaction.editReply({
+        content: `❌ Aceite os termos antes de cadastrar links: ${buildLiveTermsUrl(interaction.guildId, interaction.user.id)}`,
+      });
+    }
+
     const url = interaction.fields.getTextInputValue('url').trim();
     if (!isValidLiveUrl(url)) {
       return interaction.editReply({
@@ -118,12 +156,13 @@ module.exports = {
     }
 
     setLiveLink(interaction.guildId, interaction.user.id, url, interaction.user.id);
-    const link = getLiveLink(interaction.guildId, interaction.user.id);
+    const links = getLiveLinks(interaction.guildId, interaction.user.id);
+    const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
 
     return interaction.editReply({
-      content: `✅ Link de live cadastrado. Quando você começar uma live, vou avisar em <#${ALERT_CHANNEL_ID}>.`,
-      embeds: [buildLivePanelEmbed(interaction, link)],
-      components: buildLiveComponents(Boolean(link)),
+      content: `✅ Link de live adicionado. Quando esse canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`,
+      embeds: [buildLivePanelEmbed(interaction, links, true)],
+      components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted: true, termsUrl }),
     });
   },
 };
