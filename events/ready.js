@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { ALERT_DM_USER_IDS, sendUpdateLog } = require('../utils/notifications');
 const { notifyBotUpdate } = require('../src/services/updateNotifier');
+const { formatDate } = require('../utils/pontoManager');
 
 module.exports = {
     name: Events.ClientReady,
@@ -30,7 +31,7 @@ module.exports = {
                 .setDescription('O bot da **Vortex** acabou de ser iniciado e já está pronto para uso.')
                 .addFields(
                     { name: 'Status', value: '🟢 Online', inline: true },
-                    { name: 'Horário', value: new Date().toLocaleString('pt-BR'), inline: true }
+                    { name: 'Data e horário real', value: formatDate(new Date()), inline: true }
                 )
                 .setFooter({ text: 'Vortex Management System' })
                 .setTimestamp();

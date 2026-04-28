@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const { logger } = require('../utils/logger');
 const { logMemberLeave } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
+const { deleteApprovedSetChannel } = require('../utils/approvedSetChannels');
 
 const SUPPORT_USER_ID = '289227932432334869';
 
@@ -29,6 +30,10 @@ module.exports = {
 
             await logMemberLeave(guild, member).catch((error) => {
                 logger.error('Erro ao registrar log de saida:', error);
+            });
+
+            await deleteApprovedSetChannel(guild, member.id).catch((error) => {
+                logger.error('Erro ao remover canal de usuario aprovado:', error);
             });
         } catch (error) {
             logger.error('Erro no evento guildMemberRemove:', error);

@@ -77,8 +77,33 @@ function listScheduledMessages() {
     return loadScheduledMessages().mensagens || [];
 }
 
+const TIME_ZONE = 'America/Sao_Paulo';
+
+function capitalize(value) {
+    const text = String(value || '');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function getDisplayDateTime(date = new Date()) {
+    return {
+        hora: date.toLocaleTimeString('pt-BR', {
+            timeZone: TIME_ZONE,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        }),
+        data: capitalize(date.toLocaleDateString('pt-BR', {
+            timeZone: TIME_ZONE,
+            weekday: 'long',
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+        })),
+    };
+}
+
 // ─── Utilitários de tempo ─────────────────────────────────────────────────────
-/** Retorna hora e minuto atuais em BRT (UTC-3) */
+/** Retorna hora e minuto atuais em America/Sao_Paulo */
 function getBRTTime() {
     const now = new Date();
     // BRT = UTC - 3h
@@ -116,15 +141,7 @@ function markSent(id, dateStr, hora) {
 
 // ─── Embeds fixos ─────────────────────────────────────────────────────────────
 function buildBomdiaEmbed() {
-    const now = new Date();
-    const brtMs = now.getTime() - 3 * 60 * 60 * 1000;
-    const brt = new Date(brtMs);
-
-    const hora = brt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-    const data = brt.toLocaleDateString('pt-BR', {
-        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC'
-    });
-    const dataFmt = data.charAt(0).toUpperCase() + data.slice(1);
+    const { hora, data } = getDisplayDateTime(new Date());
 
     const saudacoes = [
         'Que hoje seja um dia incrível para toda a família **Vortex**! 🌟',
@@ -141,7 +158,7 @@ function buildBomdiaEmbed() {
         .setDescription(
             `### ☀️ Bom dia a todos!\n\n` +
             `> ${saudacao}\n\n` +
-            `📅 **${dataFmt}** — 🕐 ${hora}\n\n` +
+            `📅 **${data}** — 🕐 ${hora}\n\n` +
             `<@&${CARGO_BOM_DIA_ID}> — Bom dia a todos os membros! 🎉`
         )
         .setFooter({ text: 'Vortex — Mensagem Automática de Bom Dia' })
@@ -149,15 +166,7 @@ function buildBomdiaEmbed() {
 }
 
 function buildTodoMundoOnEmbed() {
-    const now = new Date();
-    const brtMs = now.getTime() - 3 * 60 * 60 * 1000;
-    const brt = new Date(brtMs);
-
-    const hora = brt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-    const data = brt.toLocaleDateString('pt-BR', {
-        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC'
-    });
-    const dataFmt = data.charAt(0).toUpperCase() + data.slice(1);
+    const { hora, data } = getDisplayDateTime(new Date());
 
     const frases = [
         'Chegou a hora! Vamos reunir a galera e mostrar do que a **Vortex** é capaz! 🔥',
@@ -174,7 +183,7 @@ function buildTodoMundoOnEmbed() {
         .setDescription(
             `### 🎮 Hora de reunir o time!\n\n` +
             `> ${frase}\n\n` +
-            `📅 **${dataFmt}** — 🕐 ${hora}\n\n` +
+            `📅 **${data}** — 🕐 ${hora}\n\n` +
             `<@&${CARGO_MENCAO_ID}> — ta na hora de mostrar quem manda na cidade! 🚀`
         )
         .setFooter({ text: 'vamos logar' })

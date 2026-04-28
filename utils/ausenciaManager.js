@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { logger } = require('./logger');
+const { formatDate: formatRealDate } = require('./pontoManager');
 
 const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -53,13 +54,7 @@ function saveAbsenceConfig(nextConfig) {
 
 function formatDate(value) {
   if (!value) return 'N/A';
-  return new Date(value).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatRealDate(value);
 }
 
 function formatDuration(ms = 0) {

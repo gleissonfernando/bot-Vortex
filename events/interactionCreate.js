@@ -7,6 +7,8 @@ const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
+const { createApprovedSetChannel } = require('../utils/approvedSetChannels');
+const { registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -60,6 +62,7 @@ async function sendRecruitmentResultDm(client, targetUser, {
     idGame = null,
     nomeGame = null,
     numeroGame = null,
+    nivelGame = null,
 }) {
     if (!targetUser) return false;
     if (isDmLogDisabled()) return false;
@@ -78,6 +81,7 @@ async function sendRecruitmentResultDm(client, targetUser, {
         nomeGame ? `**Nome em game:** ${nomeGame}` : null,
         idGame ? `**ID em game:** \`${idGame}\`` : null,
         numeroGame ? `**Numero em game:** \`${numeroGame}\`` : null,
+        nivelGame ? `**Nivel em game:** \`${nivelGame}\`` : null,
     ].filter(Boolean).join('\n');
 
     const nextSteps = approved
@@ -197,7 +201,7 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('closed_at')
                         .setLabel('HORARIO QUE FICOU EM GAME')
-                        .setPlaceholder('Ex: 18:30:45 ou 27/04/2026 18:30:45')
+                        .setPlaceholder('Obrigatorio: 27/04/2026 18:30:45')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
@@ -375,13 +379,13 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'show_all_points', 'set_absence_role', 'change_absence_return'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || ['config_set', 'config_avisos', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'show_all_points', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_toggle_billing'].includes(interaction.customId))) {
                 return await painel.handleButton(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
                 return await painel.handleSelectMenu(interaction);
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
                 return await painel.handleSelectMenu(interaction);
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_command_permission_target') {
@@ -390,10 +394,10 @@ module.exports = {
             if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
                 return await painel.handleSelectMenu(interaction);
             }
-            if (interaction.isUserSelectMenu() && interaction.customId === 'select_point_readjust_user') {
+            if (interaction.isUserSelectMenu() && ['select_point_readjust_user', 'select_profile_register_user'].includes(interaction.customId)) {
                 return await painel.handleSelectMenu(interaction);
             }
-            if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return')) {
+            if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register')) {
                 return await painel.handleModal(interaction);
             }
         }
@@ -416,7 +420,8 @@ module.exports = {
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id_game').setLabel('ID EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nome_game').setLabel('NOME EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('NIVEL EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
             );
             return interaction.showModal(modal);
         }
@@ -427,6 +432,7 @@ module.exports = {
             const idGame = interaction.fields.getTextInputValue('id_game').trim();
             const nomeGame = interaction.fields.getTextInputValue('nome_game').trim();
             const numeroGame = interaction.fields.getTextInputValue('numero_game').trim();
+            const nivelGame = interaction.fields.getTextInputValue('nivel_game').trim();
 
             const canal = await guild.channels.create({
                 name: `set-${user.username}`,
@@ -451,6 +457,7 @@ module.exports = {
                     { name: '🎮 ID em Game', value: `\`${idGame}\``, inline: true },
                     { name: '🏷️ Nome em Game', value: `\`${nomeGame}\``, inline: true },
                     { name: '📱 Número em Game', value: `\`${numeroGame}\``, inline: true },
+                    { name: '📈 Nível em Game', value: `\`${nivelGame}\``, inline: true },
                     { name: '📊 Status', value: '`Aguardando análise`', inline: true }
                 )
                 .setFooter({ text: 'Vortex System • Aguardando análise da staff' })
@@ -472,6 +479,7 @@ module.exports = {
                 idGame,
                 nomeGame,
                 numeroGame,
+                nivelGame,
                 createdAt: new Date().toISOString(),
             };
             saveJSON(PEDIDOS_PATH, pedidosAtivos);
@@ -512,7 +520,10 @@ module.exports = {
                 const idGame = requestData.idGame || null;
                 const nomeGame = requestData.nomeGame || null;
                 const numeroGame = requestData.numeroGame || null;
+                const nivelGame = requestData.nivelGame || null;
                 let dmSent = false;
+                let approvedChannel = null;
+                let approvedChannelMessage = null;
                 
                 if (isApp) {
                     const target = await guild.members.fetch(targetId).catch(() => null);
@@ -524,6 +535,23 @@ module.exports = {
                         if (nomeGame && idGame) {
                             await target.setNickname(`${nomeGame} | ${idGame}`).catch(() => {});
                         }
+                        const channelResult = await createApprovedSetChannel(guild, target, {
+                            nomeGame,
+                            idGame,
+                            staffUserId: user.id,
+                        }).catch((error) => ({ ok: false, message: error.message, channel: null }));
+                        approvedChannel = channelResult.channel;
+                        approvedChannelMessage = channelResult.message;
+                        await registerApprovedProfile(guild, target, {
+                            tipo: requestType,
+                            nomeGame,
+                            idGame,
+                            numeroGame,
+                            nivelGame,
+                            approvedBy: user.id,
+                        }).catch((error) => {
+                            approvedChannelMessage = `${approvedChannelMessage || 'Canal processado'} | perfil nao salvo: ${error.message}`;
+                        });
                     }
                     dmSent = await sendRecruitmentResultDm(client, targetUser || target?.user, {
                         approved: true,
@@ -533,6 +561,7 @@ module.exports = {
                         idGame,
                         nomeGame,
                         numeroGame,
+                        nivelGame,
                     });
                 } else {
                     dmSent = await sendRecruitmentResultDm(client, targetUser, {
@@ -542,7 +571,8 @@ module.exports = {
                         tipo: requestType,
                         idGame,
                         nomeGame,
-                        numeroGame,
+                       numeroGame,
+                       nivelGame,
                     });
                 }
 
@@ -563,11 +593,12 @@ module.exports = {
                         `Resultado: ${isApp ? 'Aprovado' : 'Reprovado'}`,
                         `Staff: <@${user.id}>`,
                         `DM enviada: ${dmSent ? 'sim' : 'não'}`,
+                        isApp ? `Canal aprovado: ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'nao criado'}` : null,
                         '',
                         isApp
                             ? 'Canal mantido. Use o botão Apagar para remover.'
                             : 'Canal será deletado em 1 minuto.',
-                    ].join('\n'))
+                    ].filter((line) => line !== null).join('\n'))
                     .setTimestamp();
 
                 await interaction.editReply({ embeds: [resultEmbed] });
@@ -585,7 +616,13 @@ module.exports = {
                 
                 await sendVortexLog(client, {
                     title: isApp ? 'Solicitação Aprovada' : 'Solicitação Reprovada',
-                    description: `**Staff:** <@${user.id}>\n**Candidato:** <@${targetId}>\n**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}\n**DM enviada:** ${dmSent ? 'sim' : 'nao'}`,
+                    description: [
+                        `**Staff:** <@${user.id}>`,
+                        `**Candidato:** <@${targetId}>`,
+                        `**Resultado:** ${isApp ? 'Aprovado' : 'Reprovado'}`,
+                        `**DM enviada:** ${dmSent ? 'sim' : 'nao'}`,
+                        isApp ? `**Canal aprovado:** ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'nao criado'}` : null,
+                    ].filter(Boolean).join('\n'),
                     color: isApp ? '#57F287' : '#FF0055',
                     type: 'RECRUTAMENTO',
                     userId: user.id // Log para o staff que realizou a ação

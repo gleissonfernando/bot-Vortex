@@ -57,9 +57,9 @@ function getMonthlySessions(data, monthKey) {
         startedAt,
         closedAt,
         durationMs,
-        closedBy: session.closedBy || session.fechadoPor || session.correctedBy || 'Sistema',
+        closedBy: session.closedBy || session.fechadoPor || session.adjustedBy || session.correctedBy || 'Sistema',
         status: closedAt ? 'FECHADO' : 'ABERTO',
-        corrected: Boolean(session.corrected),
+        corrected: Boolean(session.corrected || session.adjusted),
       };
     });
 }

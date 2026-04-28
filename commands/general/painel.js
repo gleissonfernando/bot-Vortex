@@ -20,6 +20,7 @@ const { deleteUserPoint, adjustPointSession, formatDuration, formatDate } = requ
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
+const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
 const { hasVortexLevel } = require('../../utils/permissions');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
@@ -30,14 +31,17 @@ const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
+const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md');
 const commandPermissionSelections = new Map();
 const pointReadjustSelections = new Map();
+const profileRegisterSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
     { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatorio de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausencia' },
+    { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
 ];
 
@@ -53,12 +57,7 @@ function hasMasterPermission(member) {
 }
 
 function canAccessPanelTab(member, tab) {
-    if (hasMasterPermission(member)) return true;
-    if (['config_set', 'config_avisos'].includes(tab)) {
-        return hasVortexLevel(member, ['admin', 'medio']);
-    }
-    if (tab === 'tab_manutencao') return false;
-    return hasVortexLevel(member, ['admin']);
+    return true;
 }
 
 function ensureRoleLevels(conf) {
@@ -114,40 +113,40 @@ function withPanelImage(options) {
     };
 }
 
+function readUpdatesSummary() {
+    try {
+        if (!fs.existsSync(UPDATES_PATH)) return 'Nenhum arquivo de atualizacoes encontrado.';
+        return fs.readFileSync(UPDATES_PATH, 'utf8').trim().slice(0, 3500);
+    } catch {
+        return 'Nao foi possivel ler o arquivo de atualizacoes.';
+    }
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
     .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
-    if (!hasStaffPermission(interaction.member) && !hasVortexLevel(interaction.member, ['medio'])) {
-      return safeReply(interaction, { content: '❌ Você não tem acesso a este painel.', ephemeral: true });
-    }
     return renderDashboard(interaction, hasStaffPermission(interaction.member) ? 'tab_stats' : 'config_set');
   },
 
   async handleButton(interaction) {
-    if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
-    
     const customId = interaction.customId;
     const conf = loadJSON(CONFIG_PATH);
 
-    if ((customId === 'tab_manutencao' || ['toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
-      return safeReply(interaction, { content: `❌ Somente o cargo <@&${SUPERIOR_ID}> pode usar a manutenção.`, ephemeral: true });
-    }
-
     if (customId.startsWith('tab_')) {
-      if (!canAccessPanelTab(interaction.member, customId)) {
-        return safeReply(interaction, { content: '❌ Seu nível em Cargos Vortex não libera esta modalidade do painel.', ephemeral: true });
-      }
       return renderDashboard(interaction, customId, true);
     }
 
     if (customId === 'config_set' || customId === 'config_avisos') {
-      if (!canAccessPanelTab(interaction.member, customId)) {
-        return safeReply(interaction, { content: '❌ Seu nível em Cargos Vortex não libera esta configuração.', ephemeral: true });
-      }
       return renderDashboard(interaction, customId, true);
+    }
+
+    if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
+
+    if ((customId === 'tab_manutencao' || ['toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
+      return safeReply(interaction, { content: `❌ Somente o cargo <@&${SUPERIOR_ID}> pode usar a manutenção.`, ephemeral: true });
     }
 
     if (customId === 'show_all_points') {
@@ -288,7 +287,7 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('started_at')
                         .setLabel('HORARIO QUE ABRIU O PONTO')
-                        .setPlaceholder('Ex: 14:00:00 ou 27/04/2026 14:00:00')
+                        .setPlaceholder('Obrigatorio: 27/04/2026 14:00:00')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
@@ -296,7 +295,7 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('closed_at')
                         .setLabel('HORARIO QUE FECHOU O PONTO')
-                        .setPlaceholder('Ex: 18:30:00 ou 27/04/2026 18:30:00')
+                        .setPlaceholder('Obrigatorio: 27/04/2026 18:30:00')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 )
@@ -350,6 +349,99 @@ module.exports = {
         );
 
         return interaction.showModal(modal);
+    }
+
+    if (customId === 'profile_test') {
+        const modal = new ModalBuilder()
+            .setCustomId('modal_profile_test')
+            .setTitle('Teste de Perfil');
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('user_id')
+                    .setLabel('ID DO USUARIO')
+                    .setPlaceholder('Cole o ID Discord do usuario')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('amount')
+                    .setLabel('QUANTIDADE')
+                    .setPlaceholder('Ex: 5')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('unit')
+                    .setLabel('MINUTOS, HORAS OU DIAS')
+                    .setPlaceholder('minutos, horas ou dias')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            )
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    if (customId === 'profile_register') {
+        const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+        const modal = new ModalBuilder()
+            .setCustomId('modal_profile_register')
+            .setTitle('Cadastrar Perfil');
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('user_id')
+                    .setLabel('ID DO USUARIO')
+                    .setPlaceholder('Selecione no painel ou cole o ID Discord')
+                    .setValue(selected.userId || '')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('name')
+                    .setLabel('NOME DO USUARIO')
+                    .setPlaceholder('Nome para salvar no perfil')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('call_channel_id')
+                    .setLabel('ID DA CALL/CANAL')
+                    .setPlaceholder('Selecione no painel ou cole o ID do canal')
+                    .setValue(selected.channelId || '')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('photo_link')
+                    .setLabel('LINK DA FOTO')
+                    .setPlaceholder('Cole o link da foto do Discord ou imagem')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false)
+            )
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    if (customId === 'profile_toggle_billing') {
+        const next = toggleProfileBilling();
+        sendVortexLog(interaction.client, {
+            title: 'Cobranca de Perfil Alterada',
+            description: `Cobrança por DM do perfil foi **${next.billingDmEnabled ? 'LIGADA' : 'DESLIGADA'}** por <@${interaction.user.id}>.\nData/hora real: ${formatDate(new Date())}`,
+            color: next.billingDmEnabled ? '#57F287' : '#FFA500',
+            type: 'PERFIL',
+            userId: interaction.user.id
+        }).catch(() => {});
+        return renderDashboard(interaction, 'tab_perfil', true);
     }
 
   },
@@ -488,6 +580,24 @@ module.exports = {
         pointReadjustSelections.set(getSelectionKey(interaction), interaction.values[0]);
         return renderDashboard(interaction, 'tab_pontos', true);
     }
+
+    if (interaction.customId === 'select_profile_register_user') {
+        const key = getSelectionKey(interaction);
+        profileRegisterSelections.set(key, {
+            ...(profileRegisterSelections.get(key) || {}),
+            userId: interaction.values[0],
+        });
+        return renderDashboard(interaction, 'tab_perfil', true);
+    }
+
+    if (interaction.customId === 'select_profile_register_channel') {
+        const key = getSelectionKey(interaction);
+        profileRegisterSelections.set(key, {
+            ...(profileRegisterSelections.get(key) || {}),
+            channelId: interaction.values[0],
+        });
+        return renderDashboard(interaction, 'tab_perfil', true);
+    }
   },
 
   async handleModal(interaction) {
@@ -625,6 +735,83 @@ module.exports = {
         });
     }
 
+    if (interaction.customId === 'modal_profile_test') {
+        const userId = interaction.fields.getTextInputValue('user_id').trim();
+        const amount = interaction.fields.getTextInputValue('amount').trim();
+        const unit = interaction.fields.getTextInputValue('unit').trim();
+
+        if (!/^\d{15,25}$/.test(userId)) {
+            return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
+        }
+
+        const thresholdMs = parseTestPeriod(amount, unit);
+        if (!thresholdMs) {
+            return safeReply(interaction, { content: '❌ Periodo invalido. Use unidade `minutos`, `horas` ou `dias`.', ephemeral: true });
+        }
+
+        const results = await checkProfileUpdates(interaction.client, {
+            guildId: interaction.guild.id,
+            userId,
+            thresholdMs,
+            force: true,
+        });
+        const result = results[0];
+
+        return safeReply(interaction, {
+            content: [
+                '✅ Teste de perfil executado.',
+                `Usuário: <@${userId}>`,
+                `Período testado: ${amount} ${unit}`,
+                `Data/hora real: ${formatDate(new Date())}`,
+                `Aviso enviado: ${result?.sent ? 'sim' : 'não'}`,
+                result?.reason ? `Motivo: ${result.reason}` : null,
+            ].filter(Boolean).join('\n'),
+            ephemeral: true,
+        });
+    }
+
+    if (interaction.customId === 'modal_profile_register') {
+        const userId = interaction.fields.getTextInputValue('user_id').trim();
+        const name = interaction.fields.getTextInputValue('name').trim();
+        const callChannelId = interaction.fields.getTextInputValue('call_channel_id').trim();
+        const photoLink = interaction.fields.getTextInputValue('photo_link').trim();
+
+        if (!/^\d{15,25}$/.test(userId)) {
+            return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
+        }
+        if (callChannelId && !/^\d{15,25}$/.test(callChannelId)) {
+            return safeReply(interaction, { content: '❌ ID de canal/call inválido.', ephemeral: true });
+        }
+
+        const target = await interaction.client.users.fetch(userId).catch(() => null);
+        if (!target) {
+            return safeReply(interaction, { content: '❌ Usuário não encontrado.', ephemeral: true });
+        }
+
+        const result = await registerManualProfile(interaction.guild, target, {
+            name,
+            callChannelId: callChannelId || null,
+            photoLink: photoLink || null,
+            registeredBy: interaction.user.id,
+        });
+
+        if (!result.ok) {
+            return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
+        }
+
+        return safeReply(interaction, {
+            content: [
+                '✅ Perfil cadastrado no sistema.',
+                `Usuário: <@${userId}>`,
+                `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
+                `Call/Canal: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
+                `Fotos salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
+                `Data/hora real: ${formatDate(new Date())}`,
+            ].join('\n'),
+            ephemeral: true,
+        });
+    }
+
   }
 };
 
@@ -637,7 +824,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   const embed = new EmbedBuilder()
     .setTimestamp()
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
-    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()} • Hoje às ${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}` });
+    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()} • ${formatDate(new Date())}` });
 
   const mainRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_stats')),
@@ -649,7 +836,9 @@ async function renderDashboard(interaction, tab, edit = false) {
 
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tab_ausencias').setLabel('Ausências').setStyle(tab === 'tab_ausencias' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_ausencias')),
-    new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands'))
+    new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands')),
+    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil')),
+    new ButtonBuilder().setCustomId('tab_updates').setLabel('Atualizações').setStyle(tab === 'tab_updates' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_updates'))
   );
 
   const actionRow = new ActionRowBuilder();
@@ -832,7 +1021,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '**Reajuste de ponto**',
         'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse periodo no total do usuario e salva em `commands/pontos.json`.',
         '',
-        'Formato aceito: `HH:mm:ss` para hoje ou `DD/MM/AAAA HH:mm:ss` para uma data específica. Os segundos são opcionais.',
+        'Formato obrigatório: `DD/MM/AAAA HH:mm:ss`. Os segundos são opcionais.',
       ].join('\n'));
 
     actionRow.addComponents(
@@ -919,6 +1108,64 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('change_absence_return').setLabel('Alterar retorno').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('toggle_absence_end_message').setLabel(absenceConfig.disableEndMessage ? 'Ligar mensagem' : 'Desligar mensagem').setStyle(absenceConfig.disableEndMessage ? ButtonStyle.Success : ButtonStyle.Danger)
     );
+  } else if (tab === 'tab_perfil') {
+    const profiles = getGuildProfiles(guild.id);
+    const profileConfig = readProfileConfig();
+    const selectedProfile = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+    const profileRows = Object.values(profiles).slice(0, 10).map((profile, index) => {
+      return `${index + 1}. <@${profile.userId}> - ${profile.nomeGame || profile.displayName || 'Sem nome'} - call ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'} - ultima atualização ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`;
+    });
+
+    embed.setAuthor({ name: 'VORTEX | PERFIS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#00D9FF')
+      .setDescription([
+        '### Controle de Perfil',
+        '',
+        'Este módulo acompanha os usuarios aprovados no `/set`.',
+        'Também permite cadastrar manualmente pessoas que já estão no Discord.',
+        'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto>`.',
+        'Os links de foto ficam salvos no JSON mesmo se a imagem original for apagada.',
+        `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
+        '',
+        `Selecionado para cadastro: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuario`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
+        '',
+        '**Perfis salvos**',
+        profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
+        '',
+        `Data/hora real: ${formatDate(new Date())}`,
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('profile_test').setLabel('Testar perfil').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+    );
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId('select_profile_register_user')
+          .setPlaceholder('Selecionar usuario para cadastrar perfil')
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_profile_register_channel')
+          .setPlaceholder('Selecionar call/canal do usuario')
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+    ];
+  } else if (tab === 'tab_updates') {
+    embed.setAuthor({ name: 'VORTEX | ATUALIZAÇÕES', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#57F287')
+      .setDescription([
+        '### Correções e Atualizações',
+        '',
+        readUpdatesSummary(),
+        '',
+        `Data/hora real: ${formatDate(new Date())}`,
+      ].join('\n').slice(0, 4096));
   }
 
   let components = ['tab_config', 'config_set', 'config_avisos'].includes(tab) ? [mainRow] : [mainRow, navRow];

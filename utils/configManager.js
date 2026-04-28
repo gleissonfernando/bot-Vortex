@@ -3,6 +3,7 @@ const path = require('path');
 const { logger } = require('./logger');
 const { FIXED_LOG_CHANNEL } = require('./notifications');
 const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
+const { formatLocalDate, formatTime } = require('./pontoManager');
 
 const GUILD_CONFIGS_PATH = path.join(__dirname, '..', 'commands', 'guildConfigs.json');
 const configCache = new Map();
@@ -191,8 +192,8 @@ function processMessageVariables(message, user, guild) {
     .replace(/{server}/g, guild?.name || 'Servidor')
     .replace(/{serverId}/g, guild?.id || 'N/A')
     .replace(/{memberCount}/g, String(guild?.memberCount || 'N/A'))
-    .replace(/{date}/g, new Date().toLocaleDateString('pt-BR'))
-    .replace(/{time}/g, new Date().toLocaleTimeString('pt-BR'));
+    .replace(/{date}/g, formatLocalDate(new Date()))
+    .replace(/{time}/g, formatTime(new Date()));
 }
 
 module.exports = {

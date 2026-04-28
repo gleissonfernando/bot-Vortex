@@ -1,6 +1,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { sendStaffLog, sendUpdateLog } = require('./notifications');
+const { formatDate } = require('./pontoManager');
 const config = require('../config/config');
 
 const MAINTENANCE_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -87,13 +88,14 @@ async function notifyAllStaffMembers(client, guild, responsavelId, ativando = tr
         ? '🔧 Bot em Modo Manutenção — Vortex'
         : '✅ Bot Voltou ao Normal — Vortex';
 
+    const now = new Date();
     const descricao = ativando
         ? `O bot da **Vortex** foi colocado em **modo de manutenção** por <@${responsavelId}>.\n\n` +
           `> ⚠️ Todos os comandos e botões estão temporariamente **bloqueados** para usuários sem cargo de staff.\n\n` +
-          `**Ativado em:** <t:${Math.floor(Date.now() / 1000)}:F>`
+          `**Ativado em:** ${formatDate(now)}`
         : `O bot da **Vortex** voltou a operar **normalmente**. O modo de manutenção foi desativado por <@${responsavelId}>.\n\n` +
           `> ✅ Todos os comandos e botões estão disponíveis novamente.\n\n` +
-          `**Desativado em:** <t:${Math.floor(Date.now() / 1000)}:F>`;
+          `**Desativado em:** ${formatDate(now)}`;
 
     const cor = ativando ? '#ED4245' : '#57F287';
 
@@ -130,6 +132,7 @@ async function notifyAllStaffMembers(client, guild, responsavelId, ativando = tr
 async function sendMaintenanceLog(client, guild, responsavelId, ativando = true) {
     const titulo = ativando ? 'Modo Manutenção ATIVADO' : 'Modo Manutenção DESATIVADO';
     const cor = ativando ? '#ED4245' : '#57F287';
+    const now = new Date();
     
     const mencoes = STAFF_ROLE_IDS.map(id => `<@&${id}>`).join(' ');
     const avisoTexto = ativando
@@ -139,11 +142,11 @@ async function sendMaintenanceLog(client, guild, responsavelId, ativando = true)
     const descricao = ativando
         ? `O modo de manutenção foi **ativado** no servidor **${guild.name}**.\n\n` +
           `**Responsável:** <@${responsavelId}>\n` +
-          `**Horário:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
+          `**Horário real:** ${formatDate(now)}\n\n` +
           `> ⚠️ Todos os comandos e botões estão **bloqueados** para usuários sem cargo de staff.`
         : `O modo de manutenção foi **desativado** no servidor **${guild.name}**.\n\n` +
           `**Responsável:** <@${responsavelId}>\n` +
-          `**Horário:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
+          `**Horário real:** ${formatDate(now)}\n\n` +
           `> ✅ O bot voltou a operar normalmente para todos os usuários.`;
 
     await sendStaffLog(client, titulo, avisoTexto + '\n\n' + descricao, cor);

@@ -12,6 +12,8 @@ const { setDiscordClient } = require('./utils/dashboardClient');
 const { notifyError, notifyBotDown, sendVortexLog } = require('./utils/notifications');
 const { initStatusPanel } = require('./utils/pontoPanel');
 const { initAbsenceManager } = require('./utils/ausenciaManager');
+const { initProfileManager } = require('./utils/profileManager');
+const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || 3000);
@@ -112,6 +114,8 @@ client.once(Events.ClientReady, async () => {
     await registerCommands();
     initStatusPanel(client);
     initAbsenceManager(client);
+    initProfileManager(client);
+    initDailyPointTranscript(client);
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',

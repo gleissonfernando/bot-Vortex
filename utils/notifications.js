@@ -1,6 +1,7 @@
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { formatDate } = require('./pontoManager');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const VORTEX_BANNER_PATH = path.join(__dirname, '..', 'foto', 'IMG_4234.png');
@@ -137,7 +138,7 @@ async function notifyBotDown(client, reason, context = 'Bot caiu') {
     const description = [
         '**Status:** alerta de queda/erro critico',
         `**Contexto:** ${context}`,
-        `**Horario:** ${new Date().toLocaleString('pt-BR')}`,
+        `**Horario real:** ${formatDate(new Date())}`,
         '',
         '**Detalhes:**',
         `\`\`\`js\n${reasonText.slice(0, 1500)}\n\`\`\``,

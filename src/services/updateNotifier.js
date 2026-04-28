@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { formatDate } = require('../../utils/pontoManager');
 
 const DEFAULT_UPDATE_LOG_CHANNEL_ID = '14977767502333912041';
 const DEFAULT_UPDATE_NOTIFY_ROLE_ID = '1201235607549124639';
@@ -65,7 +66,7 @@ async function notifyBotUpdate(client) {
         `**Bot:** ${client.user.tag}`,
         `**Ambiente:** ${getEnvLabel()}`,
         `**Versão:** ${getVersion()}`,
-        `**Data/Hora:** ${now.toLocaleString('pt-BR')}`,
+        `**Data/Hora real:** ${formatDate(now)}`,
         '',
         '✅ Todos os sistemas foram carregados corretamente.',
       ].join('\n'))

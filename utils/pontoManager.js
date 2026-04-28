@@ -182,6 +182,14 @@ async function deleteUserPoint(guildId, userId) {
   return existed;
 }
 
+async function resetGuildPoints(guildId) {
+  const data = readLocal();
+  const existed = Boolean(data[guildId] && Object.keys(data[guildId]).length > 0);
+  data[guildId] = {};
+  writeLocal(data);
+  return existed;
+}
+
 function parseBrazilDateTime(input, now = new Date()) {
   const raw = String(input || '').trim();
   const fullMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -231,6 +239,10 @@ function parseBrazilDateTime(input, now = new Date()) {
   return parsed;
 }
 
+function hasBrazilDate(input) {
+  return /^\s*\d{1,2}[/-]\d{1,2}[/-]\d{4}\s+/.test(String(input || ''));
+}
+
 async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correctedBy = null) {
   const current = await getUserPoint(guildId, userId);
   if (!current.activePointStartedAt) {
@@ -240,6 +252,10 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
   const startedAt = new Date(current.activePointStartedAt);
   if (Number.isNaN(startedAt.getTime())) {
     return { ok: false, code: 'invalid_start', message: 'O horário de abertura salvo está inválido.', data: current };
+  }
+
+  if (!hasBrazilDate(closedAtInput)) {
+    return { ok: false, code: 'missing_close_date', message: 'O ajuste precisa ter a data de fechamento. Use `DD/MM/AAAA HH:mm:ss`.', data: current };
   }
 
   const closedAt = parseBrazilDateTime(closedAtInput);
@@ -294,6 +310,16 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
 }
 
 async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput, adjustedBy = null) {
+  if (!hasBrazilDate(startedAtInput)) {
+    const current = await getUserPoint(guildId, userId);
+    return { ok: false, code: 'missing_start_date', message: 'O reajuste precisa ter a data de abertura. Use `DD/MM/AAAA HH:mm:ss`.', data: current };
+  }
+
+  if (!hasBrazilDate(closedAtInput)) {
+    const current = await getUserPoint(guildId, userId);
+    return { ok: false, code: 'missing_close_date', message: 'O reajuste precisa ter a data de fechamento. Use `DD/MM/AAAA HH:mm:ss`.', data: current };
+  }
+
   const startedAt = parseBrazilDateTime(startedAtInput);
   const closedAt = parseBrazilDateTime(closedAtInput, startedAt || new Date());
   const current = await getUserPoint(guildId, userId);
@@ -322,7 +348,9 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
     durationMs,
     ...buildSessionMetadata(startedAt, closedAt),
     adjusted: true,
+    corrected: true,
     adjustedBy: adjustedBy ? String(adjustedBy) : null,
+    correctedBy: adjustedBy ? String(adjustedBy) : null,
     adjustedAt: nowIso,
   };
 
@@ -505,6 +533,7 @@ module.exports = {
   listGuildPoints,
   saveUserPoint,
   deleteUserPoint,
+  resetGuildPoints,
   correctOpenPointCloseTime,
   adjustPointSession,
   parseBrazilDateTime,

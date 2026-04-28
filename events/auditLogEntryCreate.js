@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getLogChannelId, isChannelLogDisabled } = require('../utils/notifications');
 const { logger } = require('../utils/logger');
+const { formatDate } = require('../utils/pontoManager');
 
 const ACTION_DETAILS = {
     GuildUpdate: { title: 'Servidor atualizado', verb: 'alterou configuracoes do servidor', color: '#00D9FF' },
@@ -132,7 +133,7 @@ function formatTarget(target) {
 
 function formatPrimitive(value) {
     if (value === undefined || value === null || value === '') return 'vazio';
-    if (value instanceof Date) return value.toLocaleString('pt-BR');
+    if (value instanceof Date) return formatDate(value);
     if (typeof value === 'boolean') return value ? 'sim' : 'nao';
     if (typeof value === 'number') return String(value);
     return String(value);
