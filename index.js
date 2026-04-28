@@ -18,7 +18,7 @@ const { initPointAutomation } = require('./utils/pointAutomation');
 const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 
 const app = express();
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || 3000);
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || 80);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 
 app.use(helmet());
@@ -43,6 +43,20 @@ setDiscordClient(client);
 
 app.get('/health', (req, res) => {
     res.json({ ok: true, service: 'vortex-bot' });
+});
+
+app.get('/api/site/status', (req, res) => {
+    res.json({
+        ok: true,
+        service: 'vortex-site',
+        bot: client.user ? {
+            id: client.user.id,
+            tag: client.user.tag,
+        } : null,
+        guilds: client.guilds?.cache?.size || 0,
+        uptimeSeconds: Math.floor(process.uptime()),
+        liveAlertChannelId: '1202251715865489459',
+    });
 });
 
 app.get(['/', '/termos', '/privacidade'], (req, res) => {

@@ -8,14 +8,14 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #09090d;
-      --surface: #14141c;
-      --surface-2: #101018;
-      --line: #272738;
-      --text: #f5f7fb;
-      --muted: #a9afc3;
-      --accent: #9146ff;
-      --accent-2: #00d9ff;
+      --bg: #05070b;
+      --surface: #0f1624;
+      --surface-2: #080d16;
+      --line: #26364f;
+      --text: #ffffff;
+      --muted: #b7c4d8;
+      --accent: #1d7dff;
+      --accent-2: #ffffff;
     }
 
     * {
@@ -52,7 +52,8 @@
       content: "";
       position: absolute;
       inset: 0;
-      background: linear-gradient(180deg, rgba(145, 70, 255, 0.18), rgba(0, 217, 255, 0.05));
+      background:
+        linear-gradient(180deg, rgba(29, 125, 255, 0.28), rgba(255, 255, 255, 0.04));
       border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
 
@@ -136,6 +137,31 @@
       background: transparent;
       border-color: var(--line);
       color: var(--text);
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .status span {
+      min-height: 66px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .status strong {
+      color: var(--text);
+      font-size: 17px;
     }
 
     main {
@@ -233,6 +259,10 @@
       .grid {
         grid-template-columns: 1fr;
       }
+
+      .status {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -255,6 +285,11 @@
         <div class="actions">
           <a class="button" href="https://bot-vortex.shardweb.app/twitch/webhook" rel="noopener">Aceitar termos</a>
           <a class="button secondary" href="#termos">Ler termos e privacidade</a>
+        </div>
+        <div class="status" aria-label="Status do backend">
+          <span><strong id="status-api">...</strong>API</span>
+          <span><strong id="status-bot">...</strong>Bot</span>
+          <span><strong id="status-guilds">...</strong>Servidores</span>
         </div>
         <p class="note">Para liberar o cadastro dentro do Discord, use o comando /live e abra o link de aceite gerado pelo bot.</p>
       </div>
@@ -291,5 +326,26 @@
   <footer>
     Vortex Management System
   </footer>
+  <script>
+    async function loadStatus() {
+      const api = document.getElementById('status-api');
+      const bot = document.getElementById('status-bot');
+      const guilds = document.getElementById('status-guilds');
+
+      try {
+        const response = await fetch('/api/site/status', { cache: 'no-store' });
+        const data = await response.json();
+        api.textContent = data.ok ? 'Online' : 'Indisponivel';
+        bot.textContent = data.bot?.tag || 'Conectando';
+        guilds.textContent = String(data.guilds || 0);
+      } catch {
+        api.textContent = 'Offline';
+        bot.textContent = 'N/A';
+        guilds.textContent = '0';
+      }
+    }
+
+    loadStatus();
+  </script>
 </body>
 </html>
