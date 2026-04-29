@@ -7,6 +7,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '1498895777790038116';
 const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
+const TARGET_SERVER_ALIASES = ['metropole rp', 'metropole gg'];
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
@@ -52,7 +53,7 @@ function isTargetFiveMActivity(activity) {
   const haystack = activityText(activity);
   const normalizedTarget = normalizeText(TARGET_SERVER_NAME);
   return haystack.includes(normalizedTarget)
-    || haystack.includes('metropole rp');
+    || TARGET_SERVER_ALIASES.some((alias) => haystack.includes(alias));
 }
 
 function getTargetFiveMActivity(presence) {

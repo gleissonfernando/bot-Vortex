@@ -79,6 +79,7 @@ function hasMasterPermission(member) {
 
 function hasLogsManagerPermission(interaction) {
     return LOGS_MANAGER_IDS.includes(String(interaction.user?.id))
+        || hasMasterPermission(interaction.member)
         || Boolean(interaction.member?.roles?.cache && LOGS_MANAGER_IDS.some(roleId => interaction.member.roles.cache.has(roleId)));
 }
 
@@ -1377,7 +1378,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '### Data logs',
         '',
         'Cada modo abaixo tem um botão próprio para ligar ou desligar.',
-        `Somente <@${LOGS_MANAGER_IDS[0]}> pode desativar, reativar ou trocar o canal de logs.`,
+        `Somente <@${LOGS_MANAGER_IDS[0]}> ou os cargos máximos ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem desativar, reativar ou trocar o canal de logs.`,
       ].join('\n'))
       .addFields(
         { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
