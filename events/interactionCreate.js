@@ -2,7 +2,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedB
 const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
-const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled } = require('../utils/notifications');
+const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReenableChannelLogsButton } = require('../utils/notifications');
 const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
@@ -387,6 +387,10 @@ module.exports = {
             });
         }
 
+        if (interaction.isButton() && interaction.customId === 're_enable_channel_logs') {
+            return runInteractionHandler(interaction, 'Botao DM: religar logs', () => handleReenableChannelLogsButton(interaction));
+        }
+
         if (interaction.isModalSubmit() && interaction.customId === 'modal_ausencia_request') {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply({ ephemeral: true });
@@ -451,7 +455,7 @@ module.exports = {
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_open_point_user')) {

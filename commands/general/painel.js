@@ -16,7 +16,7 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { sendVortexLog } = require('../../utils/notifications');
+const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
 const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { createPointTranscriptAttachment } = require('../../utils/pontoTranscript');
@@ -117,6 +117,11 @@ function getSelectionKey(interaction) {
 function formatRoleList(roleIds, emptyText = '`Nenhum`') {
     const ids = Array.isArray(roleIds) ? roleIds.filter(Boolean).map(String) : [];
     return ids.length ? ids.map(id => `<@&${id}>`).join(' ') : emptyText;
+}
+
+function formatChannelList(channelIds, emptyText = '`Nenhum canal desativado`') {
+    const ids = Array.isArray(channelIds) ? channelIds.filter(Boolean).map(String) : [];
+    return ids.length ? ids.map(id => `<#${id}>`).join('\n').slice(0, 1024) : emptyText;
 }
 
 async function safeReply(interaction, options) {
@@ -466,16 +471,12 @@ module.exports = {
       if (!hasLogsManagerPermission(interaction)) {
         return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
       }
-      conf.DISABLE_CHANNEL_LOGS = !conf.DISABLE_CHANNEL_LOGS;
-      saveJSON(CONFIG_PATH, conf);
-
-      sendVortexLog(interaction.client, {
-          title: 'Logs de Canal Alterados',
-          description: `Envio de logs no canal foi **${conf.DISABLE_CHANNEL_LOGS ? 'DESLIGADO' : 'LIGADO'}** por <@${interaction.user.id}>.`,
-          color: conf.DISABLE_CHANNEL_LOGS ? '#FFA500' : '#57F287',
-          type: 'CONFIGURAÇÃO',
-          userId: interaction.user.id
-      }).catch(() => {});
+      await setChannelLogsEnabled(
+        interaction.client,
+        conf.DISABLE_CHANNEL_LOGS === true,
+        interaction.user.id,
+        'painel_logs'
+      ).catch((error) => reportPanelError(interaction.client, error, 'Alterar logs de canal'));
 
       return renderDashboard(interaction, 'config_logs', true);
     }
@@ -849,6 +850,29 @@ module.exports = {
             title: 'Canal de Logs Alterado',
             description: `O canal de logs foi alterado para <#${data.LOG_CHANNEL}> por <@${interaction.user.id}>.`,
             color: '#00D9FF',
+            type: 'CONFIGURAÇÃO',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'config_logs', true);
+    }
+
+    if (interaction.customId === 'select_disabled_log_channel') {
+        if (!hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode desativar logs de canais.', ephemeral: true });
+        const channelId = String(interaction.values[0]);
+        const disabled = Array.isArray(data.DISABLED_LOG_CHANNEL_IDS)
+            ? data.DISABLED_LOG_CHANNEL_IDS.map(String)
+            : [];
+        const alreadyDisabled = disabled.includes(channelId);
+        data.DISABLED_LOG_CHANNEL_IDS = alreadyDisabled
+            ? disabled.filter((id) => id !== channelId)
+            : [...disabled, channelId];
+        saveJSON(CONFIG_PATH, data);
+
+        sendVortexLog(interaction.client, {
+            title: alreadyDisabled ? 'Logs de Canal Reativados' : 'Logs de Canal Desativados',
+            description: `Logs de auditoria relacionados a <#${channelId}> foram **${alreadyDisabled ? 'REATIVADOS' : 'DESATIVADOS'}** por <@${interaction.user.id}>.`,
+            color: alreadyDisabled ? '#57F287' : '#FFA500',
             type: 'CONFIGURAÇÃO',
             userId: interaction.user.id
         }).catch(() => {});
@@ -1424,7 +1448,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Logs do canal', value: conf.DISABLE_CHANNEL_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
         { name: 'Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
         { name: 'Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true }
+        { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
+        { name: 'Canais com logs desativados', value: formatChannelList(conf.DISABLED_LOG_CHANNEL_IDS), inline: false }
       );
 
     actionRow.addComponents(
@@ -1443,6 +1468,14 @@ async function renderDashboard(interaction, tab, edit = false) {
         new ChannelSelectMenuBuilder()
           .setCustomId('select_log')
           .setPlaceholder('Selecionar canal para logs')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_disabled_log_channel')
+          .setPlaceholder('Desativar/reativar logs de um canal')
           .addChannelTypes(ChannelType.GuildText)
           .setMinValues(1)
           .setMaxValues(1)

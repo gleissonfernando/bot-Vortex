@@ -9,7 +9,7 @@ const path = require('path');
 const config = require('./config/config');
 const { logger } = require('./utils/logger');
 const { setDiscordClient } = require('./utils/dashboardClient');
-const { notifyError, notifyBotDown, sendVortexLog } = require('./utils/notifications');
+const { notifyError, notifyBotDown, sendVortexLog, initChannelLogRecovery } = require('./utils/notifications');
 const { initStatusPanel } = require('./utils/pontoPanel');
 const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
@@ -178,6 +178,7 @@ client.once(Events.ClientReady, async () => {
     initDailyPointTranscript(client);
     initPointAutomation(client);
     initTwitchLiveMonitor(client);
+    initChannelLogRecovery(client);
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',

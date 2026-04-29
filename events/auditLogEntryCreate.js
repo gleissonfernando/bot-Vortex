@@ -1,5 +1,5 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { getLogChannelId, isChannelLogDisabled } = require('../utils/notifications');
+const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, sendVortexLog } = require('../utils/notifications');
 const { logger } = require('../utils/logger');
 const { formatDate } = require('../utils/pontoManager');
 
@@ -194,14 +194,30 @@ function formatExtra(extra) {
     return details.length ? details.join('\n') : null;
 }
 
+function getRelatedChannelIds(auditLogEntry) {
+    const ids = new Set();
+    const target = auditLogEntry.target;
+    const extra = auditLogEntry.extra;
+
+    if (target?.id && target?.guild && target?.type !== undefined) ids.add(String(target.id));
+    if (extra?.channel?.id) ids.add(String(extra.channel.id));
+    if (extra?.channelId) ids.add(String(extra.channelId));
+
+    for (const change of auditLogEntry.changes || []) {
+        if (['channel_id', 'afk_channel_id', 'widget_channel_id', 'system_channel_id', 'rules_channel_id', 'public_updates_channel_id', 'parent_id'].includes(change.key)) {
+            if (change.old) ids.add(String(change.old));
+            if (change.new) ids.add(String(change.new));
+        }
+    }
+
+    return [...ids];
+}
+
 module.exports = {
     name: Events.GuildAuditLogEntryCreate,
     async execute(auditLogEntry, guild) {
         try {
-            if (isChannelLogDisabled()) return;
-
-            const channel = await guild.client.channels.fetch(getLogChannelId()).catch(() => null);
-            if (!channel?.isTextBased?.()) return;
+            if (getRelatedChannelIds(auditLogEntry).some(isLogChannelIgnored)) return;
 
             const actionName = getActionName(auditLogEntry.action);
             const action = ACTION_DETAILS[actionName] || {
@@ -246,6 +262,29 @@ module.exports = {
             if (executor?.displayAvatarURL) {
                 embed.setThumbnail(executor.displayAvatarURL({ dynamic: true, size: 128 }));
             }
+
+            if (isChannelLogDisabled()) {
+                await sendVortexLog(guild.client, {
+                    title: action.title,
+                    description: [
+                        `${formatUser(executor)} ${action.verb}.`,
+                        '',
+                        `**Alvo:** ${formatTarget(target)}`,
+                        `**Quando:** ${createdAt}`,
+                        `**Motivo:** ${auditLogEntry.reason ? limit(auditLogEntry.reason, 800) : 'Nao informado'}`,
+                        '',
+                        `**O que foi mexido**\n${limit(formatChanges(auditLogEntry.changes), 1200)}`,
+                        '',
+                        `**Contexto**\n${limit(extra || 'Sem contexto extra informado pelo Discord.', 900)}`,
+                    ].join('\n').slice(0, 3900),
+                    color: action.color,
+                    type: 'AUDITORIA',
+                }).catch(() => null);
+                return;
+            }
+
+            const channel = await guild.client.channels.fetch(getLogChannelId()).catch(() => null);
+            if (!channel?.isTextBased?.()) return;
 
             await channel.send({ embeds: [embed] }).catch(() => null);
         } catch (error) {
