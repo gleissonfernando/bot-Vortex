@@ -17,8 +17,9 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { sendVortexLog } = require('../../utils/notifications');
-const { deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
+const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
+const { createPointTranscriptAttachment } = require('../../utils/pontoTranscript');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
@@ -41,6 +42,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
+const LOGS_MANAGER_IDS = ['289227932432334869'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
@@ -73,6 +75,11 @@ function hasPanelAccess(member) {
 
 function hasMasterPermission(member) {
     return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
+}
+
+function hasLogsManagerPermission(interaction) {
+    return LOGS_MANAGER_IDS.includes(String(interaction.user?.id))
+        || Boolean(interaction.member?.roles?.cache && LOGS_MANAGER_IDS.some(roleId => interaction.member.roles.cache.has(roleId)));
 }
 
 function canAccessPanelTab(member, tab) {
@@ -216,13 +223,13 @@ module.exports = {
       return renderDashboard(interaction, customId, true);
     }
 
-    if (customId === 'config_set' || customId === 'config_avisos') {
+    if (customId === 'config_set' || customId === 'config_avisos' || customId === 'config_logs') {
       return renderDashboard(interaction, customId, true);
     }
 
-    if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
+    if (!hasStaffPermission(interaction.member) && !hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
 
-    if ((customId === 'tab_manutencao' || ['toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
+    if ((customId === 'tab_manutencao' || ['toggle_maint', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
       return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem usar a manutenção.`, ephemeral: true });
     }
 
@@ -239,6 +246,34 @@ module.exports = {
       }).catch(() => {});
 
       return interaction.editReply(payload);
+    }
+
+    if (customId === 'show_user_point_sheet') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
+      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+
+      const target = await interaction.client.users.fetch(userId).catch(() => null);
+      if (!target) return interaction.editReply({ content: '❌ Não consegui encontrar esse usuário.' });
+
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
+      const data = await getUserPoint(interaction.guild.id, userId).catch(() => null);
+      if (!data || (!data.activePointStartedAt && !Array.isArray(data.sessions))) {
+        return interaction.editReply({ content: `❌ <@${userId}> ainda não possui ponto registrado.` });
+      }
+
+      const attachment = createPointTranscriptAttachment({
+        guild: interaction.guild,
+        target,
+        member,
+        data,
+      });
+
+      return interaction.editReply({
+        content: `✅ Folha de ponto de <@${userId}> gerada. O arquivo mostra entradas, saídas, dia da semana, mês, duração e origem do ponto.`,
+        files: [attachment],
+        allowedMentions: { users: [userId] },
+      });
     }
 
     if (customId === 'toggle_point_monitor') {
@@ -388,6 +423,9 @@ module.exports = {
     }
 
     if (customId === 'toggle_channel_logs') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
+      }
       conf.DISABLE_CHANNEL_LOGS = !conf.DISABLE_CHANNEL_LOGS;
       saveJSON(CONFIG_PATH, conf);
 
@@ -399,10 +437,13 @@ module.exports = {
           userId: interaction.user.id
       }).catch(() => {});
 
-      return renderDashboard(interaction, 'tab_manutencao', true);
+      return renderDashboard(interaction, 'config_logs', true);
     }
 
     if (customId === 'toggle_dm_logs') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
+      }
       conf.DISABLE_DM_LOGS = !conf.DISABLE_DM_LOGS;
       saveJSON(CONFIG_PATH, conf);
 
@@ -414,10 +455,31 @@ module.exports = {
           userId: interaction.user.id
       }).catch(() => {});
 
-      return renderDashboard(interaction, 'tab_manutencao', true);
+      return renderDashboard(interaction, 'config_logs', true);
+    }
+
+    if (customId === 'toggle_activity_logs') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
+      }
+      conf.DISABLE_ACTIVITY_LOGS = !conf.DISABLE_ACTIVITY_LOGS;
+      saveJSON(CONFIG_PATH, conf);
+
+      sendVortexLog(interaction.client, {
+          title: 'Logs de Atividades Alterados',
+          description: `Logs de atividades FiveM/GTA foram **${conf.DISABLE_ACTIVITY_LOGS ? 'DESLIGADOS' : 'LIGADOS'}** por <@${interaction.user.id}>.`,
+          color: conf.DISABLE_ACTIVITY_LOGS ? '#FFA500' : '#57F287',
+          type: 'CONFIGURAÇÃO',
+          userId: interaction.user.id
+      }).catch(() => {});
+
+      return renderDashboard(interaction, 'config_logs', true);
     }
 
     if (customId === 'toggle_notice_dms') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
+      }
       const currentlyDisabled = conf.DISABLE_NOTICE_DMS === true;
       if (currentlyDisabled && !NOTICE_DM_REENABLE_USER_IDS.includes(interaction.user.id)) {
         return safeReply(interaction, {
@@ -437,7 +499,7 @@ module.exports = {
           userId: interaction.user.id
       }).catch(() => {});
 
-      return renderDashboard(interaction, 'tab_config', true);
+      return renderDashboard(interaction, 'config_logs', true);
     }
 
     if (customId === 'toggle_absence_end_message') {
@@ -735,11 +797,11 @@ module.exports = {
 
   async handleSelectMenu(interaction) {
     if (!hasPanelAccess(interaction.member)) return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no /painel para usar esta seleção.', ephemeral: true });
-    if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
+    if (!hasStaffPermission(interaction.member) && !hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
     if (interaction.customId === 'select_log') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o canal de logs.', ephemeral: true });
+        if (!hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar o canal de logs.', ephemeral: true });
         data.LOG_CHANNEL = String(interaction.values[0]);
         saveJSON(CONFIG_PATH, data);
         
@@ -751,7 +813,7 @@ module.exports = {
             userId: interaction.user.id
         }).catch(() => {});
 
-        return renderDashboard(interaction, 'tab_config', true);
+        return renderDashboard(interaction, 'config_logs', true);
     }
 
     if (interaction.customId === 'select_notice_mention_role') {
@@ -1259,6 +1321,7 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '⛔ Restritos', value: '`/manutencao` (Geral)', inline: true },
           { name: '📢 Logs no canal', value: conf.DISABLE_CHANNEL_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '📩 Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
+          { name: '🎮 Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
           { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
           { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
@@ -1269,6 +1332,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? '📢 Ligar Log' : '🔕 Desligar Log').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? '📩 Ligar Log DM' : '📵 Desligar Log DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? '🎮 Ligar Logs' : '🎮 Desligar Logs').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('test_notice').setLabel('🧪 Testar Aviso').setStyle(ButtonStyle.Secondary)
     );
 
@@ -1292,20 +1356,57 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'tab_config') {
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF')
-      .setDescription('### Configuração geral\n\nUse os botões abaixo para abrir a configuração específica de **Set** ou **Avisos**. O canal de logs continua configurável nesta tela.')
+      .setDescription('### Configuração geral\n\nUse os botões abaixo para abrir a configuração específica de **Set**, **Avisos** ou **Logs**.')
       .addFields(
         { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
         { name: 'Set', value: 'Configure cargos e permissões do sistema de set.', inline: true },
-        { name: 'Avisos', value: 'Configure DMs e cargo mencionado nos avisos.', inline: true }
+        { name: 'Avisos', value: 'Configure DMs e cargo mencionado nos avisos.', inline: true },
+        { name: 'Logs', value: 'Configure canal e modos de logs do bot.', inline: true }
       );
-    actionRow.addComponents(
-      new ChannelSelectMenuBuilder().setCustomId('select_log').setPlaceholder('Selecione o Canal de Logs').addChannelTypes(ChannelType.GuildText)
-    );
 
     extraRows = [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('config_logs').setLabel('Logs').setStyle(ButtonStyle.Secondary)
+      ),
+    ];
+  } else if (tab === 'config_logs') {
+    embed.setTitle('⚙️ CONFIGURAÇÕES | LOGS').setColor('#00D9FF')
+      .setDescription([
+        '### Data logs',
+        '',
+        'Cada modo abaixo tem um botão próprio para ligar ou desligar.',
+        `Somente <@${LOGS_MANAGER_IDS[0]}> pode desativar, reativar ou trocar o canal de logs.`,
+      ].join('\n'))
+      .addFields(
+        { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
+        { name: 'Logs do canal', value: conf.DISABLE_CHANNEL_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
+        { name: 'Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
+        { name: 'Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
+        { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true }
+      );
+
+    actionRow.addComponents(
+      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Reativar canal' : 'Desativar canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Reativar DM' : 'Desativar DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Reativar atividades' : 'Desativar atividades').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Reativar avisos' : 'Desativar avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('tab_config').setLabel('Voltar').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_log')
+          .setPlaceholder('Selecionar canal para logs')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
       ),
     ];
   } else if (tab === 'config_avisos') {
@@ -1389,25 +1490,19 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('show_user_point_sheet').setLabel('Folha do usuário').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('correct_point_close').setLabel('Reajustar ponto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger)
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('select_open_point_user')
-          .setPlaceholder(openPointOptions.length ? 'Selecionar ponto aberto para fechar' : 'Nenhum ponto aberto no momento')
-          .setMinValues(1)
-          .setMaxValues(1)
-          .setDisabled(openPointOptions.length === 0)
-          .addOptions(openPointOptions.length ? openPointOptions : [{ label: 'Nenhum ponto aberto', value: 'none', description: 'Não há usuários com ponto aberto' }])
+        new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger)
       ),
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_point_readjust_user')
-          .setPlaceholder('Selecionar usuário para reajustar ponto')
+          .setPlaceholder('Selecionar usuário para folha, reajuste, fechamento ou exclusão')
           .setMinValues(1)
           .setMaxValues(1)
       ),
@@ -1594,7 +1689,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   }
 
-  let components = ['tab_config', 'config_set', 'config_avisos'].includes(tab) ? [mainRow] : [mainRow, navRow];
+  let components = ['tab_config', 'config_set', 'config_avisos', 'config_logs'].includes(tab) ? [mainRow] : [mainRow, navRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
 

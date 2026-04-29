@@ -660,11 +660,12 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
 
   const guildMember = member || await guild.members.fetch(userId).catch(() => null);
   const mention = await resolveDiscordMention(channel);
+  const displayName = guildMember?.displayName || user.username;
   const content = [
     mention.content || null,
     alertLink
-      ? `<@${userId}> está fazendo live: ${alertLink}`
-      : `<@${userId}> está fazendo live`,
+      ? `${displayName} está fazendo live: ${alertLink}`
+      : `${displayName} está fazendo live`,
   ].filter(Boolean).join(' ');
 
   await channel.send({
@@ -677,7 +678,7 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
       place,
     })],
     allowedMentions: {
-      users: [userId],
+      users: [],
       roles: mention.allowedMentions?.roles || [],
       parse: mention.allowedMentions?.parse || [],
     },

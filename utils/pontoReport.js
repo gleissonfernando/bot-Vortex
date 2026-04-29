@@ -78,15 +78,32 @@ function buildReportText(guild, rows, totals) {
   return `${lines.join('\n')}\n`;
 }
 
-async function buildAllPointsReportPayload(guild) {
+async function buildAllPointsReportPayload(guild, { includeAllMembers = false, suppressMentions = false } = {}) {
   const points = await listGuildPoints(guild.id);
-  const rows = await Promise.all(points.map(async (data) => {
+  const pointByUserId = new Map(points.map((data) => [String(data.userId), data]));
+  let sourceRows = points;
+
+  if (includeAllMembers) {
+    const members = await guild.members.fetch().catch(() => guild.members.cache);
+    const allMembers = Array.from(members.values()).filter((member) => !member.user?.bot);
+    sourceRows = allMembers.map((member) => pointByUserId.get(member.id) || {
+      userId: member.id,
+      userName: member.displayName || member.user.username,
+      userMention: `<@${member.id}>`,
+      registro: member.id,
+      sessions: [],
+      corrections: [],
+      totalMs: 0,
+    });
+  }
+
+  const rows = await Promise.all(sourceRows.map(async (data) => {
     const member = await guild.members.fetch(data.userId).catch(() => null);
     const totalMs = getEffectiveTotalMs(data);
     return {
       userId: data.userId,
       name: member?.displayName || data.userName || `ID ${data.userId}`,
-      mention: data.userMention || `<@${data.userId}>`,
+      mention: suppressMentions ? (member?.displayName || data.userName || `ID ${data.userId}`) : (data.userMention || `<@${data.userId}>`),
       registro: data.registro || data.idRegistro || data.userId,
       status: statusText(data),
       days: getPointDays(data),

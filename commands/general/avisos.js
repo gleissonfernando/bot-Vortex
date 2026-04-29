@@ -19,11 +19,11 @@ const { sendVortexLog } = require('../../utils/notifications');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const NOTICE_FIXED_ROLE_IDS = [
-  '1201235607549124639',
-  '1212944805055692840',
-  '1201238799494152344',
-  '1201320710459629600',
+  '1499176108753420428',
 ];
+const NOTICE_MAIN_CHANNEL_ID = '1482190594003439678';
+const NOTICE_ALERT_CHANNEL_ID = '1481598629365022800';
+const NOTICE_ALERT_ROLE_ID = '1499176108753420428';
 const CUSTOM_IDS = {
   selectChannel: 'avisos_select_channel',
   selectUser: 'avisos_select_user',
@@ -37,6 +37,7 @@ const selections = new Map();
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 const MAX_OPTIONAL_IMAGES = 9;
+const OPTIONAL_IMAGE_EMBEDS_PER_MESSAGE = 4;
 
 function canUseAvisos(interaction) {
   return hasAnyVortexRole(interaction.member)
@@ -372,11 +373,27 @@ function buildOptionalImageEmbeds(interaction, imageUrls) {
     .setTimestamp());
 }
 
-function formatImageSummary(imageUrls) {
-  if (!imageUrls.length) return null;
-  return imageUrls
-    .map((url, index) => `Imagem ${index + 1}: ${url}`)
-    .join('\n');
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function buildNoticePayloads(basePayload, imageEmbeds) {
+  if (!imageEmbeds.length) {
+    return [withNoticeImage(basePayload)];
+  }
+
+  const [firstChunk, ...extraChunks] = chunkArray(imageEmbeds, OPTIONAL_IMAGE_EMBEDS_PER_MESSAGE);
+  return [
+    withNoticeImage({
+      ...basePayload,
+      embeds: [...basePayload.embeds, ...firstChunk],
+    }),
+    ...extraChunks.map((embeds) => ({ embeds })),
+  ];
 }
 
 async function getSelectedChannel(interaction) {
@@ -406,25 +423,49 @@ async function getSelectedUser(interaction) {
   return interaction.client.users.fetch(userId).catch(() => null);
 }
 
-async function sendChannelNotice(interaction, channel, payload, options = {}) {
+async function sendChannelNotice(interaction, channel, payloads, options = {}) {
   try {
+    const [firstPayload, ...extraPayloads] = payloads;
     await channel.send({
       ...buildNoticeMentionPayload(interaction, options),
-      ...payload,
+      ...firstPayload,
     });
+
+    for (const payload of extraPayloads) {
+      await channel.send(payload);
+    }
+
     return true;
   } catch {
     return false;
   }
 }
 
-async function sendDmBatch(users, payload) {
+async function sendNoticeChannelAlert(interaction, scopeLabel) {
+  const channel = await interaction.guild.channels.fetch(NOTICE_ALERT_CHANNEL_ID).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  await channel.send({
+    content: [
+      `<@&${NOTICE_ALERT_ROLE_ID}>`,
+      `olhe o canal de avisos <#${NOTICE_MAIN_CHANNEL_ID}>.`,
+      `Você tem uma mensagem importante nova. Tipo: **${scopeLabel}**.`,
+    ].join(' '),
+    allowedMentions: { roles: [NOTICE_ALERT_ROLE_ID] },
+  }).catch(() => null);
+
+  return true;
+}
+
+async function sendDmBatch(users, payloads) {
   let sent = 0;
   let failed = 0;
 
   for (const user of users) {
     try {
-      await user.send(payload);
+      for (const payload of payloads) {
+        await user.send(payload);
+      }
       sent += 1;
     } catch {
       failed += 1;
@@ -574,7 +615,7 @@ module.exports = {
 
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
     const imageEmbeds = buildOptionalImageEmbeds(interaction, imageUrls);
-    const noticeEmbeds = [noticeEmbed, ...imageEmbeds];
+    const noticePayloads = buildNoticePayloads({ embeds: [noticeEmbed] }, imageEmbeds);
     let channelSent = false;
     let result = { sent: 0, failed: 0, total: 0 };
 
@@ -583,7 +624,7 @@ module.exports = {
       if (!selectedChannel) {
         return interaction.editReply({ content: '❌ Selecione um canal de texto antes de enviar o aviso local.' });
       }
-      channelSent = await sendChannelNotice(interaction, selectedChannel, withNoticeImage({ embeds: noticeEmbeds }), {
+      channelSent = await sendChannelNotice(interaction, selectedChannel, noticePayloads, {
         includeUser: Boolean(getSelection(interaction).userId),
       });
     }
@@ -593,7 +634,7 @@ module.exports = {
       if (!selectedUser) {
         return interaction.editReply({ content: '❌ Selecione um usuário antes de enviar o aviso individual.' });
       }
-      result = await sendDmBatch([selectedUser], withNoticeImage({ embeds: noticeEmbeds }));
+      result = await sendDmBatch([selectedUser], noticePayloads);
     }
 
     if (scope === 'global') {
@@ -601,7 +642,11 @@ module.exports = {
       if (recipients.length === 0) {
         return interaction.editReply({ content: '❌ Nenhum membro encontrado para receber o aviso por DM.' });
       }
-      result = await sendDmBatch(recipients, withNoticeImage({ embeds: noticeEmbeds }));
+      result = await sendDmBatch(recipients, noticePayloads);
+    }
+
+    if (scope === 'guild' || scope === 'global') {
+      await sendNoticeChannelAlert(interaction, scopeLabel);
     }
 
     sendVortexLog(interaction.client, {
@@ -615,7 +660,7 @@ module.exports = {
         getSelection(interaction).callId ? `**Call:** <#${getSelection(interaction).callId}> (${getSelection(interaction).callId})` : null,
         `**Titulo:** ${title}`,
         imageUrls.length ? `**Imagens opcionais:** ${imageUrls.length}` : null,
-        imageUrls.length ? formatImageSummary(imageUrls) : null,
+        imageUrls.length ? `**Primeira imagem:** ${imageUrls[0]}` : null,
         `**Mensagem no canal:** ${channelSent ? 'sim' : 'não'}`,
         scope === 'global' ? `**Total DM:** ${result.total}` : null,
         scope === 'global' ? `**DMs enviadas:** ${result.sent}` : null,
@@ -635,7 +680,6 @@ module.exports = {
 
     if (imageUrls.length) {
       summary.push(`Imagens opcionais: **${imageUrls.length}**`);
-      summary.push(formatImageSummary(imageUrls));
     }
 
     if ((scope === 'guild' || scope === 'direct') && getSelection(interaction).userId) {

@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { buildAllPointsReportPayload } = require('./pontoReport');
-const { listGuildPoints, resetGuildPoints, formatDate } = require('./pontoManager');
+const { resetGuildPoints, formatDate } = require('./pontoManager');
 const { updateStatusPanel } = require('./pontoPanel');
 const { logger } = require('./logger');
 
-const DAILY_POINT_CHANNEL_ID = '1497776750233391204';
+const DAILY_POINT_CHANNEL_ID = '1498473417144533255';
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'dailyPointTranscriptState.json');
 const TIME_ZONE = 'America/Sao_Paulo';
 
@@ -56,11 +56,7 @@ async function sendDailyPointTranscriptForGuild(client, guild) {
   const channel = await client.channels.fetch(DAILY_POINT_CHANNEL_ID).catch(() => null);
   if (!channel?.isTextBased?.()) return false;
 
-  const points = await listGuildPoints(guild.id);
-  const hasPoints = points.length > 0;
-  const payload = hasPoints
-    ? await buildAllPointsReportPayload(guild)
-    : { content: `Relatorio diario de ponto - ${guild.name}\nNenhum ponto registrado no periodo.\nData/hora real: ${formatDate(new Date())}` };
+  const payload = await buildAllPointsReportPayload(guild, { includeAllMembers: true, suppressMentions: true });
 
   const content = [
     `📌 **Transcript diario de ponto**`,
@@ -73,6 +69,7 @@ async function sendDailyPointTranscriptForGuild(client, guild) {
     content,
     embeds: payload.embeds || [],
     files: payload.files || [],
+    allowedMentions: { parse: [] },
   });
 
   await resetGuildPoints(guild.id);

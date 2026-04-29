@@ -7,13 +7,13 @@ const { logger } = require('./logger');
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
 const PANEL_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
-const PROFILE_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const PROFILE_UPDATE_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const PROFILE_REMINDER_HOUR = 19;
 const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
 const PROFILE_ALERT_ROLE_IDS = ['1201238413676924979', '1201238799494152344', '1212944805055692840'];
 const MASTER_ROLE_ID = '1497703127074345040';
-const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1483169256727122050';
+const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
 
 let interval = null;
 
@@ -425,10 +425,22 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Horário do aviso:** ${formatDate(new Date())}`,
       '',
       'Use `/perfil link:<link da imagem> nivel:<numero>` para atualizar.',
+      'O prazo para atualizar o nível após o /set é de 2 dias.',
     ].join('\n'))
     .setTimestamp();
 
   await user.send({ embeds: [embed] }).catch(() => null);
+
+  if (profile.callChannelId) {
+    const userChannel = await client.channels.fetch(profile.callChannelId).catch(() => null);
+    if (userChannel?.isTextBased?.()) {
+      await userChannel.send({
+        content: `<@${profile.userId}> atualize seu /perfil com foto e nível.`,
+        embeds: [embed],
+        allowedMentions: { users: [profile.userId] },
+      }).catch(() => null);
+    }
+  }
 
   const shouldNotifyManagement = now - lastUpdateMs >= PROFILE_UPDATE_INTERVAL_MS;
   if (shouldNotifyManagement) {

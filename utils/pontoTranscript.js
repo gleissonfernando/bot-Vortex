@@ -50,16 +50,15 @@ function getSessionSource(session) {
 
 function getMonthlySessions(data, monthKey) {
   const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-  return sessions
+  const closedSessions = sessions
     .filter((session) => String(getSessionStartedAt(session) || '').startsWith(monthKey))
-    .map((session, index) => {
+    .map((session) => {
       const startedAt = getSessionStartedAt(session);
       const closedAt = getSessionClosedAt(session);
       const durationMs = getSessionDurationMs(session);
 
       return {
-        index: index + 1,
-        ticketId: session.ticketId || session.ticket || `PONTO-${String(index + 1).padStart(3, '0')}`,
+        ticketId: session.ticketId || session.ticket || null,
         startedAt,
         closedAt,
         durationMs,
@@ -70,6 +69,28 @@ function getMonthlySessions(data, monthKey) {
         serverName: session.serverName || null,
       };
     });
+
+  const activeSession = data.activePointStartedAt && String(data.activePointStartedAt).startsWith(monthKey)
+    ? [{
+        ticketId: null,
+        startedAt: data.activePointStartedAt,
+        closedAt: null,
+        durationMs: Math.max(0, Date.now() - new Date(data.activePointStartedAt).getTime()),
+        closedBy: 'Em andamento',
+        status: 'ABERTO',
+        corrected: false,
+        source: data.activePointSource === 'fivem_metropole_auto' ? 'FiveM automatico' : 'Ponto manual',
+        serverName: data.activePointServerName || null,
+      }]
+    : [];
+
+  return [...closedSessions, ...activeSession]
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
+    .map((session, index) => ({
+      ...session,
+      index: index + 1,
+      ticketId: session.ticketId || `PONTO-${String(index + 1).padStart(3, '0')}`,
+    }));
 }
 
 function getMonthlySummary(sessions) {
@@ -498,7 +519,6 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
 
 function createPointTranscriptAttachment({ guild, target, member, data }) {
   const html = createPointTranscriptHtml({ guild, target, member, data });
-  const safeName = (target.username || target.id).replace(/[^a-z0-9_-]/gi, '_').slice(0, 32);
   const timestamp = new Date().toISOString().replace(/:/g, '-');
 
   return new AttachmentBuilder(Buffer.from(html, 'utf8'), {

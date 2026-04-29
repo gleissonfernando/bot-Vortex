@@ -15,7 +15,7 @@ const ALERT_DM_USER_IDS = [
 ];
 
 function getLogChannelId() {
-    return FIXED_LOG_CHANNEL;
+    return readConfig().LOG_CHANNEL || FIXED_LOG_CHANNEL;
 }
 
 function readConfig() {
@@ -40,7 +40,7 @@ function syncStoredLogChannel() {
         if (!fs.existsSync(CONFIG_PATH)) return;
 
         const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-        if (data.LOG_CHANNEL === FIXED_LOG_CHANNEL) return;
+        if (data.LOG_CHANNEL) return;
 
         data.LOG_CHANNEL = FIXED_LOG_CHANNEL;
         fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');

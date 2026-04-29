@@ -1,11 +1,15 @@
 const { ActivityType, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 const { openPoint, closePoint, getUserPoint, formatDate, formatDuration } = require('./pontoManager');
 
+const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '1498895777790038116';
 const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
+const loggedFiveMPlayers = new Set();
 
 function normalizeText(value) {
   return String(value || '')
@@ -48,11 +52,24 @@ function isTargetFiveMActivity(activity) {
   const haystack = activityText(activity);
   const normalizedTarget = normalizeText(TARGET_SERVER_NAME);
   return haystack.includes(normalizedTarget)
-    || (haystack.includes('metropole rp') && haystack.includes('season 2'));
+    || haystack.includes('metropole rp');
 }
 
 function getTargetFiveMActivity(presence) {
   return presence?.activities?.find(isTargetFiveMActivity) || null;
+}
+
+function readConfig() {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) return {};
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function areActivityLogsDisabled() {
+  return readConfig().DISABLE_ACTIVITY_LOGS === true;
 }
 
 function cleanCityName(value) {
@@ -212,13 +229,23 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
   const user = newPresence.user;
   const member = newPresence.member;
   const key = `${guild.id}:${user.id}`;
-  const oldActivity = getFiveMActivity(oldPresence);
-  const newActivity = getFiveMActivity(newPresence);
+  const oldActivity = getTargetFiveMActivity(oldPresence);
+  const newActivity = getTargetFiveMActivity(newPresence);
 
   await handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, newPresence });
 
   if (!newActivity) {
     activeFiveMPlayers.delete(key);
+    return;
+  }
+
+  if (areActivityLogsDisabled()) {
+    activeFiveMPlayers.delete(key);
+    return;
+  }
+
+  if (loggedFiveMPlayers.has(key)) {
+    activeFiveMPlayers.set(key, buildActivityKey(newActivity));
     return;
   }
 
@@ -244,6 +271,7 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
   });
 
   activeFiveMPlayers.set(key, activityKey);
+  loggedFiveMPlayers.add(key);
 }
 
 module.exports = {

@@ -130,6 +130,10 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
     allowedMentions: { users: [member.id] },
   }).catch(() => null);
 
+  await member.send({
+    content: `Seu canal de meta foi criado em ${channel}. Leia o tutorial e confirme os passos por lá.`,
+  }).catch(() => null);
+
   return { ok: true, message: 'Canal criado para usuário aprovado.', channel };
 }
 
@@ -189,8 +193,26 @@ function buildGuideRow(step = 1) {
 }
 
 async function handleApprovedChannelGuide(interaction) {
+  const data = readChannels();
+  const guildRecords = data[interaction.guildId] || {};
+  const record = Object.values(guildRecords).find((item) => item.channelId === interaction.channelId);
+  if (record?.userId && record.userId !== interaction.user.id) {
+    await interaction.user.send({
+      content: `Esse tutorial pertence a <@${record.userId}>. Peça para ele olhar o canal de meta dele: <#${record.channelId}>.`,
+      allowedMentions: { users: [record.userId] },
+    }).catch(() => null);
+    return interaction.reply({
+      content: '❌ Apenas o dono deste canal pode usar os botões do tutorial.',
+      ephemeral: true,
+    });
+  }
+
   const done = interaction.customId === 'approved_channel_guide_done';
   if (done) {
+    if (record?.userId && data[interaction.guildId]?.[record.userId]) {
+      data[interaction.guildId][record.userId].guideCompletedAt = new Date().toISOString();
+      writeChannels(data);
+    }
     return interaction.update({
       components: [],
       embeds: [
