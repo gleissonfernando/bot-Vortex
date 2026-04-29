@@ -15,7 +15,7 @@ const {
   getLiveLinks,
   hasAcceptedLiveTerms,
   isValidLiveUrl,
-  removeLiveLink,
+  removeUserLiveLinks,
   setLiveLink,
 } = require('../../utils/liveAlertManager');
 const { hasCommandRole } = require('../../utils/permissions');
@@ -129,13 +129,13 @@ module.exports = {
         });
       }
 
-      const removed = removeLiveLink(interaction.guildId, interaction.user.id);
+      const removed = removeUserLiveLinks(interaction.guildId, interaction.user.id);
       const links = getLiveLinks(interaction.guildId, interaction.user.id);
       const termsAccepted = hasAcceptedLiveTerms(interaction.guildId, interaction.user.id);
       const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
       return safeReply(interaction, {
         content: removed
-          ? `✅ Links de live removidos. Não vou mais avisar em <#${ALERT_CHANNEL_ID}> quando seus canais entrarem em live.`
+          ? `✅ Links de live removidos. Não vou mais avisar em <#${ALERT_CHANNEL_ID}> quando os canais cadastrados entrarem em live.`
           : '❌ Você não tinha links de live cadastrados.',
         embeds: [buildLivePanelEmbed(interaction, links, termsAccepted)],
         components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted, termsUrl }),

@@ -77,7 +77,7 @@ function normalizeLiveEntry(entry) {
 }
 
 function isLegacyGuildLiveEntryKey(key) {
-  return !['termsAcceptedAt', 'termsAcceptedBy', 'links', 'updatedAt', 'updatedBy'].includes(String(key));
+  return !['termsAcceptedAt', 'termsAcceptedBy', 'links', 'updatedAt', 'updatedBy', 'users'].includes(String(key));
 }
 
 function normalizeGuildLiveConfig(guildConfig) {
@@ -129,13 +129,59 @@ function normalizeGuildLiveConfig(guildConfig) {
   };
 }
 
-function getLiveLink(guildId) {
-  return getLiveLinks(guildId)[0]?.url || null;
+function getGuildUserEntries(guildConfig) {
+  if (!guildConfig || typeof guildConfig !== 'object') return {};
+
+  const entries = {};
+  if (guildConfig.users && typeof guildConfig.users === 'object' && !Array.isArray(guildConfig.users)) {
+    for (const [userId, entry] of Object.entries(guildConfig.users)) {
+      entries[String(userId)] = normalizeLiveEntry(entry);
+    }
+  }
+
+  for (const [key, value] of Object.entries(guildConfig)) {
+    if (!isLegacyGuildLiveEntryKey(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    entries[String(key)] = normalizeLiveEntry(value);
+  }
+
+  return entries;
 }
 
-function getLiveLinks(guildId) {
+function getUserLiveEntry(guildId, userId) {
   const guildConfig = getGuildConfig(guildId);
-  return normalizeGuildLiveConfig(guildConfig).links;
+  if (!userId) return normalizeGuildLiveConfig(guildConfig);
+
+  const userKey = String(userId);
+  const entries = getGuildUserEntries(guildConfig);
+  if (entries[userKey]) return entries[userKey];
+
+  return { termsAcceptedAt: null, termsAcceptedBy: null, links: [] };
+}
+
+function getLiveLink(guildId, userId = null) {
+  return getLiveLinks(guildId, userId)[0]?.url || null;
+}
+
+function getLiveLinks(guildId, userId = null) {
+  return getUserLiveEntry(guildId, userId).links;
+}
+
+function getGuildLiveLinks(guildId) {
+  const guildConfig = getGuildConfig(guildId);
+  const links = [...normalizeGuildLiveConfig(guildConfig).links];
+  for (const entry of Object.values(getGuildUserEntries(guildConfig))) {
+    links.push(...entry.links);
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const link of links) {
+    const key = String(link.url || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(link);
+  }
+  return deduped;
 }
 
 function parseTwitchLogin(url) {
@@ -195,24 +241,28 @@ function buildLiveTermsUrl(guildId, userId) {
   return `${LIVE_TERMS_BASE_URL.replace(/\/$/, '')}/twitch?token=${encodeURIComponent(token)}`;
 }
 
-function hasAcceptedLiveTerms(guildId) {
-  const guildConfig = getGuildConfig(guildId);
-  return Boolean(normalizeGuildLiveConfig(guildConfig).termsAcceptedAt);
+function hasAcceptedLiveTerms(guildId, userId = null) {
+  return Boolean(getUserLiveEntry(guildId, userId).termsAcceptedAt);
 }
 
 function acceptLiveTerms(guildId, userId) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
+  const userKey = String(userId);
   if (!data[guildKey]) data[guildKey] = {};
-  const current = normalizeGuildLiveConfig(data[guildKey]);
+  const guildConfig = data[guildKey];
+  if (!guildConfig.users || typeof guildConfig.users !== 'object' || Array.isArray(guildConfig.users)) {
+    guildConfig.users = {};
+  }
+  const current = getUserLiveEntry(guildId, userKey);
 
-  data[guildKey] = {
+  guildConfig.users[userKey] = {
     ...current,
     termsAcceptedAt: new Date().toISOString(),
-    termsAcceptedBy: String(userId),
+    termsAcceptedBy: userKey,
   };
   saveLiveLinks(data);
-  return data[guildKey];
+  return guildConfig.users[userKey];
 }
 
 function acceptLiveTermsToken(token) {
@@ -225,10 +275,14 @@ function acceptLiveTermsToken(token) {
 function setLiveLink(guildId, userId, url, updatedBy) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
+  const userKey = String(userId);
   if (!data[guildKey]) data[guildKey] = {};
+  if (!data[guildKey].users || typeof data[guildKey].users !== 'object' || Array.isArray(data[guildKey].users)) {
+    data[guildKey].users = {};
+  }
 
   const twitchLogin = parseTwitchLogin(url);
-  const current = normalizeGuildLiveConfig(data[guildKey]);
+  const current = getUserLiveEntry(guildId, userKey);
   const normalizedUrl = String(url).trim();
   const existing = current.links.find((item) => item.url.toLowerCase() === normalizedUrl.toLowerCase());
   if (existing) return existing;
@@ -241,8 +295,10 @@ function setLiveLink(guildId, userId, url, updatedBy) {
     createdAt: new Date().toISOString(),
   };
 
-  data[guildKey] = {
+  data[guildKey].users[userKey] = {
     ...current,
+    termsAcceptedAt: current.termsAcceptedAt || new Date().toISOString(),
+    termsAcceptedBy: current.termsAcceptedBy || String(updatedBy),
     links: [...current.links, nextLink],
     updatedBy: String(updatedBy),
     updatedAt: new Date().toISOString(),
@@ -258,9 +314,34 @@ function removeLiveLink(guildId) {
   if (!data[guildKey]) return false;
 
   const current = normalizeGuildLiveConfig(data[guildKey]);
-  if (current.links.length === 0) return false;
+  const userEntries = getGuildUserEntries(data[guildKey]);
+  const hadLinks = current.links.length > 0 || Object.values(userEntries).some((entry) => entry.links.length > 0);
+  if (!hadLinks) return false;
 
   data[guildKey] = {
+    ...current,
+    links: [],
+    users: {},
+    updatedAt: new Date().toISOString(),
+  };
+  saveLiveLinks(data);
+  return true;
+}
+
+function removeUserLiveLinks(guildId, userId) {
+  const data = loadLiveLinks();
+  const guildKey = String(guildId);
+  const userKey = String(userId);
+  const guildConfig = data[guildKey];
+  if (!guildConfig) return false;
+
+  const current = getUserLiveEntry(guildId, userKey);
+  if (current.links.length === 0) return false;
+
+  if (!guildConfig.users || typeof guildConfig.users !== 'object' || Array.isArray(guildConfig.users)) {
+    guildConfig.users = {};
+  }
+  guildConfig.users[userKey] = {
     ...current,
     links: [],
     updatedAt: new Date().toISOString(),
@@ -636,8 +717,8 @@ async function sendTwitchLiveAlert(client, { link, stream, streamKey, force = fa
 }
 
 async function checkUserTwitchLinks(client, guildId, userId, { sendIfOnline = false } = {}) {
-  const termsAccepted = hasAcceptedLiveTerms(guildId);
-  const links = getLiveLinks(guildId);
+  const links = userId ? getLiveLinks(guildId, userId) : getGuildLiveLinks(guildId);
+  const termsAccepted = userId ? hasAcceptedLiveTerms(guildId, userId) : links.length > 0;
   const twitchLinks = links
     .map((link) => ({
       ...link,
@@ -716,8 +797,6 @@ function getConfiguredTwitchTargets() {
 
   for (const [guildId, guildConfig] of Object.entries(data)) {
     const normalized = normalizeGuildLiveConfig(guildConfig);
-    if (!normalized.termsAcceptedAt) continue;
-
     for (const link of normalized.links) {
       const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
       if (!twitchLogin || !link?.url) continue;
@@ -727,6 +806,20 @@ function getConfiguredTwitchTargets() {
         link: link.url,
         twitchLogin,
       });
+    }
+
+    for (const [userId, entry] of Object.entries(getGuildUserEntries(guildConfig))) {
+      for (const link of entry.links) {
+        const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
+        if (!twitchLogin || !link?.url) continue;
+        targets.push({
+          source: 'user',
+          guildId,
+          userId,
+          link: link.url,
+          twitchLogin,
+        });
+      }
     }
   }
 
@@ -745,7 +838,9 @@ async function pollTwitchLiveAlerts(client) {
     for (const target of targets) {
       const streamKey = target.source === 'env'
         ? `env:twitch:${target.twitchLogin}`
-        : `${target.guildId}:twitch:${target.twitchLogin}`;
+        : target.source === 'user'
+          ? `${target.guildId}:${target.userId}:twitch:${target.twitchLogin}`
+          : `${target.guildId}:twitch:${target.twitchLogin}`;
       const stream = streams.get(target.twitchLogin);
 
       if (!stream) {
@@ -854,6 +949,7 @@ module.exports = {
   buildLiveTermsUrl,
   getLiveLink,
   getLiveLinks,
+  getGuildLiveLinks,
   handlePresenceLiveAlert,
   handleVoiceLiveAlert,
   checkUserTwitchLinks,
@@ -867,5 +963,6 @@ module.exports = {
   parseTwitchLogin,
   parseLiveTermsToken,
   removeLiveLink,
+  removeUserLiveLinks,
   setLiveLink,
 };

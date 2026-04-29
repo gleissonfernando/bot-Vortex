@@ -36,6 +36,7 @@ function getAllVortexRoleIds() {
 }
 
 function hasAnyVortexRole(member) {
+    if (member?.roles?.cache && MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     return memberHasAnyRole(member, getAllVortexRoleIds());
 }
 

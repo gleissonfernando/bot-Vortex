@@ -28,7 +28,7 @@ const {
   ALERT_CHANNEL_ID,
   buildLiveTermsUrl,
   checkUserTwitchLinks,
-  getLiveLinks,
+  getGuildLiveLinks,
   hasAcceptedLiveTerms,
   isValidLiveUrl,
   parseTwitchLogin,
@@ -172,6 +172,27 @@ function formatLiveLinksList(links) {
         const url = String(link.url || '').length > 140 ? `${String(link.url).slice(0, 137)}...` : link.url;
         return `${index + 1}. ${url}\n   ${platform}${createdBy}`;
     }).join('\n') + (links.length > 10 ? `\n... mais ${links.length - 10} cadastro(s).` : '');
+}
+
+async function getRealtimeGuildStats(guild) {
+    const fallbackMembers = guild.memberCount || guild.members.cache.size || 0;
+    const members = await guild.members.fetch().catch(() => null);
+    const channels = await guild.channels.fetch().catch(() => null);
+    const roles = await guild.roles.fetch().catch(() => null);
+
+    const memberCollection = members || guild.members.cache;
+    const totalMembers = members?.size || fallbackMembers;
+    const botCount = memberCollection?.filter?.((member) => member.user?.bot).size || 0;
+    const humanCount = Math.max(totalMembers - botCount, 0);
+
+    return {
+        totalMembers,
+        humanCount,
+        botCount,
+        channelCount: channels?.size || guild.channels.cache.size || 0,
+        roleCount: roles?.size || guild.roles.cache.size || 0,
+        source: members ? 'API Discord' : 'Cache Discord',
+    };
 }
 
 module.exports = {
@@ -470,14 +491,14 @@ module.exports = {
 
     if (customId === 'live_stream_check_now') {
         await interaction.deferReply({ ephemeral: true });
-        const result = await checkUserTwitchLinks(interaction.client, interaction.guild.id, interaction.user.id, {
+        const result = await checkUserTwitchLinks(interaction.client, interaction.guild.id, null, {
             sendIfOnline: true,
         }).catch((error) => ({
             ok: false,
             message: `Erro ao consultar Twitch: ${error.message}`,
-            termsAccepted: hasAcceptedLiveTerms(interaction.guild.id),
+            termsAccepted: getGuildLiveLinks(interaction.guild.id).length > 0,
             hasCredentials: false,
-            totalLinks: getLiveLinks(interaction.guild.id).length,
+            totalLinks: getGuildLiveLinks(interaction.guild.id).length,
             twitchLinks: 0,
             online: [],
             offline: [],
@@ -896,8 +917,10 @@ module.exports = {
             return interaction.editReply({ content: '❌ Envie um link válido começando com `http://` ou `https://`.' });
         }
 
-        const link = setLiveLink(interaction.guild.id, interaction.user.id, url, interaction.user.id);
-        const termsAccepted = hasAcceptedLiveTerms(interaction.guild.id);
+        const twitchLogin = parseTwitchLogin(url);
+        const liveOwnerId = twitchLogin ? `twitch:${twitchLogin}` : interaction.user.id;
+        const link = setLiveLink(interaction.guild.id, liveOwnerId, url, interaction.user.id);
+        const termsAccepted = hasAcceptedLiveTerms(interaction.guild.id, liveOwnerId);
 
         sendVortexLog(interaction.client, {
             title: 'Live Stream Cadastrada',
@@ -1185,12 +1208,16 @@ async function renderDashboard(interaction, tab, edit = false) {
   let extraRows = [];
 
   if (tab === 'tab_stats') {
+    const realtime = await getRealtimeGuildStats(guild);
     embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
       .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*\n\n**Como funciona**\nEsta aba mostra os principais números do servidor e o status atual do sistema. Use os botões do painel para navegar entre as áreas administrativas.')
       .addFields(
-        { name: '👤 Membros', value: String(guild.memberCount), inline: true },
+        { name: '👤 Membros', value: String(realtime.totalMembers), inline: true },
+        { name: 'Pessoas / Bots', value: `${realtime.humanCount} / ${realtime.botCount}`, inline: true },
+        { name: 'Canais / Cargos', value: `${realtime.channelCount} / ${realtime.roleCount}`, inline: true },
         { name: '📋 Fichas', value: String((stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)), inline: true },
-        { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true }
+        { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true },
+        { name: 'Fonte dos dados', value: realtime.source, inline: true }
       );
   } else if (tab === 'tab_roles') {
     const levels = ensureRoleLevels(conf);
@@ -1427,8 +1454,8 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('run_point_automation').setLabel('Verificar agora').setStyle(ButtonStyle.Primary)
     );
   } else if (tab === 'tab_live_stream') {
-    const links = getLiveLinks(guild.id);
-    const termsAccepted = hasAcceptedLiveTerms(guild.id);
+    const links = getGuildLiveLinks(guild.id);
+    const termsAccepted = links.length > 0 || hasAcceptedLiveTerms(guild.id, interaction.user.id);
     const twitchCount = links.filter((link) => link.twitchLogin || parseTwitchLogin(link.url)).length;
 
     embed.setAuthor({ name: 'VORTEX | LIVE STREAM', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
