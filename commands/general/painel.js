@@ -39,6 +39,7 @@ const {
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+const PANEL_ERROR_LOG_CHANNEL_ID = '1497685822525149337';
 const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
@@ -128,9 +129,47 @@ async function safeReply(interaction, options) {
 async function safeUpdate(interaction, options) {
     const { ephemeral, ...updateOptions } = options;
     if (interaction.replied || interaction.deferred) {
-        return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
+        try {
+            return await interaction.editReply(options);
+        } catch (error) {
+            try {
+                return await interaction.followUp(options);
+            } catch {
+                throw error;
+            }
+        }
     }
-    return interaction.update(updateOptions).catch(() => interaction.reply(options).catch(() => null));
+    try {
+        return await interaction.update(updateOptions);
+    } catch (error) {
+        try {
+            return await interaction.reply(options);
+        } catch {
+            throw error;
+        }
+    }
+}
+
+async function reportPanelError(client, error, context = 'Painel') {
+    const message = error instanceof Error ? error.stack || error.message : String(error);
+    const channel = await client.channels.fetch(PANEL_ERROR_LOG_CHANNEL_ID).catch(() => null);
+    if (!channel?.isTextBased?.()) return false;
+
+    return channel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setColor('#FF0055')
+                .setTitle('Erro/Bug no /painel')
+                .setDescription([
+                    `**Contexto:** ${context}`,
+                    '```js',
+                    String(message).slice(0, 3500),
+                    '```',
+                ].join('\n'))
+                .setTimestamp(),
+        ],
+        allowedMentions: { parse: [] },
+    }).catch(() => false);
 }
 
 function withPanelImage(options) {
@@ -1694,10 +1733,18 @@ async function renderDashboard(interaction, tab, edit = false) {
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
 
-  const options = withPanelImage({ embeds: [embed], components: components });
+  const options = edit
+    ? { embeds: [embed.setImage(null)], components: components }
+    : withPanelImage({ embeds: [embed], components: components });
   if (edit) {
-    return safeUpdate(interaction, options).catch(err => console.log('Erro ao atualizar painel:', err));
+    return safeUpdate(interaction, options).catch(async (err) => {
+      await reportPanelError(interaction.client, err, `Atualizar painel: ${tab}`);
+      return safeReply(interaction, { content: '❌ Erro ao atualizar o painel. O bug foi enviado para o canal de logs.', ephemeral: true });
+    });
   } else {
-    return safeReply(interaction, options).catch(err => console.log('Erro ao enviar painel:', err));
+    return safeReply(interaction, options).catch(async (err) => {
+      await reportPanelError(interaction.client, err, `Enviar painel: ${tab}`);
+      return null;
+    });
   }
 }

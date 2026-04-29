@@ -15,6 +15,7 @@ const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const PEDIDOS_PATH = path.join(__dirname, '..', 'commands', 'pedidos_ativos.json');
+const ERROR_LOG_CHANNEL_ID = '1497685822525149337';
 const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 
@@ -57,6 +58,43 @@ async function safeEdit(interaction, options) {
         return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
     }
     return interaction.reply(options).catch(() => null);
+}
+
+async function reportInteractionError(client, error, context = 'Interação') {
+    const message = error instanceof Error ? error.stack || error.message : String(error);
+    const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
+    if (!channel?.isTextBased?.()) return false;
+
+    return channel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setColor('#FF0055')
+                .setTitle('Erro/Bug de interação')
+                .setDescription([
+                    `**Contexto:** ${context}`,
+                    '```js',
+                    String(message).slice(0, 3500),
+                    '```',
+                ].join('\n'))
+                .setTimestamp(),
+        ],
+        allowedMentions: { parse: [] },
+    }).catch(() => false);
+}
+
+async function runInteractionHandler(interaction, context, handler) {
+    try {
+        return await handler();
+    } catch (error) {
+        await reportInteractionError(interaction.client, error, context);
+        if (interaction.isRepliable?.()) {
+            await safeReply(interaction, {
+                content: '❌ Essa interação deu erro. O bug foi enviado para o canal de logs.',
+                ephemeral: true,
+            });
+        }
+        return null;
+    }
 }
 
 async function sendRecruitmentResultDm(client, targetUser, {
@@ -408,25 +446,25 @@ module.exports = {
         const painel = client.commands.get('painel');
         if (painel) {
             if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
-                return await painel.handleButton(interaction);
+                return runInteractionHandler(interaction, `Painel botão: ${interaction.customId}`, () => painel.handleButton(interaction));
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
-                return await painel.handleSelectMenu(interaction);
+                return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isChannelSelectMenu() && ['select_log', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
-                return await painel.handleSelectMenu(interaction);
+                return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_open_point_user')) {
-                return await painel.handleSelectMenu(interaction);
+                return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
-                return await painel.handleSelectMenu(interaction);
+                return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isUserSelectMenu() && ['select_point_readjust_user', 'select_profile_register_user'].includes(interaction.customId)) {
-                return await painel.handleSelectMenu(interaction);
+                return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register' || interaction.customId === 'modal_live_stream_add')) {
-                return await painel.handleModal(interaction);
+                return runInteractionHandler(interaction, `Painel modal: ${interaction.customId}`, () => painel.handleModal(interaction));
             }
         }
 
