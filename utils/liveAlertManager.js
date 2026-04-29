@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { ActivityType, EmbedBuilder } = require('discord.js');
+const { ActivityType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const axios = require('axios');
 const config = require('../config/config');
 
@@ -438,6 +438,67 @@ function buildMentionText() {
   return DISCORD_MENTION || '';
 }
 
+function buildAllowedMentions() {
+  if (DISCORD_MENTION_ROLE_ID) {
+    return { roles: [DISCORD_MENTION_ROLE_ID] };
+  }
+
+  if (DISCORD_MENTION === '@everyone' || DISCORD_MENTION === '@here') {
+    return { parse: ['everyone'] };
+  }
+
+  return { parse: [] };
+}
+
+async function resolveDiscordMention(channel) {
+  if (DISCORD_MENTION_ROLE_ID) {
+    const guild = channel?.guild || null;
+    const role = guild ? await guild.roles.fetch(DISCORD_MENTION_ROLE_ID).catch(() => null) : null;
+    if (!role) {
+      console.warn(`[LIVE ALERT] Cargo de menção não encontrado: ${DISCORD_MENTION_ROLE_ID}`);
+      return { content: '', allowedMentions: { parse: [] }, resetMentionable: null };
+    }
+
+    const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
+    const canEditRole = Boolean(role.editable || me?.permissions?.has(PermissionFlagsBits.ManageRoles));
+
+    if (!role.mentionable && canEditRole) {
+      await role.setMentionable(true, 'Vortex live alert temporary mention').catch((error) => {
+        console.warn(`[LIVE ALERT] Não foi possível tornar o cargo mencionável: ${error.message}`);
+      });
+      return {
+        content: `<@&${role.id}>`,
+        allowedMentions: { roles: [role.id] },
+        resetMentionable: role,
+      };
+    }
+
+    if (!role.mentionable && !canEditRole) {
+      console.warn(`[LIVE ALERT] Cargo ${role.id} não está mencionável e o bot não pode alterá-lo.`);
+      return {
+        content: `<@&${role.id}>`,
+        allowedMentions: { roles: [role.id] },
+        resetMentionable: null,
+      };
+    }
+
+    return {
+      content: `<@&${role.id}>`,
+      allowedMentions: { roles: [role.id] },
+      resetMentionable: null,
+    };
+  }
+
+  const mention = DISCORD_MENTION || '';
+  return {
+    content: mention,
+    allowedMentions: mention === '@everyone' || mention === '@here'
+      ? { parse: ['everyone'] }
+      : { parse: [] },
+    resetMentionable: null,
+  };
+}
+
 async function sendLiveAlert({ guild, user, member, activity = null, place = null, link = null, streamKeyOverride = null, force = false }) {
   if (!guild || !user || user.bot) return false;
 
@@ -508,13 +569,18 @@ async function sendEnvTwitchLiveAlert(client, stream) {
   }
 
   const streamUrl = `https://www.twitch.tv/${stream.user_login}`;
-  const mention = buildMentionText();
+  const mention = await resolveDiscordMention(channel);
   await channel.send({
-    content: `${mention ? `${mention} ` : ''}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
+    content: `${mention.content ? `${mention.content} ` : ''}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
     embeds: [buildTwitchStreamEmbed(stream)],
+    allowedMentions: mention.allowedMentions,
   }).catch((error) => {
     console.warn(`[LIVE ALERT] Falha ao enviar alerta Twitch de ${stream.user_login}: ${error.message}`);
     return null;
+  }).finally(async () => {
+    if (mention.resetMentionable) {
+      await mention.resetMentionable.setMentionable(false, 'Vortex live alert reset').catch(() => null);
+    }
   });
 
   return true;
@@ -678,7 +744,7 @@ function initTwitchLiveMonitor(client) {
   if (envStreamers.length) {
     console.log(`[LIVE ALERT] Monitorando streamers do .env: ${envStreamers.join(', ')}`);
   }
-  console.log(`[LIVE ALERT] Credenciais Twitch carregadas: client_id=${clientId ? 'sim' : 'nao'} secret=${clientSecret ? 'sim' : 'nao'}`);
+  console.log(`[LIVE ALERT] Credenciais Twitch carregadas: client_id=${clientId ? 'sim' : 'nao'} secret=${clientSecret ? 'sim' : 'nao'} mention_role=${DISCORD_MENTION_ROLE_ID || 'nao'}`);
   pollTwitchLiveAlerts(client).catch(() => null);
   twitchPollTimer = setInterval(() => {
     pollTwitchLiveAlerts(client).catch(() => null);
@@ -754,6 +820,8 @@ module.exports = {
   handleVoiceLiveAlert,
   checkUserTwitchLinks,
   buildMentionText,
+  buildAllowedMentions,
+  resolveDiscordMention,
   hasAcceptedLiveTerms,
   initTwitchLiveMonitor,
   isValidLiveUrl,
