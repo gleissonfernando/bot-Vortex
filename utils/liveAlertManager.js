@@ -368,8 +368,8 @@ function getStreamPlace(activity, fallback = 'Live') {
 
 function getTwitchConfig() {
   return {
-    clientId: config.twitchClientId || process.env.TWITCH_CLIENT_ID,
-    clientSecret: config.twitchClientSecret || process.env.TWITCH_CLIENT_SECRET,
+    clientId: String(config.twitchClientId || process.env.TWITCH_CLIENT_ID || '').trim().replace(/^["']|["']$/g, ''),
+    clientSecret: String(config.twitchClientSecret || process.env.TWITCH_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, ''),
   };
 }
 
@@ -419,20 +419,29 @@ async function getTwitchAppToken() {
 
   let response;
   try {
-    response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
-      params: {
+    response = await axios.post(
+      'https://id.twitch.tv/oauth2/token',
+      new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         grant_type: 'client_credentials',
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        timeout: 15_000,
       },
-      timeout: 15_000,
-    });
+    );
   } catch (error) {
     error.message = formatTwitchError(error, 'Erro ao obter token da Twitch');
     throw error;
   }
 
   twitchToken = response.data?.access_token || null;
+  if (!twitchToken) {
+    throw new Error('Erro ao obter token da Twitch: resposta sem access_token.');
+  }
   const expiresInMs = Number(response.data?.expires_in || 0) * 1000;
   twitchTokenExpiresAt = Date.now() + Math.max(expiresInMs, 0);
   return twitchToken;

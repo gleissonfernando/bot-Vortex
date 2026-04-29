@@ -802,22 +802,6 @@ module.exports = {
         return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
-    if (interaction.customId === 'select_update_channel') {
-        if (!hasMasterPermission(interaction.member)) return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem configurar atualizações.`, ephemeral: true });
-        data.UPDATE_LOG_CHANNEL_ID = String(interaction.values[0]);
-        saveJSON(CONFIG_PATH, data);
-
-        sendVortexLog(interaction.client, {
-            title: 'Canal de Atualizações Alterado',
-            description: `O canal do sistema de atualizações foi alterado para <#${data.UPDATE_LOG_CHANNEL_ID}> por <@${interaction.user.id}>.`,
-            color: '#57F287',
-            type: 'ATUALIZAÇÕES',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_manutencao', true);
-    }
-
     if (interaction.customId === 'select_point_adjust_role') {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ajuste de ponto.', ephemeral: true });
         data.POINT_ADJUST_STAFF_ROLES = interaction.values.map(String);
@@ -1278,8 +1262,7 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
           { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
           { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
-          { name: 'Canal de atualizações', value: conf.UPDATE_LOG_CHANNEL_ID ? `<#${conf.UPDATE_LOG_CHANNEL_ID}>` : '`Padrão do sistema`', inline: true },
-          { name: 'Atualizações recentes', value: readUpdatesSummary().slice(0, 900), inline: false }
+          { name: 'Mudanças registradas', value: readUpdatesSummary().slice(0, 900), inline: false }
       )
 
     actionRow.addComponents(

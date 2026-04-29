@@ -1,6 +1,5 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { ALERT_DM_USER_IDS, sendUpdateLog } = require('../utils/notifications');
-const { notifyBotUpdate } = require('../src/services/updateNotifier');
 const { formatDate } = require('../utils/pontoManager');
 
 module.exports = {
@@ -8,8 +7,6 @@ module.exports = {
     once: true,
     async execute(client) {
         console.log(`🚀 VORTEX | Bot Online! Logado como ${client.user.tag}`);
-
-        await notifyBotUpdate(client);
         
         // 1. Log de Inicialização no Canal de Logs
         try {
