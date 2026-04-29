@@ -368,14 +368,14 @@ async function checkOfflineUsers(client, guild, state, force = false) {
 
     const embed = new EmbedBuilder()
       .setColor('#ED4245')
-      .setTitle('Cobrança de atividade')
+      .setTitle('Alerta de login ausente')
       .setDescription([
-        'Você está há 2 dias sem presença registrada e não está em ausência.',
+        `Você está há ${config.offlineChargeIntervalDays} dias sem login/ponto registrado e não está em ausência.`,
         '',
-        `Última atividade de ponto: **${formatDate(lastActivity)}**`,
+        `Último login/ponto registrado: **${formatDate(lastActivity)}**`,
         `Cobrança automática: **a cada ${config.offlineChargeIntervalDays} dias às ${String(config.offlineChargeHour).padStart(2, '0')}:00**`,
         '',
-        'Abra seu ponto quando estiver em serviço. Se precisar se afastar, solicite ausência pelo `/ausencia`.',
+        'Se aconteceu algo ou você precisa ficar afastado, solicite ausência pelo `/ausencia`. Ao entrar no FiveM Metrópole RP - Season 2!, seu ponto será aberto automaticamente.',
       ].join('\n'))
       .setTimestamp();
 

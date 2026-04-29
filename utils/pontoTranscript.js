@@ -42,6 +42,12 @@ function getSessionDurationMs(session) {
   return Math.max(0, new Date(closedAt).getTime() - new Date(startedAt).getTime());
 }
 
+function getSessionSource(session) {
+  if (session.source === 'fivem_metropole_auto') return 'FiveM automatico';
+  if (session.adjusted || session.corrected) return 'Ajuste manual';
+  return session.source || 'Ponto manual';
+}
+
 function getMonthlySessions(data, monthKey) {
   const sessions = Array.isArray(data.sessions) ? data.sessions : [];
   return sessions
@@ -60,6 +66,8 @@ function getMonthlySessions(data, monthKey) {
         closedBy: session.closedBy || session.fechadoPor || session.adjustedBy || session.correctedBy || 'Sistema',
         status: closedAt ? 'FECHADO' : 'ABERTO',
         corrected: Boolean(session.corrected || session.adjusted),
+        source: getSessionSource(session),
+        serverName: session.serverName || null,
       };
     });
 }
@@ -92,7 +100,36 @@ function buildHistoryRows(sessions) {
       <td>${escapeHtml(formatDuration(session.durationMs))}</td>
       <td>${escapeHtml(session.ticketId)}</td>
       <td>${escapeHtml(session.closedBy)}</td>
-      <td><span class="badge ${session.status === 'ABERTO' ? 'open' : 'closed'}">${escapeHtml(session.status)}</span>${session.corrected ? '<span class="tag">corrigido</span>' : ''}</td>
+      <td><span class="badge ${session.status === 'ABERTO' ? 'open' : 'closed'}">${escapeHtml(session.status)}</span>${session.corrected ? '<span class="tag">corrigido</span>' : ''}${session.source === 'FiveM automatico' ? '<span class="tag">FiveM</span>' : ''}</td>
+    </tr>
+  `).join('');
+}
+
+function buildFrequentLoginRows(sessions) {
+  const rows = sessions
+    .filter((session) => session.startedAt)
+    .map((session) => ({
+      day: new Date(session.startedAt).toLocaleDateString('pt-BR', { weekday: 'long' }),
+      date: new Date(session.startedAt).toLocaleDateString('pt-BR'),
+      startedAt: session.startedAt,
+      closedAt: session.closedAt,
+      durationMs: session.durationMs,
+      source: session.source,
+      serverName: session.serverName,
+    }));
+
+  if (!rows.length) {
+    return '<tr><td colspan="6" class="empty">Nenhum login registrado neste mes.</td></tr>';
+  }
+
+  return rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.day.charAt(0).toUpperCase() + row.day.slice(1))}</td>
+      <td>${escapeHtml(row.date)}</td>
+      <td>${escapeHtml(formatDate(row.startedAt))}</td>
+      <td>${escapeHtml(row.closedAt ? formatDate(row.closedAt) : 'Em andamento')}</td>
+      <td>${escapeHtml(formatDuration(row.durationMs))}</td>
+      <td>${escapeHtml([row.source, row.serverName].filter(Boolean).join(' - ') || 'N/A')}</td>
     </tr>
   `).join('');
 }
@@ -407,6 +444,25 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
             </tr>
           </thead>
           <tbody>${buildHistoryRows(sessions)}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Logins Frequentes</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Dia da semana</th>
+              <th>Data</th>
+              <th>Entrada</th>
+              <th>Saida</th>
+              <th>Tempo online</th>
+              <th>Origem</th>
+            </tr>
+          </thead>
+          <tbody>${buildFrequentLoginRows(sessions)}</tbody>
         </table>
       </div>
     </section>

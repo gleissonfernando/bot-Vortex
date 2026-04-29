@@ -1,7 +1,10 @@
 const { ActivityType, EmbedBuilder } = require('discord.js');
+const { openPoint, closePoint, getUserPoint, formatDate, formatDuration } = require('./pontoManager');
 
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '1498895777790038116';
+const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
+const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 
 function normalizeText(value) {
@@ -28,6 +31,28 @@ function isFiveMActivity(activity) {
 
 function getFiveMActivity(presence) {
   return presence?.activities?.find(isFiveMActivity) || null;
+}
+
+function activityText(activity) {
+  return [
+    activity?.name,
+    activity?.details,
+    activity?.state,
+    activity?.assets?.largeText,
+    activity?.assets?.smallText,
+  ].map(normalizeText).join(' ');
+}
+
+function isTargetFiveMActivity(activity) {
+  if (!isFiveMActivity(activity)) return false;
+  const haystack = activityText(activity);
+  const normalizedTarget = normalizeText(TARGET_SERVER_NAME);
+  return haystack.includes(normalizedTarget)
+    || (haystack.includes('metropole rp') && haystack.includes('season 2'));
+}
+
+function getTargetFiveMActivity(presence) {
+  return presence?.activities?.find(isTargetFiveMActivity) || null;
 }
 
 function cleanCityName(value) {
@@ -75,6 +100,76 @@ function buildActivityKey(activity) {
   ].filter(Boolean).join('|').slice(0, 250);
 }
 
+function buildAutoPointProfile(user, member, activity, cityName) {
+  return {
+    userName: member?.displayName || user.username,
+    userMention: `<@${user.id}>`,
+    registro: user.id,
+    pointSource: AUTO_POINT_SOURCE,
+    pointReason: `Detectado no FiveM: ${TARGET_SERVER_NAME}`,
+    serverName: cityName || TARGET_SERVER_NAME,
+    activityName: activity?.name || null,
+    activityDetails: activity?.details || null,
+    activityState: activity?.state || null,
+  };
+}
+
+async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, newPresence }) {
+  const oldTargetActivity = getTargetFiveMActivity(oldPresence);
+  const newTargetActivity = getTargetFiveMActivity(newPresence);
+  const point = await getUserPoint(guild.id, user.id).catch(() => null);
+
+  if (newTargetActivity) {
+    if (point?.activePointStartedAt) return;
+    const cityName = extractCityName(newTargetActivity);
+    const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, member, newTargetActivity, cityName));
+    if (result.action !== 'opened') return;
+
+    await user.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor('#57F287')
+          .setTitle('Ponto aberto automaticamente')
+          .setDescription([
+            `Detectei você no **${TARGET_SERVER_NAME}** e abri seu ponto.`,
+            '',
+            `Entrada: **${formatDate(result.data.activePointStartedAt)}**`,
+            'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
+          ].join('\n'))
+          .setTimestamp(),
+      ],
+    }).catch(() => null);
+    return;
+  }
+
+  if (!oldTargetActivity || !point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) return;
+
+  const result = await closePoint(guild.id, user.id, {
+    pointSource: AUTO_POINT_SOURCE,
+    pointReason: `Saiu do FiveM: ${TARGET_SERVER_NAME}`,
+    serverName: point.activePointServerName || TARGET_SERVER_NAME,
+    activityName: oldTargetActivity?.name || null,
+    activityDetails: oldTargetActivity?.details || null,
+    activityState: oldTargetActivity?.state || null,
+  });
+  if (result.action !== 'closed') return;
+
+  await user.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('Ponto fechado automaticamente')
+        .setDescription([
+          `Não detectei mais você no **${TARGET_SERVER_NAME}** e fechei seu ponto.`,
+          '',
+          `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
+          `Tempo online: **${formatDuration(result.durationMs)}**`,
+        ].join('\n'))
+        .setTimestamp(),
+    ],
+  }).catch(() => null);
+}
+
 async function resolveFiveMAlertChannel(guild) {
   if (FIVEM_ALERT_CHANNEL_ID) {
     const configured = await guild.channels.fetch(FIVEM_ALERT_CHANNEL_ID).catch(() => null);
@@ -120,6 +215,8 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
   const oldActivity = getFiveMActivity(oldPresence);
   const newActivity = getFiveMActivity(newPresence);
 
+  await handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, newPresence });
+
   if (!newActivity) {
     activeFiveMPlayers.delete(key);
     return;
@@ -151,4 +248,6 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
 
 module.exports = {
   handleFiveMActivityAlert,
+  TARGET_SERVER_NAME,
+  AUTO_POINT_SOURCE,
 };

@@ -59,10 +59,7 @@ function emptyUser(guildId, userId) {
     firstPointAt: null,
     lastPointOpenAt: null,
     lastPointCloseAt: null,
-    activePointStartedAt: null,
-    activePointDate: null,
-    activePointDay: null,
-    activePointStartTime: null,
+    ...clearActivePointFields(),
     totalMs: 0,
     sessions: [],
     updatedAt: new Date().toISOString(),
@@ -128,6 +125,29 @@ function buildSessionMetadata(startedAtValue, closedAtValue = null) {
       closedAtTime: closed.time,
       closedAtDateTime: closed.dateTime,
     } : {}),
+  };
+}
+
+function buildPointSourceMetadata(source = {}) {
+  return {
+    source: source.pointSource || source.source || null,
+    reason: source.pointReason || source.reason || null,
+    serverName: source.serverName || source.cityName || null,
+    activityName: source.activityName || null,
+    activityDetails: source.activityDetails || null,
+    activityState: source.activityState || null,
+  };
+}
+
+function clearActivePointFields() {
+  return {
+    activePointStartedAt: null,
+    activePointDate: null,
+    activePointDay: null,
+    activePointStartTime: null,
+    activePointSource: null,
+    activePointReason: null,
+    activePointServerName: null,
   };
 }
 
@@ -364,6 +384,11 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
     closedAt: closedAt.toISOString(),
     durationMs,
     ...buildSessionMetadata(current.activePointStartedAt, closedAt),
+    ...buildPointSourceMetadata({
+      source: current.activePointSource,
+      reason: current.activePointReason,
+      serverName: current.activePointServerName,
+    }),
     corrected: true,
     correctedBy: correctedBy ? String(correctedBy) : null,
     correctedAt: nowIso,
@@ -371,10 +396,7 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
 
   const next = await saveUserPoint(guildId, userId, {
     ...current,
-    activePointStartedAt: null,
-    activePointDate: null,
-    activePointDay: null,
-    activePointStartTime: null,
+    ...clearActivePointFields(),
     lastPointCloseAt: closedAt.toISOString(),
     totalMs: Number(current.totalMs || 0) + durationMs,
     sessions: [...(current.sessions || []), session].slice(-300),
@@ -559,14 +581,16 @@ async function togglePoint(guildId, userId) {
       closedAt: now.toISOString(),
       durationMs,
       ...buildSessionMetadata(current.activePointStartedAt, now),
+      ...buildPointSourceMetadata({
+        source: current.activePointSource,
+        reason: current.activePointReason,
+        serverName: current.activePointServerName,
+      }),
     };
 
     const next = await saveUserPoint(guildId, userId, {
       ...current,
-      activePointStartedAt: null,
-      activePointDate: null,
-      activePointDay: null,
-      activePointStartTime: null,
+      ...clearActivePointFields(),
       lastPointCloseAt: now.toISOString(),
       totalMs: Number(current.totalMs || 0) + durationMs,
       sessions: [...(current.sessions || []), session].slice(-300),
@@ -583,6 +607,9 @@ async function togglePoint(guildId, userId) {
     activePointDate: formatLocalDate(now),
     activePointDay: formatLocalDay(now),
     activePointStartTime: formatLocalTime(now),
+    activePointSource: null,
+    activePointReason: null,
+    activePointServerName: null,
   });
 
   return { action: 'opened', durationMs: 0, data: next };
@@ -607,12 +634,15 @@ async function openPoint(guildId, userId, profile = {}) {
     activePointDate: moment.date,
     activePointDay: moment.day,
     activePointStartTime: moment.time,
+    activePointSource: profile.pointSource || null,
+    activePointReason: profile.pointReason || null,
+    activePointServerName: profile.serverName || profile.cityName || null,
   });
 
   return { action: 'opened', durationMs: 0, data: next };
 }
 
-async function closePoint(guildId, userId) {
+async function closePoint(guildId, userId, options = {}) {
   const current = await getUserPoint(guildId, userId);
   if (!current.activePointStartedAt) {
     return { action: 'already_closed', durationMs: 0, data: current };
@@ -626,14 +656,19 @@ async function closePoint(guildId, userId) {
     closedAt: now.toISOString(),
     durationMs,
     ...buildSessionMetadata(current.activePointStartedAt, now),
+    ...buildPointSourceMetadata({
+      source: options.pointSource || current.activePointSource,
+      reason: options.pointReason || current.activePointReason,
+      serverName: options.serverName || current.activePointServerName,
+      activityName: options.activityName,
+      activityDetails: options.activityDetails,
+      activityState: options.activityState,
+    }),
   };
 
   const next = await saveUserPoint(guildId, userId, {
     ...current,
-    activePointStartedAt: null,
-    activePointDate: null,
-    activePointDay: null,
-    activePointStartTime: null,
+    ...clearActivePointFields(),
     lastPointCloseAt: now.toISOString(),
     totalMs: Number(current.totalMs || 0) + durationMs,
     sessions: [...(current.sessions || []), session].slice(-300),
