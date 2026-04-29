@@ -24,6 +24,17 @@ const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsen
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
+const {
+  ALERT_CHANNEL_ID,
+  buildLiveTermsUrl,
+  checkUserTwitchLinks,
+  getLiveLinks,
+  hasAcceptedLiveTerms,
+  isValidLiveUrl,
+  parseTwitchLogin,
+  removeLiveLink,
+  setLiveLink,
+} = require('../../utils/liveAlertManager');
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -149,6 +160,17 @@ function buildRegisteredProfilesReport(guild, profiles) {
         '',
         rows.length ? rows.join('\n') : 'Nenhum usuario cadastrado.',
     ].join('\n');
+}
+
+function formatLiveLinksList(links) {
+    if (!links.length) return 'Nenhum canal de live cadastrado.';
+    return links.slice(0, 10).map((link, index) => {
+        const twitchLogin = link.twitchLogin || parseTwitchLogin(link.url);
+        const platform = twitchLogin ? `Twitch: ${twitchLogin}` : (link.platform || 'outro');
+        const createdBy = link.createdBy ? ` por <@${link.createdBy}>` : '';
+        const url = String(link.url || '').length > 140 ? `${String(link.url).slice(0, 137)}...` : link.url;
+        return `${index + 1}. ${url}\n   ${platform}${createdBy}`;
+    }).join('\n') + (links.length > 10 ? `\n... mais ${links.length - 10} cadastro(s).` : '');
 }
 
 module.exports = {
@@ -425,6 +447,66 @@ module.exports = {
         );
 
         return safeReply(interaction, { embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
+    }
+
+    if (customId === 'live_stream_add_link') {
+        const modal = new ModalBuilder()
+            .setCustomId('modal_live_stream_add')
+            .setTitle('Cadastrar Live Stream');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('live_url')
+                .setLabel('LINK DO CANAL DA LIVE')
+                .setPlaceholder('https://twitch.tv/seucanal')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setMaxLength(300)
+        ));
+
+        return interaction.showModal(modal);
+    }
+
+    if (customId === 'live_stream_check_now') {
+        await interaction.deferReply({ ephemeral: true });
+        const result = await checkUserTwitchLinks(interaction.client, interaction.guild.id, interaction.user.id, {
+            sendIfOnline: true,
+        }).catch((error) => ({
+            ok: false,
+            message: `Erro ao consultar Twitch: ${error.message}`,
+            termsAccepted: hasAcceptedLiveTerms(interaction.guild.id),
+            hasCredentials: false,
+            totalLinks: getLiveLinks(interaction.guild.id).length,
+            twitchLinks: 0,
+            online: [],
+            offline: [],
+            sent: 0,
+        }));
+
+        return interaction.editReply({
+            content: [
+                result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
+                `Resultado: ${result.message}`,
+                `Termos aceitos: ${result.termsAccepted ? 'sim' : 'não'}`,
+                `Links cadastrados: ${result.totalLinks}`,
+                `Links Twitch: ${result.twitchLinks}`,
+                `Alertas enviados agora: ${result.sent || 0}`,
+            ].join('\n'),
+        });
+    }
+
+    if (customId === 'live_stream_clear_links') {
+        const removed = removeLiveLink(interaction.guild.id);
+
+        sendVortexLog(interaction.client, {
+            title: 'Links de Live Stream Removidos',
+            description: `Todos os links de live stream foram removidos por <@${interaction.user.id}>.\nHavia links para remover: ${removed ? 'sim' : 'não'}.`,
+            color: '#FF0055',
+            type: 'LIVE',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_live_stream', true);
     }
 
     if (customId === 'clear_point_user' || customId === 'correct_point_close') {
@@ -805,6 +887,32 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
+    if (interaction.customId === 'modal_live_stream_add') {
+        await interaction.deferReply({ ephemeral: true });
+        const url = interaction.fields.getTextInputValue('live_url').trim();
+
+        if (!isValidLiveUrl(url)) {
+            return interaction.editReply({ content: '❌ Envie um link válido começando com `http://` ou `https://`.' });
+        }
+
+        const link = setLiveLink(interaction.guild.id, interaction.user.id, url, interaction.user.id);
+        const termsAccepted = hasAcceptedLiveTerms(interaction.guild.id);
+
+        sendVortexLog(interaction.client, {
+            title: 'Live Stream Cadastrada',
+            description: `Link cadastrado por <@${interaction.user.id}>: ${link.url}`,
+            color: '#9146FF',
+            type: 'LIVE',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return interaction.editReply({
+            content: termsAccepted
+                ? `✅ Live Stream cadastrada. Quando o canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`
+                : `✅ Live Stream cadastrada, mas o monitor só libera alertas depois do aceite dos termos: ${buildLiveTermsUrl(interaction.guild.id, interaction.user.id)}`,
+        });
+    }
+
     if (interaction.customId === 'modal_clear_point_user') {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
         if (!/^\d{15,25}$/.test(userId)) {
@@ -1068,7 +1176,8 @@ async function renderDashboard(interaction, tab, edit = false) {
     new ButtonBuilder().setCustomId('tab_ausencias').setLabel('Ausências').setStyle(tab === 'tab_ausencias' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_ausencias')),
     new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands')),
     new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil')),
-    new ButtonBuilder().setCustomId('tab_cobrancas').setLabel('Cobranças').setStyle(tab === 'tab_cobrancas' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_cobrancas'))
+    new ButtonBuilder().setCustomId('tab_cobrancas').setLabel('Cobranças').setStyle(tab === 'tab_cobrancas' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_cobrancas')),
+    new ButtonBuilder().setCustomId('tab_live_stream').setLabel('Live Stream').setStyle(tab === 'tab_live_stream' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_live_stream'))
   );
 
   const actionRow = new ActionRowBuilder();
@@ -1316,6 +1425,43 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('toggle_offline_charge').setLabel(automationConfig.offlineChargeEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(automationConfig.offlineChargeEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
       new ButtonBuilder().setCustomId('run_point_automation').setLabel('Verificar agora').setStyle(ButtonStyle.Primary)
     );
+  } else if (tab === 'tab_live_stream') {
+    const links = getLiveLinks(guild.id);
+    const termsAccepted = hasAcceptedLiveTerms(guild.id);
+    const twitchCount = links.filter((link) => link.twitchLogin || parseTwitchLogin(link.url)).length;
+
+    embed.setAuthor({ name: 'VORTEX | LIVE STREAM', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#9146FF')
+      .setDescription([
+        '### Cadastro de canais de live',
+        '',
+        'Use esta aba para cadastrar mais canais/usuários de live que devem disparar alerta automático.',
+        `Os alertas são enviados em <#${ALERT_CHANNEL_ID}> quando a Twitch informar que o canal ficou online.`,
+        '',
+        `Termos aceitos: **${termsAccepted ? 'sim' : 'não'}**`,
+        `Total cadastrado: **${links.length}**`,
+        `Links Twitch monitorados: **${twitchCount}**`,
+        '',
+        '**Cadastrados**',
+        formatLiveLinksList(links),
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder().setCustomId('live_stream_add_link').setLabel('Adicionar usuário').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('live_stream_check_now').setLabel('Verificar agora').setStyle(ButtonStyle.Primary).setDisabled(links.length === 0),
+      new ButtonBuilder().setCustomId('live_stream_clear_links').setLabel('Limpar cadastros').setStyle(ButtonStyle.Danger).setDisabled(links.length === 0)
+    );
+
+    if (!termsAccepted) {
+      extraRows = [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('Aceitar termos')
+            .setStyle(ButtonStyle.Link)
+            .setURL(buildLiveTermsUrl(guild.id, interaction.user.id))
+        ),
+      ];
+    }
   } else if (tab === 'tab_commands') {
     const permissions = ensureCommandPermissions(conf);
     const selected = commandPermissionSelections.get(getSelectionKey(interaction)) || COMMAND_PERMISSION_OPTIONS[0].value;

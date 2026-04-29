@@ -8,7 +8,7 @@ const config = require('../config/config');
 const DATA_PATH = path.join(__dirname, '..', 'commands', 'liveLinks.json');
 const ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const TWITCH_POLL_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
-const DISCORD_MENTION_ROLE_ID = process.env.DISCORD_MENTION_ROLE_ID || '';
+const DISCORD_MENTION_ROLE_ID = process.env.DISCORD_MENTION_ROLE_ID || '1201193356810780773';
 const DISCORD_MENTION = process.env.DISCORD_MENTION || '';
 const LIVE_TERMS_BASE_URL = process.env.LIVE_TERMS_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://bot-vortex.shardweb.app';
 const activeStreams = new Set();
@@ -76,13 +76,66 @@ function normalizeLiveEntry(entry) {
   };
 }
 
-function getLiveLink(guildId, userId) {
-  return getLiveLinks(guildId, userId)[0]?.url || null;
+function isLegacyGuildLiveEntryKey(key) {
+  return !['termsAcceptedAt', 'termsAcceptedBy', 'links', 'updatedAt', 'updatedBy'].includes(String(key));
 }
 
-function getLiveLinks(guildId, userId) {
+function normalizeGuildLiveConfig(guildConfig) {
+  if (!guildConfig || typeof guildConfig !== 'object') {
+    return { termsAcceptedAt: null, termsAcceptedBy: null, links: [] };
+  }
+
+  if (Array.isArray(guildConfig.links)) {
+    return normalizeLiveEntry(guildConfig);
+  }
+
+  const legacyEntries = Object.entries(guildConfig).filter(([key, value]) => isLegacyGuildLiveEntryKey(key) && value && typeof value === 'object');
+  if (!legacyEntries.length) {
+    return normalizeLiveEntry(guildConfig);
+  }
+
+  const links = [];
+  let termsAcceptedAt = guildConfig.termsAcceptedAt || null;
+  let termsAcceptedBy = guildConfig.termsAcceptedBy || null;
+
+  for (const [legacyKey, entry] of legacyEntries) {
+    const normalized = normalizeLiveEntry(entry);
+    if (!termsAcceptedAt && normalized.termsAcceptedAt) {
+      termsAcceptedAt = normalized.termsAcceptedAt;
+      termsAcceptedBy = normalized.termsAcceptedBy || legacyKey;
+    }
+
+    for (const link of normalized.links) {
+      links.push({
+        ...link,
+        createdBy: link.createdBy || legacyKey,
+      });
+    }
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const link of links) {
+    const key = String(link.url || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(link);
+  }
+
+  return {
+    termsAcceptedAt,
+    termsAcceptedBy,
+    links: deduped,
+  };
+}
+
+function getLiveLink(guildId) {
+  return getLiveLinks(guildId)[0]?.url || null;
+}
+
+function getLiveLinks(guildId) {
   const guildConfig = getGuildConfig(guildId);
-  return normalizeLiveEntry(guildConfig[String(userId)]).links;
+  return normalizeGuildLiveConfig(guildConfig).links;
 }
 
 function parseTwitchLogin(url) {
@@ -142,25 +195,24 @@ function buildLiveTermsUrl(guildId, userId) {
   return `${LIVE_TERMS_BASE_URL.replace(/\/$/, '')}/twitch?token=${encodeURIComponent(token)}`;
 }
 
-function hasAcceptedLiveTerms(guildId, userId) {
+function hasAcceptedLiveTerms(guildId) {
   const guildConfig = getGuildConfig(guildId);
-  return Boolean(normalizeLiveEntry(guildConfig[String(userId)]).termsAcceptedAt);
+  return Boolean(normalizeGuildLiveConfig(guildConfig).termsAcceptedAt);
 }
 
 function acceptLiveTerms(guildId, userId) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
-  const userKey = String(userId);
   if (!data[guildKey]) data[guildKey] = {};
-  const current = normalizeLiveEntry(data[guildKey][userKey]);
+  const current = normalizeGuildLiveConfig(data[guildKey]);
 
-  data[guildKey][userKey] = {
+  data[guildKey] = {
     ...current,
     termsAcceptedAt: new Date().toISOString(),
-    termsAcceptedBy: userKey,
+    termsAcceptedBy: String(userId),
   };
   saveLiveLinks(data);
-  return data[guildKey][userKey];
+  return data[guildKey];
 }
 
 function acceptLiveTermsToken(token) {
@@ -173,11 +225,10 @@ function acceptLiveTermsToken(token) {
 function setLiveLink(guildId, userId, url, updatedBy) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
-  const userKey = String(userId);
   if (!data[guildKey]) data[guildKey] = {};
 
   const twitchLogin = parseTwitchLogin(url);
-  const current = normalizeLiveEntry(data[guildKey][userKey]);
+  const current = normalizeGuildLiveConfig(data[guildKey]);
   const normalizedUrl = String(url).trim();
   const existing = current.links.find((item) => item.url.toLowerCase() === normalizedUrl.toLowerCase());
   if (existing) return existing;
@@ -190,7 +241,7 @@ function setLiveLink(guildId, userId, url, updatedBy) {
     createdAt: new Date().toISOString(),
   };
 
-  data[guildKey][userKey] = {
+  data[guildKey] = {
     ...current,
     links: [...current.links, nextLink],
     updatedBy: String(updatedBy),
@@ -201,16 +252,15 @@ function setLiveLink(guildId, userId, url, updatedBy) {
   return nextLink;
 }
 
-function removeLiveLink(guildId, userId) {
+function removeLiveLink(guildId) {
   const data = loadLiveLinks();
   const guildKey = String(guildId);
-  const userKey = String(userId);
-  if (!data[guildKey]?.[userKey]) return false;
+  if (!data[guildKey]) return false;
 
-  const current = normalizeLiveEntry(data[guildKey][userKey]);
+  const current = normalizeGuildLiveConfig(data[guildKey]);
   if (current.links.length === 0) return false;
 
-  data[guildKey][userKey] = {
+  data[guildKey] = {
     ...current,
     links: [],
     updatedAt: new Date().toISOString(),
@@ -367,7 +417,7 @@ function buildLivePanelEmbed(interaction, links = [], termsAccepted = false) {
       ? 'Termos aceitos. Cadastre quantos links de live quiser para o bot avisar automaticamente quando um canal ficar online.'
       : 'Aceite os termos para liberar o cadastro de links de live.')
     .addFields(
-      { name: 'Usuário', value: `<@${interaction.user.id}>`, inline: true },
+      { name: 'Servidor', value: interaction.guild?.name || 'Servidor', inline: true },
       { name: 'Canal de alerta', value: `<#${ALERT_CHANNEL_ID}>`, inline: true },
       { name: 'Termos', value: termsAccepted ? '`Aceitos`' : '`Pendente`', inline: true },
       { name: 'Links cadastrados', value: formatLiveLinks(links), inline: false },
@@ -380,6 +430,10 @@ function buildLiveAlertEmbed({ member, user, activity, link, place }) {
   const displayName = member?.displayName || user.username;
   const streamPlace = place || getStreamPlace(activity);
   const activityUrl = activity?.url && activity.url !== link ? activity.url : null;
+  const fields = [];
+  if (link) fields.push(`**Link:** ${link}`);
+  fields.push(`**Onde:** ${streamPlace}`);
+  if (activityUrl) fields.push(`**Detectado pelo Discord:** ${activityUrl}`);
 
   const embed = new EmbedBuilder()
     .setColor('#9146FF')
@@ -391,10 +445,8 @@ function buildLiveAlertEmbed({ member, user, activity, link, place }) {
     .setDescription([
       `<@${user.id}> começou uma transmissão.`,
       '',
-      `**Link:** ${link}`,
-      `**Onde:** ${streamPlace}`,
-      activityUrl ? `**Detectado pelo Discord:** ${activityUrl}` : null,
-    ].filter(Boolean).join('\n'))
+      ...fields,
+    ].join('\n'))
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
     .setFooter({ text: 'Vortex Live Alerts' })
     .setTimestamp();
@@ -507,11 +559,7 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   const streamKey = streamKeyOverride || `${guildId}:${userId}`;
   if (!force && activeStreams.has(streamKey)) return false;
 
-  const alertLink = link || getLiveLink(guildId, userId);
-  if (!alertLink) {
-    activeStreams.add(streamKey);
-    return false;
-  }
+  const alertLink = link || activity?.url || null;
 
   const channel = await guild.channels.fetch(ALERT_CHANNEL_ID).catch(() => null);
   if (!channel?.isTextBased?.()) {
@@ -521,9 +569,16 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
   }
 
   const guildMember = member || await guild.members.fetch(userId).catch(() => null);
+  const mention = await resolveDiscordMention(channel);
+  const content = [
+    mention.content || null,
+    alertLink
+      ? `<@${userId}> está fazendo live: ${alertLink}`
+      : `<@${userId}> está fazendo live`,
+  ].filter(Boolean).join(' ');
 
   await channel.send({
-    content: `<@${userId}> está fazendo live: ${alertLink}`,
+    content,
     embeds: [buildLiveAlertEmbed({
       member: guildMember,
       user,
@@ -531,47 +586,38 @@ async function sendLiveAlert({ guild, user, member, activity = null, place = nul
       link: alertLink,
       place,
     })],
-    allowedMentions: { users: [userId] },
+    allowedMentions: {
+      users: [userId],
+      roles: mention.allowedMentions?.roles || [],
+      parse: mention.allowedMentions?.parse || [],
+    },
   }).catch((error) => {
     console.warn(`[LIVE ALERT] Falha ao enviar alerta de live de ${userId}: ${error.message}`);
     return null;
+  }).finally(async () => {
+    if (mention.resetMentionable) {
+      await mention.resetMentionable.setMentionable(false, 'Vortex live alert reset').catch(() => null);
+    }
   });
 
   activeStreams.add(streamKey);
   return true;
 }
 
-async function sendTwitchLiveAlert(client, { guildId, userId, link, stream, streamKey, force = false }) {
-  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
-  if (!guild) return false;
+async function sendTwitchLiveAlert(client, { link, stream, streamKey, force = false }) {
+  if (streamKey && !force && activeStreams.has(streamKey)) {
+    return false;
+  }
 
-  const user = await client.users.fetch(userId).catch(() => null);
-  if (!user) return false;
-
-  const member = await guild.members.fetch(userId).catch(() => null);
-  const category = stream.game_name ? `Twitch | ${stream.game_name}` : 'Twitch';
-  return sendLiveAlert({
-    guild,
-    user,
-    member,
-    link,
-    place: category,
-    streamKeyOverride: streamKey,
-    force,
-  });
-}
-
-async function sendEnvTwitchLiveAlert(client, stream) {
   const channel = await client.channels.fetch(ALERT_CHANNEL_ID).catch(() => null);
   if (!channel?.isTextBased?.()) {
     console.warn(`[LIVE ALERT] Canal Discord invalido ou inacessivel: ${ALERT_CHANNEL_ID}`);
     return false;
   }
 
-  const streamUrl = `https://www.twitch.tv/${stream.user_login}`;
   const mention = await resolveDiscordMention(channel);
   await channel.send({
-    content: `${mention.content ? `${mention.content} ` : ''}**${stream.user_name || stream.user_login}** está AO VIVO!\n${streamUrl}`,
+    content: `${mention.content ? `${mention.content} ` : ''}**${stream.user_name || stream.user_login}** está AO VIVO!\n${link || `https://www.twitch.tv/${stream.user_login}`}`,
     embeds: [buildTwitchStreamEmbed(stream)],
     allowedMentions: mention.allowedMentions,
   }).catch((error) => {
@@ -583,12 +629,15 @@ async function sendEnvTwitchLiveAlert(client, stream) {
     }
   });
 
+  if (streamKey) {
+    activeStreams.add(streamKey);
+  }
   return true;
 }
 
 async function checkUserTwitchLinks(client, guildId, userId, { sendIfOnline = false } = {}) {
-  const termsAccepted = hasAcceptedLiveTerms(guildId, userId);
-  const links = getLiveLinks(guildId, userId);
+  const termsAccepted = hasAcceptedLiveTerms(guildId);
+  const links = getLiveLinks(guildId);
   const twitchLinks = links
     .map((link) => ({
       ...link,
@@ -635,10 +684,8 @@ async function checkUserTwitchLinks(client, guildId, userId, { sendIfOnline = fa
 
     result.online.push({ link, stream });
     if (sendIfOnline) {
-      const streamKey = `${guildId}:${userId}:twitch:${link.twitchLogin}`;
+      const streamKey = `${guildId}:twitch:${link.twitchLogin}`;
       const sent = await sendTwitchLiveAlert(client, {
-        guildId,
-        userId,
         link: link.url,
         stream,
         streamKey,
@@ -668,21 +715,18 @@ function getConfiguredTwitchTargets() {
   }
 
   for (const [guildId, guildConfig] of Object.entries(data)) {
-    for (const [userId, entry] of Object.entries(guildConfig || {})) {
-      const normalized = normalizeLiveEntry(entry);
-      if (!normalized.termsAcceptedAt) continue;
+    const normalized = normalizeGuildLiveConfig(guildConfig);
+    if (!normalized.termsAcceptedAt) continue;
 
-      for (const link of normalized.links) {
-        const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
-        if (!twitchLogin || !link?.url) continue;
-        targets.push({
-          source: 'user',
-          guildId,
-          userId,
-          link: link.url,
-          twitchLogin,
-        });
-      }
+    for (const link of normalized.links) {
+      const twitchLogin = link?.twitchLogin || parseTwitchLogin(link?.url);
+      if (!twitchLogin || !link?.url) continue;
+      targets.push({
+        source: 'guild',
+        guildId,
+        link: link.url,
+        twitchLogin,
+      });
     }
   }
 
@@ -701,7 +745,7 @@ async function pollTwitchLiveAlerts(client) {
     for (const target of targets) {
       const streamKey = target.source === 'env'
         ? `env:twitch:${target.twitchLogin}`
-        : `${target.guildId}:${target.userId}:twitch:${target.twitchLogin}`;
+        : `${target.guildId}:twitch:${target.twitchLogin}`;
       const stream = streams.get(target.twitchLogin);
 
       if (!stream) {
@@ -712,17 +756,11 @@ async function pollTwitchLiveAlerts(client) {
 
       if (twitchOnlineStreams.has(streamKey)) continue;
 
-      if (target.source === 'env') {
-        await sendEnvTwitchLiveAlert(client, stream);
-      } else {
-        await sendTwitchLiveAlert(client, {
-          guildId: target.guildId,
-          userId: target.userId,
-          link: target.link,
-          stream,
-          streamKey,
-        });
-      }
+      await sendTwitchLiveAlert(client, {
+        link: target.link,
+        stream,
+        streamKey,
+      });
       twitchOnlineStreams.add(streamKey);
     }
   } catch (error) {
@@ -744,7 +782,7 @@ function initTwitchLiveMonitor(client) {
   if (envStreamers.length) {
     console.log(`[LIVE ALERT] Monitorando streamers do .env: ${envStreamers.join(', ')}`);
   }
-  console.log(`[LIVE ALERT] Credenciais Twitch carregadas: client_id=${clientId ? 'sim' : 'nao'} secret=${clientSecret ? 'sim' : 'nao'} mention_role=${DISCORD_MENTION_ROLE_ID || 'nao'}`);
+  console.log(`[LIVE ALERT] Credenciais Twitch carregadas: client_id=${clientId ? 'sim' : 'nao'} secret=${clientSecret ? 'sim' : 'nao'} mention_role=${DISCORD_MENTION_ROLE_ID || 'nao'} scope=global`);
   pollTwitchLiveAlerts(client).catch(() => null);
   twitchPollTimer = setInterval(() => {
     pollTwitchLiveAlerts(client).catch(() => null);
