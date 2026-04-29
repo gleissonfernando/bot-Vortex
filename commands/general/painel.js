@@ -1436,7 +1436,6 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tab_config').setLabel('Voltar').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary)
       ),
@@ -1468,7 +1467,6 @@ async function renderDashboard(interaction, tab, edit = false) {
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tab_config').setLabel('Voltar').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary)
       ),
       noticeRoleRow,
@@ -1494,7 +1492,6 @@ async function renderDashboard(interaction, tab, edit = false) {
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tab_config').setLabel('Voltar').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Primary)
       ),
       pointRoleRow,
