@@ -8,7 +8,8 @@ const MAINTENANCE_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 
 // Cargos que recebem DM e são mencionados no log
 const STAFF_ROLE_IDS = [
-    '1497703127074345040'
+    '1497703127074345040',
+    '1498884908028792942'
 ];
 
 // Helpers de config

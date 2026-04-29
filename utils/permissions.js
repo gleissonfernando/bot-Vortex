@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const MASTER_ROLE_ID = '1497703127074345040';
+const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 
 function normalizeIds(list) {
     if (!Array.isArray(list)) return [];
@@ -41,14 +41,14 @@ function hasAnyVortexRole(member) {
 
 function hasVortexLevel(member, levels = []) {
     if (!member?.roles?.cache) return false;
-    if (member.roles.cache.has(MASTER_ROLE_ID)) return true;
+    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     if (!Array.isArray(levels) || levels.length === 0) return false;
     return memberHasAnyRole(member, getVortexRoleIds(levels));
 }
 
 function hasCommandRole(member, commandName) {
     if (!member?.roles?.cache || !commandName) return false;
-    if (member.roles.cache.has(MASTER_ROLE_ID)) return true;
+    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     const panelConfig = getPanelConfig();
     const permissions = panelConfig.COMMAND_ROLE_PERMISSIONS || {};
     const roleIds = normalizeIds(permissions[commandName] || []);

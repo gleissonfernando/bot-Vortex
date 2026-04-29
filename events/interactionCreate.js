@@ -15,7 +15,8 @@ const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const PEDIDOS_PATH = path.join(__dirname, '..', 'commands', 'pedidos_ativos.json');
-const SUPERIOR_ID = '1497703127074345040';
+const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
+const SUPERIOR_ID = SUPERIOR_IDS[0];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
@@ -25,7 +26,7 @@ function hasStaffPermission(member) {
 }
 
 function hasMasterPermission(member) {
-    return Boolean(member?.roles?.cache?.has(SUPERIOR_ID));
+    return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
 }
 
 function hasConfiguredCommandAccess(interaction, commandName) {
@@ -36,7 +37,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     const conf = loadJSON(CONFIG_PATH);
     const permissions = conf.COMMAND_ROLE_PERMISSIONS || {};
     const allowedRoles = Array.isArray(permissions[commandName]) ? permissions[commandName].map(String) : [];
-    if (interaction.member.roles.cache.has(SUPERIOR_ID)) return true;
+    if (SUPERIOR_IDS.some(roleId => interaction.member.roles.cache.has(roleId))) return true;
     if (allowedRoles.length > 0) {
         return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
     }
@@ -468,7 +469,7 @@ module.exports = {
                     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
                     { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels] },
-                    { id: SUPERIOR_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    ...SUPERIOR_IDS.map(roleId => ({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }))
                 ]
             });
 

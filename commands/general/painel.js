@@ -38,7 +38,8 @@ const {
 
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
-const SUPERIOR_ID = '1497703127074345040';
+const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
+const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
@@ -71,7 +72,7 @@ function hasPanelAccess(member) {
 }
 
 function hasMasterPermission(member) {
-    return Boolean(member?.roles?.cache?.has(SUPERIOR_ID));
+    return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
 }
 
 function canAccessPanelTab(member, tab) {
@@ -201,7 +202,7 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
 
     if ((customId === 'tab_manutencao' || ['toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
-      return safeReply(interaction, { content: `❌ Somente o cargo <@&${SUPERIOR_ID}> pode usar a manutenção.`, ephemeral: true });
+      return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem usar a manutenção.`, ephemeral: true });
     }
 
     if (customId === 'show_all_points') {
@@ -781,7 +782,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_update_channel') {
-        if (!hasMasterPermission(interaction.member)) return safeReply(interaction, { content: `❌ Somente o cargo <@&${SUPERIOR_ID}> pode configurar atualizações.`, ephemeral: true });
+        if (!hasMasterPermission(interaction.member)) return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem configurar atualizações.`, ephemeral: true });
         data.UPDATE_LOG_CHANNEL_ID = String(interaction.values[0]);
         saveJSON(CONFIG_PATH, data);
 
@@ -1202,10 +1203,10 @@ async function renderDashboard(interaction, tab, edit = false) {
                       '**Admin:** mexe em avisos, set e todos os sistemas de ponto, mas não usa manutenção.\n' +
                       '**Médio:** aceita set e envia avisos.\n' +
                       '**Membro:** usa botões de bater ponto e registra ações básicas.\n\n' +
-                      '**👑 Administrador Master:** <@&1497703127074345040>\n\n' +
+                      `**👑 Administrador Master:** ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')}\n\n` +
                       '*Manutenção continua liberada somente para o cargo master.*')
       .addFields(
-        { name: 'Acesso total', value: `<@&${SUPERIOR_ID}>`, inline: false },
+        { name: 'Acesso total', value: SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' '), inline: false },
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
         { name: 'Médio Vortex', value: formatRoleList(levels.medio), inline: false },
         { name: 'Membro Vortex', value: formatRoleList(levels.membro), inline: false },
@@ -1241,7 +1242,7 @@ async function renderDashboard(interaction, tab, edit = false) {
                       '**📖 Como Funciona**\n' +
                       'Ao ativar, usuários sem cargo de staff que tentarem usar o bot receberão uma mensagem automática informando manutenção, com botão para suporte.\n\n' +
                       '**🔐 Permissões Master**\n' +
-                      'Apenas o cargo <@&1497703127074345040> pode gerenciar este estado.')
+                      `Apenas os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem gerenciar este estado.`)
       .addFields(
           { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true },
           { name: '⛔ Restritos', value: '`/manutencao` (Geral)', inline: true },
