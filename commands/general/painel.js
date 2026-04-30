@@ -201,25 +201,82 @@ function readUpdatesSummary() {
     }
 }
 
+function profileValue(value, fallback = 'N/A') {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    return text || fallback;
+}
+
+function truncateCell(value, size) {
+    const text = profileValue(value);
+    return text.length > size ? `${text.slice(0, Math.max(0, size - 3))}...` : text;
+}
+
+function padCell(value, size) {
+    return truncateCell(value, size).padEnd(size, ' ');
+}
+
+function buildProfileTable(title, profiles) {
+    const rows = profiles.map((profile, index) => {
+        const status = profile.registeredManually ? 'Manual' : 'Set';
+        const channel = profile.callChannelId ? `#${profile.callChannelId}` : 'Sem canal';
+        return [
+            padCell(String(index + 1), 4),
+            padCell(profile.nomeGame || profile.displayName || 'Sem nome', 24),
+            padCell(profile.discordTag || profile.userId, 28),
+            padCell(profile.idGame || profile.registro || 'N/A', 18),
+            padCell(profile.numeroGame || 'N/A', 10),
+            padCell(profile.nivelGame || 'N/A', 8),
+            padCell(status, 8),
+            padCell(channel, 24),
+            padCell(profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A', 22),
+        ].join(' | ');
+    });
+
+    const header = [
+        padCell('N.', 4),
+        padCell('Nome em game', 24),
+        padCell('Discord', 28),
+        padCell('ID game', 18),
+        padCell('Numero', 10),
+        padCell('Nivel', 8),
+        padCell('Origem', 8),
+        padCell('Call/Canal', 24),
+        padCell('Ultima atualizacao', 22),
+    ].join(' | ');
+
+    const separator = '-'.repeat(header.length);
+    return [
+        title,
+        separator,
+        header,
+        separator,
+        rows.length ? rows.join('\n') : 'Nenhum usuario nesta categoria.',
+    ].join('\n');
+}
+
 function buildRegisteredProfilesReport(guild, profiles) {
-    const rows = Object.values(profiles)
-        .sort((a, b) => String(a.nomeGame || a.displayName || '').localeCompare(String(b.nomeGame || b.displayName || ''), 'pt-BR'))
-        .map((profile, index) => [
-            `${index + 1}. ${profile.nomeGame || profile.displayName || 'Sem nome'}`,
-            `Discord: ${profile.discordTag || profile.userId}`,
-            `ID: ${profile.userId}`,
-            `Status: ${profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set'}`,
-            `Nivel: ${profile.nivelGame || 'N/A'}`,
-            `Call/Canal: ${profile.callChannelId || 'N/A'}`,
-            `Ultima atualizacao: ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`,
-        ].join(' | '));
+    const sortedProfiles = Object.values(profiles)
+        .sort((a, b) => String(a.nomeGame || a.displayName || '').localeCompare(String(b.nomeGame || b.displayName || ''), 'pt-BR'));
+    const setProfiles = sortedProfiles.filter((profile) => !profile.registeredManually);
+    const manualProfiles = sortedProfiles.filter((profile) => profile.registeredManually);
+    const missingChannelProfiles = sortedProfiles.filter((profile) => !profile.callChannelId);
 
     return [
-        `Usuarios cadastrados - ${guild.name}`,
-        `Total: ${rows.length}`,
+        `RELATORIO DE USUARIOS CADASTRADOS - ${guild.name}`,
+        '='.repeat(72),
+        `Total cadastrado: ${sortedProfiles.length}`,
+        `Aprovados no /set: ${setProfiles.length}`,
+        `Cadastro manual: ${manualProfiles.length}`,
+        `Sem call/canal vinculado: ${missingChannelProfiles.length}`,
         `Gerado em: ${formatDate(new Date())}`,
         '',
-        rows.length ? rows.join('\n') : 'Nenhum usuario cadastrado.',
+        buildProfileTable('CADASTROS APROVADOS NO /SET', setProfiles),
+        '',
+        buildProfileTable('CADASTROS MANUAIS', manualProfiles),
+        '',
+        missingChannelProfiles.length
+            ? buildProfileTable('ATENCAO - CADASTROS SEM CALL/CANAL', missingChannelProfiles)
+            : 'ATENCAO - CADASTROS SEM CALL/CANAL\nNenhum cadastro sem call/canal vinculado.',
     ].join('\n');
 }
 
