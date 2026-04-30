@@ -1,5 +1,6 @@
 const { AttachmentBuilder } = require('discord.js');
 const { formatDuration, formatDate, getEffectiveTotalMs } = require('./pontoManager');
+const { getUserProfile } = require('./profileManager');
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -48,29 +49,44 @@ function getSessionSource(session) {
   return session.source || 'Ponto manual';
 }
 
-function getMonthlySessions(data, monthKey) {
+function mapSession(session) {
+  const startedAt = getSessionStartedAt(session);
+  const closedAt = getSessionClosedAt(session);
+  const durationMs = getSessionDurationMs(session);
+
+  return {
+    ticketId: session.ticketId || session.ticket || null,
+    startedAt,
+    closedAt,
+    durationMs,
+    closedBy: session.closedBy || session.fechadoPor || session.adjustedBy || session.correctedBy || 'Sistema',
+    status: closedAt ? 'FECHADO' : 'ABERTO',
+    corrected: Boolean(session.corrected || session.adjusted),
+    source: getSessionSource(session),
+    serverName: session.serverName || null,
+    reason: session.reason || null,
+    activityName: session.activityName || null,
+    activityDetails: session.activityDetails || null,
+    activityState: session.activityState || null,
+  };
+}
+
+function normalizeSessions(sessions) {
+  return sessions
+    .filter((session) => session.startedAt)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
+    .map((session, index) => ({
+      ...session,
+      index: index + 1,
+      ticketId: session.ticketId || `PONTO-${String(index + 1).padStart(3, '0')}`,
+    }));
+}
+
+function getAllSessions(data) {
   const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-  const closedSessions = sessions
-    .filter((session) => String(getSessionStartedAt(session) || '').startsWith(monthKey))
-    .map((session) => {
-      const startedAt = getSessionStartedAt(session);
-      const closedAt = getSessionClosedAt(session);
-      const durationMs = getSessionDurationMs(session);
+  const closedSessions = sessions.map(mapSession);
 
-      return {
-        ticketId: session.ticketId || session.ticket || null,
-        startedAt,
-        closedAt,
-        durationMs,
-        closedBy: session.closedBy || session.fechadoPor || session.adjustedBy || session.correctedBy || 'Sistema',
-        status: closedAt ? 'FECHADO' : 'ABERTO',
-        corrected: Boolean(session.corrected || session.adjusted),
-        source: getSessionSource(session),
-        serverName: session.serverName || null,
-      };
-    });
-
-  const activeSession = data.activePointStartedAt && String(data.activePointStartedAt).startsWith(monthKey)
+  const activeSession = data.activePointStartedAt
     ? [{
         ticketId: null,
         startedAt: data.activePointStartedAt,
@@ -81,36 +97,45 @@ function getMonthlySessions(data, monthKey) {
         corrected: false,
         source: data.activePointSource === 'fivem_metropole_auto' ? 'FiveM automatico' : 'Ponto manual',
         serverName: data.activePointServerName || null,
+        reason: data.activePointReason || null,
+        activityName: data.activePointActivityName || null,
+        activityDetails: data.activePointActivityDetails || null,
+        activityState: data.activePointActivityState || null,
       }]
     : [];
 
-  return [...closedSessions, ...activeSession]
-    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
-    .map((session, index) => ({
-      ...session,
-      index: index + 1,
-      ticketId: session.ticketId || `PONTO-${String(index + 1).padStart(3, '0')}`,
-    }));
+  return normalizeSessions([...closedSessions, ...activeSession]);
+}
+
+function getMonthlySessions(data, monthKey) {
+  return normalizeSessions(getAllSessions(data)
+    .filter((session) => String(session.startedAt || '').startsWith(monthKey)));
 }
 
 function getMonthlySummary(sessions) {
   const closed = sessions.filter((session) => session.closedAt);
-  const totalMs = closed.reduce((sum, session) => sum + session.durationMs, 0);
-  const averageMs = closed.length ? totalMs / closed.length : 0;
-  const smallestMs = closed.length ? Math.min(...closed.map((session) => session.durationMs)) : 0;
+  const open = sessions.filter((session) => !session.closedAt);
+  const totalMs = sessions.reduce((sum, session) => sum + session.durationMs, 0);
+  const averageMs = sessions.length ? totalMs / sessions.length : 0;
+  const smallestMs = sessions.length ? Math.min(...sessions.map((session) => session.durationMs)) : 0;
 
   return {
     totalPoints: sessions.length,
     closedPoints: closed.length,
+    openPoints: open.length,
     totalMs,
     averageMs,
     smallestMs,
   };
 }
 
+function getPointDaysFromSessions(sessions) {
+  return new Set(sessions.filter((session) => session.startedAt).map((session) => session.startedAt.slice(0, 10))).size;
+}
+
 function buildHistoryRows(sessions) {
   if (!sessions.length) {
-    return '<tr><td colspan="7" class="empty">Nenhum ponto registrado neste mês. A folha deste usuário está zerada.</td></tr>';
+    return '<tr><td colspan="8" class="empty">Nenhum ponto registrado neste mês. A folha deste usuário está zerada.</td></tr>';
   }
 
   return sessions.map((session) => `
@@ -121,6 +146,7 @@ function buildHistoryRows(sessions) {
       <td>${escapeHtml(formatDuration(session.durationMs))}</td>
       <td>${escapeHtml(session.ticketId)}</td>
       <td>${escapeHtml(session.closedBy)}</td>
+      <td>${escapeHtml([session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A')}</td>
       <td><span class="badge ${session.status === 'ABERTO' ? 'open' : 'closed'}">${escapeHtml(session.status)}</span>${session.corrected ? '<span class="tag">corrigido</span>' : ''}${session.source === 'FiveM automatico' ? '<span class="tag">FiveM</span>' : ''}</td>
     </tr>
   `).join('');
@@ -177,6 +203,11 @@ function buildTimelineRows({ data, sessions, generatedAt }) {
   `).join('');
 }
 
+function formatProfileStatus(profile) {
+  if (!profile?.approvedAt) return 'Sem cadastro no /set';
+  return profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set';
+}
+
 function getInitials(name) {
   const parts = String(name || 'Vortex').trim().split(/\s+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'VX';
@@ -186,8 +217,11 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
   const generatedAt = new Date();
   const monthKey = getMonthKey(generatedAt);
   const monthLabel = getMonthLabel(monthKey);
+  const profile = getUserProfile(guild.id, target.id);
+  const allSessions = getAllSessions(data);
   const sessions = getMonthlySessions(data, monthKey);
   const summary = getMonthlySummary(sessions);
+  const allSummary = getMonthlySummary(allSessions);
   const userName = member?.displayName || data.userName || target.username;
   const roleName = member?.roles?.highest?.name || data.role || 'Membro';
   const activeMs = data.activePointStartedAt
@@ -196,6 +230,8 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
   const status = data.activePointStartedAt ? 'ABERTO' : 'FECHADO';
   const lastSession = sessions[sessions.length - 1] || null;
   const ticketLabel = lastSession?.ticketId || 'Folha do Mes';
+  const effectiveTotalMs = getEffectiveTotalMs(data);
+  const totalDays = getPointDaysFromSessions(allSessions);
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -291,7 +327,7 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
       padding: 24px 0 36px;
     }
 
-    .profile, section, .card {
+    .profile, section, .card, .notice {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -358,9 +394,16 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
       font-family: 'Share Tech Mono', monospace;
     }
 
+    .notice {
+      padding: 14px 18px;
+      border-color: ${profile?.approvedAt ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.45)'};
+      background: ${profile?.approvedAt ? 'rgba(34, 197, 94, 0.07)' : 'rgba(239, 68, 68, 0.08)'};
+      color: var(--text);
+    }
+
     section { overflow: hidden; }
     .table-scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; }
     th, td { padding: 12px 14px; border-bottom: 1px solid var(--line-soft); text-align: left; }
     th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
     td { font-family: 'Share Tech Mono', monospace; font-size: 13px; }
@@ -430,11 +473,17 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
     <div class="profile">
       <div class="avatar">${escapeHtml(getInitials(userName))}</div>
       <div>
-        <h2>Perfil do Colaborador</h2>
+        <h2>Dados do Usuario</h2>
         <div class="meta">
           <div><span class="label">Nome Discord</span><span class="value">${escapeHtml(userName)}</span></div>
           <div><span class="label">ID Discord</span><span class="value">${escapeHtml(target.id)}</span></div>
           <div><span class="label">Cargo/Role</span><span class="value">${escapeHtml(roleName)}</span></div>
+          <div><span class="label">Cadastro</span><span class="value">${escapeHtml(formatProfileStatus(profile))}</span></div>
+          <div><span class="label">Nome em game</span><span class="value">${escapeHtml(profile?.nomeGame || data.userName || 'N/A')}</span></div>
+          <div><span class="label">ID em game</span><span class="value">${escapeHtml(profile?.idGame || data.registro || 'N/A')}</span></div>
+          <div><span class="label">Numero</span><span class="value">${escapeHtml(profile?.numeroGame || 'N/A')}</span></div>
+          <div><span class="label">Nivel</span><span class="value">${escapeHtml(profile?.nivelGame || 'N/A')}</span></div>
+          <div><span class="label">Call/Canal</span><span class="value">${profile?.callChannelId ? `#${escapeHtml(profile.callChannelId)}` : 'N/A'}</span></div>
           <div><span class="label">Mes de referencia</span><span class="value">${escapeHtml(monthLabel)}</span></div>
           <div><span class="label">Ultimo ponto</span><span class="value">${escapeHtml(formatDate(data.lastPointCloseAt || data.lastPointOpenAt))}</span></div>
           <div><span class="label">Quem fechou ultimo</span><span class="value">${escapeHtml(lastSession?.closedBy || 'N/A')}</span></div>
@@ -442,11 +491,23 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
       </div>
     </div>
 
+    <div class="notice">
+      <strong>Status do cadastro:</strong> ${escapeHtml(formatProfileStatus(profile))}
+      ${profile?.lastProfileUpdateAt ? ` | Ultima atualizacao do perfil: ${escapeHtml(formatDate(profile.lastProfileUpdateAt))}` : ''}
+    </div>
+
     <div class="cards">
-      <div class="card"><span class="label">Total de pontos</span><strong>${escapeHtml(summary.totalPoints)}</strong></div>
-      <div class="card"><span class="label">Tempo acumulado</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
-      <div class="card"><span class="label">Tempo medio</span><strong>${escapeHtml(formatDuration(summary.averageMs))}</strong></div>
-      <div class="card"><span class="label">Menor ponto</span><strong>${escapeHtml(formatDuration(summary.smallestMs))}</strong></div>
+      <div class="card"><span class="label">Total geral</span><strong>${escapeHtml(allSummary.totalPoints)}</strong></div>
+      <div class="card"><span class="label">Tempo geral</span><strong>${escapeHtml(formatDuration(effectiveTotalMs))}</strong></div>
+      <div class="card"><span class="label">Dias com ponto</span><strong>${escapeHtml(totalDays)}</strong></div>
+      <div class="card"><span class="label">Status atual</span><strong>${escapeHtml(status)}</strong></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><span class="label">Pontos no mes</span><strong>${escapeHtml(summary.totalPoints)}</strong></div>
+      <div class="card"><span class="label">Fechados no mes</span><strong>${escapeHtml(summary.closedPoints)}</strong></div>
+      <div class="card"><span class="label">Tempo no mes</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
+      <div class="card"><span class="label">Media do mes</span><strong>${escapeHtml(formatDuration(summary.averageMs))}</strong></div>
     </div>
 
     <section>
@@ -461,6 +522,7 @@ function createPointTranscriptHtml({ guild, target, member, data }) {
               <th>Duração</th>
               <th>Ticket</th>
               <th>Responsavel</th>
+              <th>Origem</th>
               <th>Status</th>
             </tr>
           </thead>
