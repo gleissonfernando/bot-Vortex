@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { ALERT_DM_USER_IDS, sendUpdateLog } = require('../utils/notifications');
 const { formatDate } = require('../utils/pontoManager');
+const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 
 module.exports = {
@@ -51,6 +52,14 @@ module.exports = {
             );
         } catch (error) {
             console.error('Erro ao sincronizar acesso às calls ocultas:', error);
+        }
+
+        try {
+            await Promise.allSettled(
+                client.guilds.cache.map((guild) => syncTextChannelAccess(guild))
+            );
+        } catch (error) {
+            console.error('Erro ao sincronizar acesso aos canais de texto:', error);
         }
     },
 };
