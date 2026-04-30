@@ -1,10 +1,10 @@
 const {
     PermissionFlagsBits,
     ChannelType,
-    PermissionsBitField
 } = require('discord.js');
 const { createLimitModal, createUserIdModal } = require('./callHelpers');
 const { sendStaffLog, notifyError } = require('../utils/notifications');
+const { allowVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 
 // In-memory storage for active calls
 // { channelId: { ownerId: string, roleId: string, bannedUsers: string[] } }
@@ -48,9 +48,15 @@ module.exports = {
                         {
                             id: user.id,
                             allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels],
+                        },
+                        {
+                            id: client.user.id,
+                            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels],
                         }
                     ],
                 });
+
+                await allowVoiceChannelAccess(channel, guild);
 
                 activeCalls.set(channel.id, {
                     ownerId: user.id,

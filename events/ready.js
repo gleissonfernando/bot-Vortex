@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { ALERT_DM_USER_IDS, sendUpdateLog } = require('../utils/notifications');
 const { formatDate } = require('../utils/pontoManager');
+const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 
 module.exports = {
     name: Events.ClientReady,
@@ -42,6 +43,14 @@ module.exports = {
             console.log('✅ DMs de inicialização enviadas para administradores de alerta');
         } catch (error) {
             console.error('Erro ao enviar DM de inicialização:', error);
+        }
+
+        try {
+            await Promise.allSettled(
+                client.guilds.cache.map((guild) => syncVoiceChannelAccess(guild))
+            );
+        } catch (error) {
+            console.error('Erro ao sincronizar acesso às calls ocultas:', error);
         }
     },
 };
