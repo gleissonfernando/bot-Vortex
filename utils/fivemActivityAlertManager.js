@@ -20,6 +20,13 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function normalizeComparableText(value) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isFiveMActivity(activity) {
   if (!activity || activity.type !== ActivityType.Playing) return false;
   const haystack = [
@@ -51,10 +58,10 @@ function activityText(activity) {
 
 function isTargetFiveMActivity(activity) {
   if (!isFiveMActivity(activity)) return false;
-  const haystack = activityText(activity);
-  const normalizedTarget = normalizeText(TARGET_SERVER_NAME);
+  const haystack = normalizeComparableText(activityText(activity));
+  const normalizedTarget = normalizeComparableText(TARGET_SERVER_NAME);
   return haystack.includes(normalizedTarget)
-    || TARGET_SERVER_ALIASES.some((alias) => haystack.includes(alias));
+    || TARGET_SERVER_ALIASES.some((alias) => haystack.includes(normalizeComparableText(alias)));
 }
 
 function getTargetFiveMActivity(presence) {
@@ -290,6 +297,7 @@ async function scanCurrentFiveMActivities(client) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
+    await guild.members.fetch({ withPresences: true }).catch(() => null);
     const presences = guild.presences?.cache;
     if (!presences?.size) continue;
 
