@@ -10,6 +10,16 @@ function buildPointSiteUrl(guildId, userId) {
   return url.toString();
 }
 
+function buildWeeklyPointSiteUrl(guildId, userId = null) {
+  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
+  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
+  const url = new URL('/pontos', baseUrl);
+  url.searchParams.set('guildId', guildId);
+  if (userId) url.searchParams.set('userId', userId);
+  if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
+  return url.toString();
+}
+
 function getSessionStartedAt(session) {
   return session.startedAt || session.abertura || session.openedAt || null;
 }
@@ -277,6 +287,7 @@ function buildPointSiteHtml({ userId, apiPath }) {
 
 module.exports = {
   buildPointSiteUrl,
+  buildWeeklyPointSiteUrl,
   buildPointSiteHtml,
   buildPointSitePayload,
   buildPointUsersPayload,

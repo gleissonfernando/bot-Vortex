@@ -96,6 +96,8 @@
   .total-label { font-size:13px; color:var(--muted); font-weight:700; letter-spacing:1px; text-transform:uppercase; }
   .total-val { font-family:'JetBrains Mono', monospace; font-size:30px; font-weight:500; color:var(--accent2); }
   .total-sessoes { font-size:13px; color:var(--muted); margin-top:3px; }
+  .total-sessoes a { color:#aeb5ff; text-decoration:none; font-weight:700; }
+  .total-sessoes a:hover { text-decoration:underline; }
   @media (max-width: 900px) {
     .week-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .profile-card { align-items:flex-start; flex-wrap:wrap; }
@@ -172,9 +174,19 @@ const DIAS_CORES = {
 };
 const FALLBACK_AVATAR = 'https://cdn.discordapp.com/embed/avatars/0.png';
 const query = new URLSearchParams(window.location.search);
+const initialUserId = query.get('userId');
 let usuarioAtual = null;
 
 function apiUrl(path) {
+  const params = new URLSearchParams();
+  for (const key of ['guildId', 'token']) {
+    const value = query.get(key);
+    if (value) params.set(key, value);
+  }
+  const qs = params.toString();
+  return path + (qs ? '?' + qs : '');
+}
+function siteUrl(path) {
   const params = new URLSearchParams();
   for (const key of ['guildId', 'token']) {
     const value = query.get(key);
@@ -236,6 +248,7 @@ async function carregarUsuarios() {
     }
 
     grid.innerHTML = '';
+    let initialButton = null;
     lista.forEach((u) => {
       const btn = document.createElement('button');
       btn.className = 'user-btn';
@@ -247,7 +260,16 @@ async function carregarUsuarios() {
       `;
       btn.addEventListener('click', () => selecionarUsuario(u.id, btn));
       grid.appendChild(btn);
+      if (initialUserId && u.id === initialUserId) initialButton = btn;
     });
+
+    if (initialUserId && !usuarioAtual) {
+      if (initialButton) {
+        await selecionarUsuario(initialUserId, initialButton);
+      } else {
+        await selecionarUsuario(initialUserId, null);
+      }
+    }
   } catch(e) {
     document.getElementById('user-grid').innerHTML =
       '<div style="color:var(--danger);font-size:13px;">Erro ao carregar usuários.</div>';
@@ -255,7 +277,7 @@ async function carregarUsuarios() {
 }
 async function selecionarUsuario(id, btnEl) {
   document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('active'));
-  btnEl.classList.add('active');
+  if (btnEl) btnEl.classList.add('active');
 
   try {
     const res = await fetch(apiUrl(`/api/usuario/${id}`), { cache: 'no-store' });
@@ -274,6 +296,7 @@ function renderPerfil(dados) {
   document.getElementById('pf-avatar').src = dados.avatar || FALLBACK_AVATAR;
   document.getElementById('pf-name').textContent = dados.username;
   document.getElementById('pf-id').textContent = `ID: ${dados.id}`;
+  const fullUrl = siteUrl(`/ponto/${dados.id}`);
 
   const sessoesNaSemana = (dados.sessoes || []).filter((s) => {
     const d = new Date(s.entrou);
@@ -291,8 +314,8 @@ function renderPerfil(dados) {
   document.getElementById('pf-dias').textContent = diasAtivos;
   document.getElementById('pf-sessoes').textContent = sessoesNaSemana.length;
   document.getElementById('total-horas-txt').textContent = fmtHora(totalMin);
-  document.getElementById('total-sessoes-txt').textContent =
-    `${sessoesNaSemana.length} sessão${sessoesNaSemana.length !== 1 ? 'ões' : ''} registrada${sessoesNaSemana.length !== 1 ? 's' : ''}`;
+  document.getElementById('total-sessoes-txt').innerHTML =
+    `${sessoesNaSemana.length} sessão${sessoesNaSemana.length !== 1 ? 'ões' : ''} registrada${sessoesNaSemana.length !== 1 ? 's' : ''} | <a href="${escapeHtml(fullUrl)}">Histórico completo</a>`;
 
   const grid = document.getElementById('week-grid');
   grid.innerHTML = '';
