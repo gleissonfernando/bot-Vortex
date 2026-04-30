@@ -17,7 +17,7 @@ const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
 const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
-const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
+const { buildPointSiteHtml, buildPointSitePayload, buildPointUsersPayload, buildPointWeeklyUserPayload } = require('./utils/pointSite');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
@@ -109,6 +109,49 @@ app.get('/api/ponto/:id', async (req, res) => {
     return res.json(payload);
 });
 
+app.get('/api/usuarios', async (req, res) => {
+    if (!isPointSiteAuthorized(req)) {
+        return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
+    }
+
+    const guildId = getPointSiteGuildId(req);
+    if (!guildId) {
+        return res.status(404).json({ ok: false, error: 'Servidor nao encontrado.' });
+    }
+
+    const users = await buildPointUsersPayload({ client, guildId }).catch((error) => {
+        logger.error('Erro ao listar usuarios da folha de ponto:', error);
+        return null;
+    });
+
+    if (!users) return res.status(500).json({ ok: false, error: 'Erro ao listar usuarios.' });
+    return res.json(users);
+});
+
+app.get('/api/usuario/:id', async (req, res) => {
+    if (!isPointSiteAuthorized(req)) {
+        return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
+    }
+
+    const userId = String(req.params.id || '').trim();
+    if (!/^\d{15,25}$/.test(userId)) {
+        return res.status(400).json({ erro: 'ID de usuario invalido.' });
+    }
+
+    const guildId = getPointSiteGuildId(req);
+    if (!guildId) {
+        return res.status(404).json({ erro: 'Servidor nao encontrado.' });
+    }
+
+    const payload = await buildPointWeeklyUserPayload({ client, guildId, userId }).catch((error) => {
+        logger.error('Erro ao carregar usuario da folha de ponto:', error);
+        return null;
+    });
+
+    if (!payload) return res.status(500).json({ erro: 'Erro ao carregar usuario.' });
+    return res.json(payload);
+});
+
 app.get('/ponto/:id', (req, res) => {
     if (!isPointSiteAuthorized(req)) {
         return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
@@ -133,6 +176,28 @@ app.get('/ponto/:id', (req, res) => {
         ].join('; ')
     );
     return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
+});
+
+app.get('/pontos', (req, res) => {
+    if (!isPointSiteAuthorized(req)) {
+        return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+        'Content-Security-Policy',
+        [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "font-src 'self' https://fonts.gstatic.com",
+            "img-src 'self' https: data:",
+            "connect-src 'self'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+        ].join('; ')
+    );
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get(['/', '/termos', '/privacidade'], (req, res) => {

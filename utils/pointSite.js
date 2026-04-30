@@ -1,4 +1,4 @@
-const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDate, formatDuration } = require('./pontoManager');
+const { getUserPoint, listGuildPoints, getEffectiveTotalMs, getPointDays, formatDate, formatDuration } = require('./pontoManager');
 const { getUserProfile } = require('./profileManager');
 
 function buildPointSiteUrl(guildId, userId) {
@@ -156,6 +156,56 @@ async function buildPointSitePayload({ client, guildId, userId }) {
   };
 }
 
+async function resolvePointUser({ client, guild, guildId, userId, point }) {
+  const profile = getUserProfile(guildId, userId);
+  const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+  const user = member?.user || await client.users.fetch(userId).catch(() => null);
+  const username = member?.displayName || profile?.displayName || point.userName || user?.username || userId;
+
+  return {
+    id: userId,
+    username,
+    avatar: user?.displayAvatarURL?.({ dynamic: true, size: 128 }) || profile?.avatarUrl || '',
+  };
+}
+
+async function buildPointUsersPayload({ client, guildId }) {
+  const points = await listGuildPoints(guildId);
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const users = [];
+
+  for (const point of points) {
+    const userId = String(point.userId || '').trim();
+    if (!userId) continue;
+    users.push(await resolvePointUser({ client, guild, guildId, userId, point }));
+  }
+
+  users.sort((a, b) => a.username.localeCompare(b.username, 'pt-BR', { sensitivity: 'base' }));
+  return users;
+}
+
+async function buildPointWeeklyUserPayload({ client, guildId, userId }) {
+  const payload = await buildPointSitePayload({ client, guildId, userId });
+  const sessions = payload.sessions
+    .filter((session) => session.startedAt)
+    .map((session) => ({
+      entrou: session.startedAt,
+      saiu: session.closedAt || new Date().toISOString(),
+      duracaoMin: Math.max(0, Math.round(Number(session.durationMs || 0) / 60000)),
+      status: session.status,
+      origem: session.origin,
+    }));
+
+  return {
+    id: userId,
+    username: payload.user.displayName || payload.user.username || userId,
+    avatar: payload.user.avatarUrl || '',
+    sessoes: sessions,
+    ponto: payload.point,
+    resumo: payload.summary,
+  };
+}
+
 function buildPointSiteHtml({ userId, apiPath }) {
   const safeUserId = String(userId).replace(/[^0-9]/g, '');
   const safeApiPath = String(apiPath || `/api/ponto/${safeUserId}`).replace(/</g, '%3C');
@@ -229,4 +279,6 @@ module.exports = {
   buildPointSiteUrl,
   buildPointSiteHtml,
   buildPointSitePayload,
+  buildPointUsersPayload,
+  buildPointWeeklyUserPayload,
 };
