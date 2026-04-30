@@ -25,7 +25,7 @@ const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualPr
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { buildWeeklyPointSiteUrl } = require('../../utils/pointSite');
+const { buildPointSiteUrl } = require('../../utils/pointSite');
 const {
   ALERT_CHANNEL_ID,
   buildLiveTermsUrl,
@@ -371,7 +371,7 @@ module.exports = {
         return interaction.editReply({ content: `❌ <@${userId}> ainda não possui ponto registrado.` });
       }
 
-      const pointSiteUrl = buildWeeklyPointSiteUrl(interaction.guild.id, userId);
+      const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, userId);
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setLabel('Abrir folha no navegador')

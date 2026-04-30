@@ -1,7 +1,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { isGerencia } = require('../../utils/permissions');
-const { buildWeeklyPointSiteUrl } = require('../../utils/pointSite');
+const { buildPointSiteUrl } = require('../../utils/pointSite');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,7 +26,7 @@ module.exports = {
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const data = await getUserPoint(interaction.guild.id, target.id);
     const activeMs = data.activePointStartedAt ? Date.now() - new Date(data.activePointStartedAt).getTime() : 0;
-    const pointSiteUrl = buildWeeklyPointSiteUrl(interaction.guild.id, target.id);
+    const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, target.id);
 
     const embed = new EmbedBuilder()
       .setColor('#5865F2')

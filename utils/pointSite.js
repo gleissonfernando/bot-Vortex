@@ -1,4 +1,4 @@
-const { getUserPoint, listGuildPoints, getEffectiveTotalMs, getPointDays, formatDate, formatDuration } = require('./pontoManager');
+const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDate, formatDuration } = require('./pontoManager');
 const { getUserProfile } = require('./profileManager');
 
 function buildPointSiteUrl(guildId, userId) {
@@ -6,16 +6,6 @@ function buildPointSiteUrl(guildId, userId) {
   const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
   const url = new URL(`/ponto/${userId}`, baseUrl);
   url.searchParams.set('guildId', guildId);
-  if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
-  return url.toString();
-}
-
-function buildWeeklyPointSiteUrl(guildId, userId = null) {
-  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
-  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
-  const url = new URL('/pontos', baseUrl);
-  url.searchParams.set('guildId', guildId);
-  if (userId) url.searchParams.set('userId', userId);
   if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
   return url.toString();
 }
@@ -166,56 +156,6 @@ async function buildPointSitePayload({ client, guildId, userId }) {
   };
 }
 
-async function resolvePointUser({ client, guild, guildId, userId, point }) {
-  const profile = getUserProfile(guildId, userId);
-  const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-  const user = member?.user || await client.users.fetch(userId).catch(() => null);
-  const username = member?.displayName || profile?.displayName || point.userName || user?.username || userId;
-
-  return {
-    id: userId,
-    username,
-    avatar: user?.displayAvatarURL?.({ dynamic: true, size: 128 }) || profile?.avatarUrl || '',
-  };
-}
-
-async function buildPointUsersPayload({ client, guildId }) {
-  const points = await listGuildPoints(guildId);
-  const guild = await client.guilds.fetch(guildId).catch(() => null);
-  const users = [];
-
-  for (const point of points) {
-    const userId = String(point.userId || '').trim();
-    if (!userId) continue;
-    users.push(await resolvePointUser({ client, guild, guildId, userId, point }));
-  }
-
-  users.sort((a, b) => a.username.localeCompare(b.username, 'pt-BR', { sensitivity: 'base' }));
-  return users;
-}
-
-async function buildPointWeeklyUserPayload({ client, guildId, userId }) {
-  const payload = await buildPointSitePayload({ client, guildId, userId });
-  const sessions = payload.sessions
-    .filter((session) => session.startedAt)
-    .map((session) => ({
-      entrou: session.startedAt,
-      saiu: session.closedAt || new Date().toISOString(),
-      duracaoMin: Math.max(0, Math.round(Number(session.durationMs || 0) / 60000)),
-      status: session.status,
-      origem: session.origin,
-    }));
-
-  return {
-    id: userId,
-    username: payload.user.displayName || payload.user.username || userId,
-    avatar: payload.user.avatarUrl || '',
-    sessoes: sessions,
-    ponto: payload.point,
-    resumo: payload.summary,
-  };
-}
-
 function buildPointSiteHtml({ userId, apiPath }) {
   const safeUserId = String(userId).replace(/[^0-9]/g, '');
   const safeApiPath = String(apiPath || `/api/ponto/${safeUserId}`).replace(/</g, '%3C');
@@ -287,9 +227,6 @@ function buildPointSiteHtml({ userId, apiPath }) {
 
 module.exports = {
   buildPointSiteUrl,
-  buildWeeklyPointSiteUrl,
   buildPointSiteHtml,
   buildPointSitePayload,
-  buildPointUsersPayload,
-  buildPointWeeklyUserPayload,
 };
