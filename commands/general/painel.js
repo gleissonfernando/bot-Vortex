@@ -25,7 +25,7 @@ const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualPr
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { buildPointSiteUrl } = require('../../utils/pointSite');
+const { createPointTranscriptAttachment, createPointTranscriptTextAttachment } = require('../../utils/pontoTranscript');
 const {
   ALERT_CHANNEL_ID,
   buildLiveTermsUrl,
@@ -371,17 +371,23 @@ module.exports = {
         return interaction.editReply({ content: `❌ <@${userId}> ainda não possui ponto registrado.` });
       }
 
-      const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, userId);
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('Abrir folha no navegador')
-          .setStyle(ButtonStyle.Link)
-          .setURL(pointSiteUrl)
-      );
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
+      const files = [
+        createPointTranscriptAttachment({ guild: interaction.guild, target, member, data }),
+        createPointTranscriptTextAttachment({ guild: interaction.guild, target, member, data }),
+      ];
+
+      sendVortexLog(interaction.client, {
+        title: 'Folha de Ponto Gerada',
+        description: `A folha/transcript de <@${userId}> (${userId}) foi gerada por <@${interaction.user.id}> (${interaction.user.id}).`,
+        color: '#7000FF',
+        type: 'PONTO',
+        userId: interaction.user.id,
+      }).catch(() => {});
 
       return interaction.editReply({
-        content: `✅ Folha de ponto de <@${userId}> gerada em site:\n${pointSiteUrl}`,
-        components: [row],
+        content: `✅ Folha/transcript de <@${userId}> gerada em arquivo.`,
+        files,
         allowedMentions: { users: [userId] },
       });
     }
