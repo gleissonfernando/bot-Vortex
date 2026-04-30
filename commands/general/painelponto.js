@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
-const { createPointTranscriptAttachment } = require('../../utils/pontoTranscript');
+const { createPointTranscriptTextAttachment } = require('../../utils/pontoTranscript');
 const { isGerencia } = require('../../utils/permissions');
 
 module.exports = {
@@ -26,7 +26,7 @@ module.exports = {
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const data = await getUserPoint(interaction.guild.id, target.id);
     const activeMs = data.activePointStartedAt ? Date.now() - new Date(data.activePointStartedAt).getTime() : 0;
-    const transcript = createPointTranscriptAttachment({
+    const transcript = createPointTranscriptTextAttachment({
       guild: interaction.guild,
       target,
       member,
@@ -37,7 +37,7 @@ module.exports = {
       .setColor('#5865F2')
       .setTitle('Painel de Ponto Vortex')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setDescription('Transcript HTML gerado com a folha de ponto do usuário mencionado.')
+      .setDescription('Folha de ponto individual gerada em arquivo TXT.')
       .addFields(
         { name: 'Usuário Discord', value: `<@${target.id}>`, inline: true },
         { name: 'Discord ID', value: `\`${target.id}\``, inline: true },

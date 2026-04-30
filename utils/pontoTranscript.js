@@ -213,6 +213,117 @@ function getInitials(name) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'VX';
 }
 
+function cleanText(value, fallback = 'N/A') {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function buildTextLine(label, value) {
+  return `${label.padEnd(24, ' ')}: ${cleanText(value)}`;
+}
+
+function buildTextTable(headers, rows) {
+  const widths = headers.map((header, index) => Math.max(
+    header.length,
+    ...rows.map((row) => cleanText(row[index], '').length)
+  ));
+  const formatRow = (row) => row.map((cell, index) => cleanText(cell, '').padEnd(widths[index], ' ')).join(' | ');
+  return [
+    formatRow(headers),
+    widths.map((width) => '-'.repeat(width)).join('-|-'),
+    ...(rows.length ? rows.map(formatRow) : ['Nenhum registro encontrado.']),
+  ].join('\n');
+}
+
+function createPointTranscriptText({ guild, target, member, data }) {
+  const generatedAt = new Date();
+  const monthKey = getMonthKey(generatedAt);
+  const monthLabel = getMonthLabel(monthKey);
+  const profile = getUserProfile(guild.id, target.id);
+  const allSessions = getAllSessions(data);
+  const sessions = getMonthlySessions(data, monthKey);
+  const summary = getMonthlySummary(sessions);
+  const allSummary = getMonthlySummary(allSessions);
+  const userName = member?.displayName || data.userName || target.username;
+  const roleName = member?.roles?.highest?.name || data.role || 'Membro';
+  const effectiveTotalMs = getEffectiveTotalMs(data);
+  const totalDays = getPointDaysFromSessions(allSessions);
+  const status = data.activePointStartedAt ? 'ABERTO' : 'FECHADO';
+  const activeMs = data.activePointStartedAt
+    ? Math.max(0, generatedAt.getTime() - new Date(data.activePointStartedAt).getTime())
+    : 0;
+
+  const monthRows = sessions.map((session) => [
+    `#${session.index}`,
+    formatDate(session.startedAt),
+    session.closedAt ? formatDate(session.closedAt) : 'Em andamento',
+    formatDuration(session.durationMs),
+    session.status,
+    [session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A',
+    session.closedBy,
+  ]);
+
+  const allRows = allSessions.slice(-25).map((session) => [
+    `#${session.index}`,
+    formatDate(session.startedAt),
+    session.closedAt ? formatDate(session.closedAt) : 'Em andamento',
+    formatDuration(session.durationMs),
+    session.status,
+    [session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A',
+  ]);
+
+  return [
+    `FOLHA DE PONTO - ${guild.name}`,
+    '='.repeat(72),
+    buildTextLine('Gerado em', formatDate(generatedAt)),
+    buildTextLine('Mes de referencia', monthLabel),
+    buildTextLine('Documento', 'Transcript individual em texto'),
+    '',
+    'DADOS DO USUARIO',
+    '-'.repeat(72),
+    buildTextLine('Usuario Discord', `${userName} (${target.id})`),
+    buildTextLine('Tag Discord', target.tag || target.username),
+    buildTextLine('Cargo', roleName),
+    buildTextLine('Cadastro', formatProfileStatus(profile)),
+    buildTextLine('Nome em game', profile?.nomeGame || data.userName),
+    buildTextLine('ID em game', profile?.idGame || data.registro),
+    buildTextLine('Numero', profile?.numeroGame),
+    buildTextLine('Nivel', profile?.nivelGame),
+    buildTextLine('Call/Canal', profile?.callChannelId ? `#${profile.callChannelId}` : 'N/A'),
+    buildTextLine('Entrou no Discord', member?.joinedAt ? formatDate(member.joinedAt) : 'N/A'),
+    '',
+    'RESUMO GERAL',
+    '-'.repeat(72),
+    buildTextLine('Status atual', status),
+    buildTextLine('Ponto aberto ha', data.activePointStartedAt ? formatDuration(activeMs) : 'N/A'),
+    buildTextLine('Total geral', allSummary.totalPoints),
+    buildTextLine('Pontos fechados', allSummary.closedPoints),
+    buildTextLine('Dias com ponto', totalDays),
+    buildTextLine('Tempo total', formatDuration(effectiveTotalMs)),
+    buildTextLine('Primeiro ponto', formatDate(data.firstPointAt)),
+    buildTextLine('Ultima abertura', formatDate(data.lastPointOpenAt)),
+    buildTextLine('Ultimo fechamento', formatDate(data.lastPointCloseAt)),
+    '',
+    'RESUMO DO MES',
+    '-'.repeat(72),
+    buildTextLine('Pontos no mes', summary.totalPoints),
+    buildTextLine('Fechados no mes', summary.closedPoints),
+    buildTextLine('Abertos no mes', summary.openPoints),
+    buildTextLine('Tempo no mes', formatDuration(summary.totalMs)),
+    buildTextLine('Media no mes', formatDuration(summary.averageMs)),
+    '',
+    'HISTORICO DO MES',
+    '-'.repeat(72),
+    buildTextTable(['N.', 'Abertura', 'Fechamento', 'Duracao', 'Status', 'Origem', 'Responsavel'], monthRows),
+    '',
+    'ULTIMOS 25 PONTOS',
+    '-'.repeat(72),
+    buildTextTable(['N.', 'Abertura', 'Fechamento', 'Duracao', 'Status', 'Origem'], allRows),
+    '',
+    'Observacao: este arquivo e gerado direto dos registros JSON do sistema de ponto.',
+  ].join('\n');
+}
+
 function createPointTranscriptHtml({ guild, target, member, data }) {
   const generatedAt = new Date();
   const monthKey = getMonthKey(generatedAt);
@@ -588,7 +699,18 @@ function createPointTranscriptAttachment({ guild, target, member, data }) {
   });
 }
 
+function createPointTranscriptTextAttachment({ guild, target, member, data }) {
+  const text = createPointTranscriptText({ guild, target, member, data });
+  const timestamp = new Date().toISOString().replace(/:/g, '-');
+
+  return new AttachmentBuilder(Buffer.from(text, 'utf8'), {
+    name: `${target.id}_${timestamp}_folha-ponto.txt`,
+  });
+}
+
 module.exports = {
   createPointTranscriptAttachment,
   createPointTranscriptHtml,
+  createPointTranscriptText,
+  createPointTranscriptTextAttachment,
 };
