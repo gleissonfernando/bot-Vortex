@@ -17,6 +17,7 @@ const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
 const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
+const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 
 const app = express();
 const API_PORT = Number(process.env.PORT || process.env.API_PORT || 80);
@@ -58,6 +59,67 @@ app.get('/api/site/status', (req, res) => {
         uptimeSeconds: Math.floor(process.uptime()),
         liveAlertChannelId: '1202251715865489459',
     });
+});
+
+function getPointSiteGuildId(req) {
+    const requestedGuildId = String(req.query.guildId || '').trim();
+    if (/^\d{15,25}$/.test(requestedGuildId)) return requestedGuildId;
+    if (/^\d{15,25}$/.test(config.guildId || '')) return String(config.guildId);
+    return client.guilds.cache.first()?.id || null;
+}
+
+function isPointSiteAuthorized(req) {
+    const configuredToken = String(process.env.POINT_SITE_TOKEN || '').trim();
+    if (!configuredToken) return true;
+    const receivedToken = String(req.query.token || req.headers['x-point-site-token'] || '').trim();
+    return receivedToken && receivedToken === configuredToken;
+}
+
+function buildPointApiPath(req, userId) {
+    const params = new URLSearchParams();
+    const guildId = String(req.query.guildId || '').trim();
+    const token = String(req.query.token || '').trim();
+    if (guildId) params.set('guildId', guildId);
+    if (token) params.set('token', token);
+    const query = params.toString();
+    return `/api/ponto/${userId}${query ? `?${query}` : ''}`;
+}
+
+app.get('/api/ponto/:id', async (req, res) => {
+    if (!isPointSiteAuthorized(req)) {
+        return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
+    }
+
+    const userId = String(req.params.id || '').trim();
+    if (!/^\d{15,25}$/.test(userId)) {
+        return res.status(400).json({ ok: false, error: 'ID de usuario invalido.' });
+    }
+
+    const guildId = getPointSiteGuildId(req);
+    if (!guildId) {
+        return res.status(404).json({ ok: false, error: 'Servidor nao encontrado.' });
+    }
+
+    const payload = await buildPointSitePayload({ client, guildId, userId }).catch((error) => {
+        logger.error('Erro ao carregar folha de ponto do site:', error);
+        return null;
+    });
+
+    if (!payload) return res.status(500).json({ ok: false, error: 'Erro ao carregar folha de ponto.' });
+    return res.json(payload);
+});
+
+app.get('/ponto/:id', (req, res) => {
+    if (!isPointSiteAuthorized(req)) {
+        return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
+    }
+
+    const userId = String(req.params.id || '').trim();
+    if (!/^\d{15,25}$/.test(userId)) {
+        return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>ID invalido</title><body>ID de usuario invalido.</body>');
+    }
+
+    return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
 });
 
 app.get(['/', '/termos', '/privacidade'], (req, res) => {
