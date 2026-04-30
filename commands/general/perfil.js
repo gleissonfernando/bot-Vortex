@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
 const {
   getUserProfile,
   updateProfileLink,
@@ -6,6 +6,26 @@ const {
   buildProfileEmbed,
 } = require('../../utils/profileManager');
 const { hasVortexLevel } = require('../../utils/permissions');
+
+async function sendMissingProfileDm(user, guild) {
+  const embed = new EmbedBuilder()
+    .setColor('#ED4245')
+    .setTitle('Cadastro pendente')
+    .setDescription([
+      `Você ainda não possui cadastro aprovado no **${guild.name}**.`,
+      '',
+      'Solicite seu set usando `/set` para liberar seu perfil.',
+      'Depois que o set for aprovado, seus dados poderão ser consultados pelo `/perfil`.',
+    ].join('\n'))
+    .setFooter({ text: 'Vortex - Sistema de Set' })
+    .setTimestamp();
+
+  return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
+}
+
+function isMissingProfileResult(result) {
+  return String(result?.message || '').toLowerCase().includes('perfil aprovado');
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -66,19 +86,32 @@ module.exports = {
       }
       const imageUrl = photo?.url || link;
       const result = await updateProfileLink(interaction.guild, target, imageUrl, interaction.user.id);
-      if (!result.ok) return interaction.editReply({ content: `❌ ${result.message}` });
+      if (!result.ok) {
+        if (isMissingProfileResult(result)) {
+          await sendMissingProfileDm(target, interaction.guild);
+          return interaction.editReply({ content: '❌ Usuário não possui cadastro.' });
+        }
+        return interaction.editReply({ content: `❌ ${result.message}` });
+      }
     }
 
     if (nivel) {
       const result = await updateProfileLevel(interaction.guild, target, nivel, interaction.user.id);
-      if (!result.ok) return interaction.editReply({ content: `❌ ${result.message}` });
+      if (!result.ok) {
+        if (isMissingProfileResult(result)) {
+          await sendMissingProfileDm(target, interaction.guild);
+          return interaction.editReply({ content: '❌ Usuário não possui cadastro.' });
+        }
+        return interaction.editReply({ content: `❌ ${result.message}` });
+      }
     }
 
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const profile = getUserProfile(interaction.guild.id, target.id);
-    if (!profile && !canManageProfiles) {
+    if (!profile) {
+      await sendMissingProfileDm(target, interaction.guild);
       return interaction.editReply({
-        content: '❌ Este usuário ainda não possui perfil cadastrado.',
+        content: '❌ Usuário não possui cadastro.',
       });
     }
 
