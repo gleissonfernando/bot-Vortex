@@ -210,6 +210,7 @@ module.exports = {
         color: '#7000FF',
         type: 'MIDIA',
         userId: interaction.user.id,
+        channelId: interaction.channelId,
       }).catch(() => {});
     } catch (error) {
       console.error('[VORTEX] Erro ao enviar clipe:', error);

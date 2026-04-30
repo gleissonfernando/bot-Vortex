@@ -669,6 +669,11 @@ module.exports = {
       color: '#7000FF',
       type: 'AVISOS',
       userId: interaction.user.id,
+      channelId: interaction.channelId,
+      relatedChannelIds: [
+        getSelection(interaction).channelId,
+        getSelection(interaction).callId,
+      ].filter(Boolean),
     }).catch(() => {});
 
     const summary = [

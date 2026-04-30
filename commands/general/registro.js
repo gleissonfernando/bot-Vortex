@@ -29,6 +29,7 @@ module.exports = {
       color: '#7000FF',
       type: 'PONTO',
       userId: interaction.user.id,
+      channelId: interaction.channelId,
     }).catch(() => {});
 
     return interaction.editReply({ embeds: [embed] });

@@ -94,6 +94,14 @@ function isLogChannelIgnored(channelId) {
     return getDisabledLogChannelIds().includes(String(channelId));
 }
 
+function hasIgnoredRelatedChannel(channelId, relatedChannelIds = []) {
+    const ids = [
+        channelId,
+        ...(Array.isArray(relatedChannelIds) ? relatedChannelIds : [relatedChannelIds]),
+    ].filter(Boolean).map(String);
+    return ids.some(isLogChannelIgnored);
+}
+
 function syncStoredLogChannel() {
     try {
         if (!fs.existsSync(CONFIG_PATH)) return;
@@ -305,11 +313,13 @@ function initChannelLogRecovery(client) {
     }, 30 * 1000);
 }
 
-async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null }) {
+async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null, channelId = null, relatedChannelIds = [] }) {
     if (!client) return false;
 
     syncStoredLogChannel();
-    const channelId = getLogChannelId();
+    if (hasIgnoredRelatedChannel(channelId, relatedChannelIds)) return false;
+
+    const logChannelId = getLogChannelId();
     const channelLogsDisabled = isChannelLogDisabled();
     const dmLogsDisabled = isDmLogDisabled();
     const payload = { title, description, color, type };
@@ -323,7 +333,7 @@ async function sendVortexLog(client, { title, description, color = '#7000FF', ty
 
     if (!channelLogsDisabled) {
         try {
-            const channel = await client.channels.fetch(channelId).catch(() => null);
+            const channel = await client.channels.fetch(logChannelId).catch(() => null);
             if (channel?.isTextBased?.()) {
                 await channel.send({
                     embeds: [embed],
@@ -442,6 +452,7 @@ module.exports = {
     isDmLogDisabled,
     getDisabledLogChannelIds,
     isLogChannelIgnored,
+    hasIgnoredRelatedChannel,
     setChannelLogsEnabled,
     handleReenableChannelLogsButton,
     initChannelLogRecovery,

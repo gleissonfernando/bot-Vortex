@@ -230,6 +230,7 @@ module.exports = {
                         ].join('\n'),
                         color: '#5865F2',
                         type: 'COMANDO',
+                        channelId: interaction.channelId,
                     }).catch(() => {});
                     await cmd.execute(interaction);
                 } catch (error) {
@@ -367,6 +368,7 @@ module.exports = {
                 color: opening ? '#57F287' : '#ED4245',
                 type: 'PONTO',
                 userId: user.id,
+                channelId: interaction.channelId,
             }).catch(() => {});
 
             return interaction.editReply({
@@ -470,7 +472,7 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_selected_log_channel', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel botão: ${interaction.customId}`, () => painel.handleButton(interaction));
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
@@ -584,7 +586,9 @@ module.exports = {
                 description: `O usuário <@${user.id}> abriu um novo pedido de set.\n\n**Tipo:** ${tipo}\n**Canal:** <#${canal.id}>`,
                 color: '#3498DB',
                 type: 'RECRUTAMENTO',
-                userId: user.id
+                userId: user.id,
+                channelId: canal.id,
+                relatedChannelIds: [interaction.channelId],
             });
             return;
         }
@@ -717,7 +721,8 @@ module.exports = {
                     ].filter(Boolean).join('\n'),
                     color: isApp ? '#57F287' : '#FF0055',
                     type: 'RECRUTAMENTO',
-                    userId: user.id // Log para o staff que realizou a ação
+                    userId: user.id, // Log para o staff que realizou a ação
+                    channelId: interaction.channelId,
                 });
 
                 if (!isApp) {

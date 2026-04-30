@@ -53,6 +53,7 @@ const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md')
 const commandPermissionSelections = new Map();
 const pointReadjustSelections = new Map();
 const profileRegisterSelections = new Map();
+const logChannelSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
@@ -544,6 +545,36 @@ module.exports = {
       return renderDashboard(interaction, 'config_logs', true);
     }
 
+    if (customId === 'toggle_selected_log_channel') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
+      }
+
+      const channelId = logChannelSelections.get(getSelectionKey(interaction));
+      if (!channelId) {
+        return safeReply(interaction, { content: '❌ Selecione um canal ou call primeiro.', ephemeral: true });
+      }
+
+      const disabled = Array.isArray(conf.DISABLED_LOG_CHANNEL_IDS)
+        ? conf.DISABLED_LOG_CHANNEL_IDS.map(String)
+        : [];
+      const alreadyDisabled = disabled.includes(channelId);
+      conf.DISABLED_LOG_CHANNEL_IDS = alreadyDisabled
+        ? disabled.filter((id) => id !== channelId)
+        : [...disabled, channelId];
+      saveJSON(CONFIG_PATH, conf);
+
+      sendVortexLog(interaction.client, {
+          title: alreadyDisabled ? 'Logs de Canal Reativados' : 'Logs de Canal Desativados',
+          description: `Logs de auditoria relacionados a <#${channelId}> foram **${alreadyDisabled ? 'REATIVADOS' : 'DESATIVADOS'}** por <@${interaction.user.id}>.`,
+          color: alreadyDisabled ? '#57F287' : '#FFA500',
+          type: 'CONFIGURAÇÃO',
+          userId: interaction.user.id
+      }).catch(() => {});
+
+      return renderDashboard(interaction, 'config_logs', true);
+    }
+
     if (customId === 'toggle_absence_end_message') {
       const absenceConfig = getAbsenceConfig();
       const nextConfig = saveAbsenceConfig({
@@ -860,24 +891,7 @@ module.exports = {
 
     if (interaction.customId === 'select_disabled_log_channel') {
         if (!hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode desativar logs de canais.', ephemeral: true });
-        const channelId = String(interaction.values[0]);
-        const disabled = Array.isArray(data.DISABLED_LOG_CHANNEL_IDS)
-            ? data.DISABLED_LOG_CHANNEL_IDS.map(String)
-            : [];
-        const alreadyDisabled = disabled.includes(channelId);
-        data.DISABLED_LOG_CHANNEL_IDS = alreadyDisabled
-            ? disabled.filter((id) => id !== channelId)
-            : [...disabled, channelId];
-        saveJSON(CONFIG_PATH, data);
-
-        sendVortexLog(interaction.client, {
-            title: alreadyDisabled ? 'Logs de Canal Reativados' : 'Logs de Canal Desativados',
-            description: `Logs de auditoria relacionados a <#${channelId}> foram **${alreadyDisabled ? 'REATIVADOS' : 'DESATIVADOS'}** por <@${interaction.user.id}>.`,
-            color: alreadyDisabled ? '#57F287' : '#FFA500',
-            type: 'CONFIGURAÇÃO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
+        logChannelSelections.set(getSelectionKey(interaction), String(interaction.values[0]));
         return renderDashboard(interaction, 'config_logs', true);
     }
 
@@ -1453,12 +1467,19 @@ async function renderDashboard(interaction, tab, edit = false) {
       ),
     ];
   } else if (tab === 'config_logs') {
+    const selectedLogChannelId = logChannelSelections.get(getSelectionKey(interaction));
+    const disabledLogChannelIds = Array.isArray(conf.DISABLED_LOG_CHANNEL_IDS)
+      ? conf.DISABLED_LOG_CHANNEL_IDS.map(String)
+      : [];
+    const selectedLogChannelDisabled = selectedLogChannelId && disabledLogChannelIds.includes(selectedLogChannelId);
     embed.setTitle('⚙️ CONFIGURAÇÕES | LOGS').setColor('#00D9FF')
       .setDescription([
         '### Data logs',
         '',
         'Cada modo abaixo tem um botão próprio para ligar ou desligar.',
         `Somente <@${LOGS_MANAGER_IDS[0]}> ou os cargos máximos ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem desativar, reativar ou trocar o canal de logs.`,
+        '',
+        `Canal/call selecionado: ${selectedLogChannelId ? `<#${selectedLogChannelId}>` : '`Nenhum`'}`,
       ].join('\n'))
       .addFields(
         { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
@@ -1492,10 +1513,17 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_disabled_log_channel')
-          .setPlaceholder('Desativar/reativar logs de um canal ou call')
+          .setPlaceholder('Selecionar canal/call para alterar logs')
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice)
           .setMinValues(1)
           .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('toggle_selected_log_channel')
+          .setLabel(selectedLogChannelDisabled ? 'Reativar logs desse canal' : 'Desativar logs desse canal')
+          .setStyle(selectedLogChannelDisabled ? ButtonStyle.Success : ButtonStyle.Danger)
+          .setDisabled(!selectedLogChannelId)
       ),
     ];
   } else if (tab === 'config_avisos') {
