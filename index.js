@@ -20,7 +20,7 @@ const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManage
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 
 const app = express();
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || 3000);
+const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 
 app.use(helmet());
@@ -119,6 +119,19 @@ app.get('/ponto/:id', (req, res) => {
         return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>ID invalido</title><body>ID de usuario invalido.</body>');
     }
 
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+        'Content-Security-Policy',
+        [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' https: data:",
+            "connect-src 'self'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+        ].join('; ')
+    );
     return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
 });
 
