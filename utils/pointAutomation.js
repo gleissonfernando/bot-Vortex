@@ -20,6 +20,7 @@ const DEFAULT_POINT_CORRECTION_CATEGORY_ID = '1498087442304073870';
 const DEFAULT_PENALTY_CHANNEL_ID = '1499178753207701677';
 const DEFAULT_MANAGER_DM_USER_IDS = ['730925532958425240', '289227932432334869'];
 const MASTER_ROLE_ID = '1497703127074345040';
+const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
@@ -61,6 +62,8 @@ function readAutomationConfig() {
     offlineThresholdHours: Number(config.POINT_OFFLINE_THRESHOLD_HOURS || 12),
     offlineChargeIntervalDays: Number(config.POINT_OFFLINE_CHARGE_INTERVAL_DAYS || 2),
     offlineChargeHour: Number(config.POINT_OFFLINE_CHARGE_HOUR || 19),
+    availabilityReminderEnabled: config.POINT_AVAILABILITY_REMINDER_ENABLED !== false,
+    availabilityReminderHour: Number(config.POINT_AVAILABILITY_REMINDER_HOUR || 19),
   };
 }
 
@@ -80,6 +83,13 @@ function getStaffRoleIds() {
     ...(Array.isArray(levels.medio) ? levels.medio : []),
     ...(Array.isArray(config.POINT_ADJUST_STAFF_ROLES) ? config.POINT_ADJUST_STAFF_ROLES : []),
   ].filter(Boolean).map(String))];
+}
+
+function getPointAllowedRoleIds() {
+  const config = readJSON(CONFIG_PATH, {});
+  return Array.isArray(config.POINT_ALLOWED_ROLE_IDS) && config.POINT_ALLOWED_ROLE_IDS.length
+    ? config.POINT_ALLOWED_ROLE_IDS.map(String)
+    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
 }
 
 function getStateKey(guildId, userId) {
@@ -344,6 +354,17 @@ function getAutomationHour(date = new Date()) {
   return Number(hour);
 }
 
+function getAutomationDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: AUTOMATION_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 async function checkOfflineUsers(client, guild, state, force = false) {
   const config = readAutomationConfig();
   if (!config.offlineChargeEnabled) return;
@@ -385,11 +406,93 @@ async function checkOfflineUsers(client, guild, state, force = false) {
   }
 }
 
+function hasAnyRole(member, roleIds) {
+  return Boolean(member?.roles?.cache && roleIds.some((roleId) => member.roles.cache.has(roleId)));
+}
+
+async function sendAvailabilityReminderDm(user, guild) {
+  const embed = new EmbedBuilder()
+    .setColor('#FEE75C')
+    .setTitle('Ative o modo disponível no Discord')
+    .setDescription([
+      'A partir das 19:00, deixe seu Discord em **Disponível/Online**.',
+      '',
+      'Isso ajuda o bot a detectar sua presença no FiveM e manter o ponto automático funcionando corretamente.',
+      'Quem já estiver com o status disponível não recebe este aviso.',
+    ].join('\n'))
+    .setFooter({ text: guild.name })
+    .setTimestamp();
+
+  return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
+}
+
+async function sendMissingSetDm(user, guild) {
+  const embed = new EmbedBuilder()
+    .setColor('#ED4245')
+    .setTitle('Cadastro de set pendente')
+    .setDescription([
+      `Você ainda não possui cadastro aprovado no **${guild.name}**.`,
+      '',
+      'Solicite seu set pelo comando `/set` para liberar seu cadastro e evitar cobranças automáticas.',
+      'Depois do set aprovado, o bot consegue acompanhar seu ponto e seus dados corretamente.',
+    ].join('\n'))
+    .setFooter({ text: 'Vortex - Sistema de Set' })
+    .setTimestamp();
+
+  return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
+}
+
+async function checkAvailabilityReminders(client, guild, state, force = false) {
+  const config = readAutomationConfig();
+  if (!config.availabilityReminderEnabled) return;
+  if (!force && getAutomationHour() !== config.availabilityReminderHour) return;
+
+  const fetchedPresences = await guild.members.fetch({ withPresences: true })
+    .then(() => true)
+    .catch(() => false);
+  if (!fetchedPresences && !guild.presences?.cache?.size) return;
+
+  const today = getAutomationDateKey();
+  const pointRoleIds = getPointAllowedRoleIds();
+  const profiles = getGuildProfiles(guild.id);
+  const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
+
+  for (const member of guild.members.cache.values()) {
+    if (!member || member.user?.bot) continue;
+    if (!hasAnyRole(member, pointRoleIds)) continue;
+    if (activeAbsences.has(member.id)) continue;
+
+    const profile = profiles[member.id];
+    const key = `${getStateKey(guild.id, member.id)}:availability`;
+    const item = state[key] || {};
+
+    if (!profile?.approvedAt) {
+      if (!force && item.lastSetReminderDate === today) continue;
+      const sent = await sendMissingSetDm(member.user, guild);
+      state[key] = { ...item, lastSetReminderDate: today, lastSetReminderAt: new Date().toISOString(), lastSetReminderSent: sent };
+      continue;
+    }
+
+    if (member.presence?.status === 'online') continue;
+    if (!force && item.lastAvailabilityReminderDate === today) continue;
+
+    const sent = await sendAvailabilityReminderDm(member.user, guild);
+    state[key] = {
+      ...item,
+      lastAvailabilityReminderDate: today,
+      lastAvailabilityReminderAt: new Date().toISOString(),
+      lastAvailabilityReminderSent: sent,
+      lastKnownStatus: member.presence?.status || 'offline',
+    };
+  }
+}
+
 async function runPointAutomationCheck(client, { force = false } = {}) {
   const state = readJSON(STATE_PATH, {});
   for (const guild of client.guilds.cache.values()) {
     await checkOpenPointConfirmations(client, guild, state, force).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
     await checkOfflineUsers(client, guild, state, force).catch((error) => logger.error('Erro na cobrança de usuários offline:', error));
+    await checkAvailabilityReminders(client, guild, state, force).catch((error) => logger.error('Erro no lembrete de status disponível:', error));
   }
   writeJSON(STATE_PATH, state);
   return state;
