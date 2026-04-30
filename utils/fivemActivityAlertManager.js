@@ -7,7 +7,12 @@ const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
 const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '1498895777790038116';
 const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
-const TARGET_SERVER_ALIASES = ['metropole rp', 'metropole gg'];
+const TARGET_SERVER_ALIASES = [
+  'metropole.gg',
+  'Metrópole RP - Season 2!',
+  'Metrópole RP',
+  'Metrópole GG',
+];
 const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
@@ -59,9 +64,8 @@ function activityText(activity) {
 function isTargetFiveMActivity(activity) {
   if (!isFiveMActivity(activity)) return false;
   const haystack = normalizeComparableText(activityText(activity));
-  const normalizedTarget = normalizeComparableText(TARGET_SERVER_NAME);
-  return haystack.includes(normalizedTarget)
-    || TARGET_SERVER_ALIASES.some((alias) => haystack.includes(normalizeComparableText(alias)));
+  const targets = [TARGET_SERVER_NAME, ...TARGET_SERVER_ALIASES].map(normalizeComparableText);
+  return targets.some((target) => target && haystack.includes(target));
 }
 
 function getTargetFiveMActivity(presence) {
@@ -231,7 +235,7 @@ function buildFiveMEmbed({ member, user, activity, cityName }) {
     .setColor('#2ECC71')
     .setTitle(`${displayName} entrou no FiveM/GTA`)
     .setDescription([
-      `<@${user.id}> começou a jogar **${activity?.name || 'FiveM/GTA'}**.`,
+      `Usuário: **${displayName}**`,
       '',
       `**Cidade/servidor:** ${cityName}`,
       `**Atividade:** ${details}`,
@@ -281,9 +285,9 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
 
   const cityName = extractCityName(newActivity);
   await channel.send({
-    content: `<@${user.id}> começou a jogar FiveM/GTA - cidade: **${cityName}**`,
+    content: `Alerta de FiveM/GTA detectado - cidade: **${cityName}**`,
     embeds: [buildFiveMEmbed({ member, user, activity: newActivity, cityName })],
-    allowedMentions: { users: [user.id] },
+    allowedMentions: { parse: [] },
   }).catch((error) => {
     console.warn(`[FIVEM ALERT] Falha ao enviar alerta de ${user.id}: ${error.message}`);
     return null;
