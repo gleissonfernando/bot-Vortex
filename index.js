@@ -16,6 +16,7 @@ const { initProfileManager } = require('./utils/profileManager');
 const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
 const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
+const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
 
 const app = express();
 const API_PORT = Number(process.env.PORT || process.env.API_PORT || 80);
@@ -179,6 +180,7 @@ client.once(Events.ClientReady, async () => {
     initPointAutomation(client);
     initTwitchLiveMonitor(client);
     initChannelLogRecovery(client);
+    scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao verificar atividades FiveM no startup:', error));
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',

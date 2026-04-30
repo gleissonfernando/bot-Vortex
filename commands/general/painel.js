@@ -44,6 +44,7 @@ const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const LOGS_MANAGER_IDS = ['289227932432334869'];
+const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
@@ -944,6 +945,22 @@ module.exports = {
         return renderDashboard(interaction, 'tab_config', true);
     }
 
+    if (interaction.customId === 'select_point_allowed_roles') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar cargos de ponto.', ephemeral: true });
+        data.POINT_ALLOWED_ROLE_IDS = interaction.values.map(String);
+        saveJSON(CONFIG_PATH, data);
+
+        sendVortexLog(interaction.client, {
+            title: 'Cargos de Ponto Alterados',
+            description: `Cargos liberados para bater ponto e ponto automático: ${data.POINT_ALLOWED_ROLE_IDS.map(id => `<@&${id}>`).join(' ') || 'nenhum'} por <@${interaction.user.id}>.`,
+            color: '#5865F2',
+            type: 'PONTO',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_pontos', true);
+    }
+
     if (interaction.customId.startsWith('select_vortex_role_')) {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
         const level = interaction.customId.replace('select_vortex_role_', '');
@@ -1532,6 +1549,9 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_pontos') {
     const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
     const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[guild.id] || {};
+    const pointAllowedRoles = Array.isArray(conf.POINT_ALLOWED_ROLE_IDS) && conf.POINT_ALLOWED_ROLE_IDS.length
+      ? conf.POINT_ALLOWED_ROLE_IDS.map(String)
+      : DEFAULT_POINT_ALLOWED_ROLE_IDS;
     const openPointOptions = Object.values(pointData)
       .filter((point) => point?.activePointStartedAt)
       .slice(0, 25)
@@ -1551,6 +1571,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         `**Usuário selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
         `**Pontos abertos:** ${openPointOptions.length}`,
+        `**Cargos que podem bater ponto/detectar:** ${formatRoleList(pointAllowedRoles)}`,
         '',
         '**Reajuste de ponto**',
         'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
@@ -1575,6 +1596,13 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setPlaceholder('Selecionar usuário para folha, reajuste, fechamento ou exclusão')
           .setMinValues(1)
           .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId('select_point_allowed_roles')
+          .setPlaceholder('Selecionar cargos que podem bater ponto e detectar')
+          .setMinValues(1)
+          .setMaxValues(10)
       ),
     ];
   } else if (tab === 'tab_cobrancas') {

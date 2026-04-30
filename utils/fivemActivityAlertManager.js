@@ -8,6 +8,7 @@ const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '12022517158
 const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '1498895777790038116';
 const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
 const TARGET_SERVER_ALIASES = ['metropole rp', 'metropole gg'];
+const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
@@ -71,6 +72,15 @@ function readConfig() {
 
 function areActivityLogsDisabled() {
   return readConfig().DISABLE_ACTIVITY_LOGS === true;
+}
+
+async function hasPointRole(guild, member, userId) {
+  const config = readConfig();
+  const roleIds = Array.isArray(config.POINT_ALLOWED_ROLE_IDS) && config.POINT_ALLOWED_ROLE_IDS.length
+    ? config.POINT_ALLOWED_ROLE_IDS.map(String)
+    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+  const resolvedMember = member || await guild.members.fetch(userId).catch(() => null);
+  return Boolean(resolvedMember?.roles?.cache && roleIds.some((roleId) => resolvedMember.roles.cache.has(roleId)));
 }
 
 function cleanCityName(value) {
@@ -139,6 +149,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
 
   if (newTargetActivity) {
     if (point?.activePointStartedAt) return;
+    if (!await hasPointRole(guild, member, user.id)) return;
     const cityName = extractCityName(newTargetActivity);
     const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, member, newTargetActivity, cityName));
     if (result.action !== 'opened') return;
@@ -275,8 +286,51 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
   loggedFiveMPlayers.add(key);
 }
 
+async function scanCurrentFiveMActivities(client) {
+  const results = [];
+
+  for (const guild of client.guilds.cache.values()) {
+    const presences = guild.presences?.cache;
+    if (!presences?.size) continue;
+
+    for (const presence of presences.values()) {
+      if (!presence?.user || presence.user.bot) continue;
+      const activity = getTargetFiveMActivity(presence);
+      if (!activity) continue;
+
+      const member = presence.member || await guild.members.fetch(presence.user.id).catch(() => null);
+      if (!await hasPointRole(guild, member, presence.user.id)) continue;
+
+      const point = await getUserPoint(guild.id, presence.user.id).catch(() => null);
+      if (point?.activePointStartedAt) continue;
+
+      const cityName = extractCityName(activity);
+      const result = await openPoint(guild.id, presence.user.id, buildAutoPointProfile(presence.user, member, activity, cityName)).catch(() => null);
+      if (result?.action === 'opened') {
+        results.push({ guildId: guild.id, userId: presence.user.id });
+        await presence.user.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#57F287')
+              .setTitle('Ponto aberto automaticamente')
+              .setDescription([
+                `Detectei você no **${cityName || TARGET_SERVER_NAME}** quando o bot iniciou e abri seu ponto.`,
+                '',
+                `Entrada: **${formatDate(result.data.activePointStartedAt)}**`,
+              ].join('\n'))
+              .setTimestamp(),
+          ],
+        }).catch(() => null);
+      }
+    }
+  }
+
+  return results;
+}
+
 module.exports = {
   handleFiveMActivityAlert,
+  scanCurrentFiveMActivities,
   TARGET_SERVER_NAME,
   AUTO_POINT_SOURCE,
 };

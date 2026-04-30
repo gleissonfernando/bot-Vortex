@@ -18,6 +18,7 @@ const PEDIDOS_PATH = path.join(__dirname, '..', 'commands', 'pedidos_ativos.json
 const ERROR_LOG_CHANNEL_ID = '1497685822525149337';
 const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
+const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
@@ -28,6 +29,14 @@ function hasStaffPermission(member) {
 
 function hasMasterPermission(member) {
     return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
+}
+
+function hasPointRole(member) {
+    const conf = loadJSON(CONFIG_PATH);
+    const roleIds = Array.isArray(conf.POINT_ALLOWED_ROLE_IDS) && conf.POINT_ALLOWED_ROLE_IDS.length
+        ? conf.POINT_ALLOWED_ROLE_IDS.map(String)
+        : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+    return Boolean(member?.roles?.cache && roleIds.some(roleId => member.roles.cache.has(roleId)));
 }
 
 function hasConfiguredCommandAccess(interaction, commandName) {
@@ -306,6 +315,18 @@ module.exports = {
                 });
             }
 
+            if (!hasPointRole(member)) {
+                const pointConf = loadJSON(CONFIG_PATH);
+                const roleIds = Array.isArray(pointConf.POINT_ALLOWED_ROLE_IDS) && pointConf.POINT_ALLOWED_ROLE_IDS.length
+                    ? pointConf.POINT_ALLOWED_ROLE_IDS.map(String)
+                    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+                return interaction.reply({
+                    content: `❌ Você não tem cargo liberado para bater ponto. Cargos permitidos: ${roleIds.map(roleId => `<@&${roleId}>`).join(' ')}`,
+                    ephemeral: true,
+                    allowedMentions: { roles: [] },
+                });
+            }
+
             await interaction.deferReply({ ephemeral: true });
 
             const opening = interaction.customId === 'ponto_open';
@@ -461,7 +482,7 @@ module.exports = {
             if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_open_point_user')) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
+            if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_point_allowed_roles', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isUserSelectMenu() && ['select_point_readjust_user', 'select_profile_register_user'].includes(interaction.customId)) {
