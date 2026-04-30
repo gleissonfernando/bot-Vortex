@@ -1,7 +1,7 @@
 const { ActivityType, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { openPoint, closePoint, getUserPoint, formatDate, formatDuration } = require('./pontoManager');
+const { openPoint, closePoint, getUserPoint, listGuildPoints, formatDate, formatDuration } = require('./pontoManager');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
@@ -182,15 +182,15 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
     return;
   }
 
-  if (!oldTargetActivity || !point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) return;
+  if (!point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) return;
 
   const result = await closePoint(guild.id, user.id, {
     pointSource: AUTO_POINT_SOURCE,
     pointReason: `Saiu do FiveM: ${TARGET_SERVER_NAME}`,
     serverName: point.activePointServerName || TARGET_SERVER_NAME,
-    activityName: oldTargetActivity?.name || null,
-    activityDetails: oldTargetActivity?.details || null,
-    activityState: oldTargetActivity?.state || null,
+    activityName: oldTargetActivity?.name || point.activePointActivityName || null,
+    activityDetails: oldTargetActivity?.details || point.activePointActivityDetails || null,
+    activityState: oldTargetActivity?.state || point.activePointActivityState || null,
   });
   if (result.action !== 'closed') return;
 
@@ -301,14 +301,19 @@ async function scanCurrentFiveMActivities(client) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
-    await guild.members.fetch({ withPresences: true }).catch(() => null);
+    const presenceFetchOk = await guild.members.fetch({ withPresences: true })
+      .then(() => true)
+      .catch(() => false);
     const presences = guild.presences?.cache;
-    if (!presences?.size) continue;
+    if (!presenceFetchOk && !presences?.size) continue;
 
-    for (const presence of presences.values()) {
+    const detectedUserIds = new Set();
+
+    for (const presence of presences?.values?.() || []) {
       if (!presence?.user || presence.user.bot) continue;
       const activity = getTargetFiveMActivity(presence);
       if (!activity) continue;
+      detectedUserIds.add(String(presence.user.id));
 
       const member = presence.member || await guild.members.fetch(presence.user.id).catch(() => null);
       if (!await hasPointRole(guild, member, presence.user.id)) continue;
@@ -334,6 +339,37 @@ async function scanCurrentFiveMActivities(client) {
           ],
         }).catch(() => null);
       }
+    }
+
+    const points = await listGuildPoints(guild.id).catch(() => []);
+    for (const point of points) {
+      if (!point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) continue;
+      if (detectedUserIds.has(String(point.userId))) continue;
+
+      const result = await closePoint(guild.id, point.userId, {
+        pointSource: AUTO_POINT_SOURCE,
+        pointReason: `Nao detectado no FiveM apos reinicio: ${TARGET_SERVER_NAME}`,
+        serverName: point.activePointServerName || TARGET_SERVER_NAME,
+      }).catch(() => null);
+
+      if (result?.action !== 'closed') continue;
+      results.push({ guildId: guild.id, userId: point.userId, action: 'closed_not_detected' });
+
+      const user = await client.users.fetch(point.userId).catch(() => null);
+      await user?.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('Ponto fechado automaticamente')
+            .setDescription([
+              `Não detectei mais você no **${TARGET_SERVER_NAME}** após o bot iniciar e fechei seu ponto.`,
+              '',
+              `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
+              `Tempo online: **${formatDuration(result.durationMs)}**`,
+            ].join('\n'))
+            .setTimestamp(),
+        ],
+      }).catch(() => null);
     }
   }
 

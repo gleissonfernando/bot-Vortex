@@ -133,6 +133,10 @@ async function safeReply(interaction, options) {
     return interaction.reply(options).catch(() => null);
 }
 
+function isUnknownInteractionError(error) {
+    return error?.code === 10062 || error?.rawError?.code === 10062;
+}
+
 async function safeUpdate(interaction, options) {
     const { ephemeral, ...updateOptions } = options;
     if (interaction.replied || interaction.deferred) {
@@ -149,9 +153,11 @@ async function safeUpdate(interaction, options) {
     try {
         return await interaction.update(updateOptions);
     } catch (error) {
+        if (isUnknownInteractionError(error)) return null;
         try {
             return await interaction.reply(options);
-        } catch {
+        } catch (replyError) {
+            if (isUnknownInteractionError(replyError)) return null;
             throw error;
         }
     }
@@ -1811,9 +1817,13 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   }
 
-  let components = ['tab_config', 'config_set', 'config_avisos', 'config_logs'].includes(tab) ? [mainRow] : [mainRow, navRow];
+  const useCompactNavigation = ['tab_config', 'config_set', 'config_avisos', 'config_logs'].includes(tab);
+  let components = useCompactNavigation ? [mainRow] : [mainRow, navRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
+  if (components.length > 5 && components.includes(navRow)) {
+    components = components.filter((row) => row !== navRow);
+  }
 
   const options = edit
     ? { embeds: [embed.setImage(null)], components: components }

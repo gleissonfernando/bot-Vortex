@@ -148,6 +148,9 @@ function clearActivePointFields() {
     activePointSource: null,
     activePointReason: null,
     activePointServerName: null,
+    activePointActivityName: null,
+    activePointActivityDetails: null,
+    activePointActivityState: null,
   };
 }
 
@@ -637,6 +640,9 @@ async function openPoint(guildId, userId, profile = {}) {
     activePointSource: profile.pointSource || null,
     activePointReason: profile.pointReason || null,
     activePointServerName: profile.serverName || profile.cityName || null,
+    activePointActivityName: profile.activityName || null,
+    activePointActivityDetails: profile.activityDetails || null,
+    activePointActivityState: profile.activityState || null,
   });
 
   return { action: 'opened', durationMs: 0, data: next };
@@ -660,9 +666,9 @@ async function closePoint(guildId, userId, options = {}) {
       source: options.pointSource || current.activePointSource,
       reason: options.pointReason || current.activePointReason,
       serverName: options.serverName || current.activePointServerName,
-      activityName: options.activityName,
-      activityDetails: options.activityDetails,
-      activityState: options.activityState,
+      activityName: options.activityName || current.activePointActivityName,
+      activityDetails: options.activityDetails || current.activePointActivityDetails,
+      activityState: options.activityState || current.activePointActivityState,
     }),
   };
 
