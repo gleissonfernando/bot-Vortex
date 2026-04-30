@@ -3,7 +3,8 @@ const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatD
 const { isGerencia } = require('../../utils/permissions');
 
 function buildPointSiteUrl(guildId, userId) {
-  const baseUrl = String(process.env.POINT_SITE_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
+  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
   const url = new URL(`/ponto/${userId}`, baseUrl);
   url.searchParams.set('guildId', guildId);
   if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
@@ -49,7 +50,8 @@ module.exports = {
         { name: 'Ultimo fechamento', value: formatDate(data.lastPointCloseAt), inline: true },
         { name: 'Dias com ponto', value: String(getPointDays(data)), inline: true },
         { name: 'Total de horas', value: formatDuration(getEffectiveTotalMs(data)), inline: true },
-        { name: 'Ponto atual', value: data.activePointStartedAt ? `Aberto ha ${formatDuration(activeMs)}` : 'Fechado', inline: true }
+        { name: 'Ponto atual', value: data.activePointStartedAt ? `Aberto ha ${formatDuration(activeMs)}` : 'Fechado', inline: true },
+        { name: 'Link direto', value: pointSiteUrl, inline: false }
       )
       .setTimestamp()
       .setFooter({ text: 'Vortex - Sistema de Ponto' });
@@ -61,6 +63,10 @@ module.exports = {
         .setURL(pointSiteUrl)
     );
 
-    return interaction.editReply({ embeds: [embed], components: [row] });
+    return interaction.editReply({
+      content: `🔗 Link da folha de ponto: ${pointSiteUrl}`,
+      embeds: [embed],
+      components: [row],
+    });
   },
 };
