@@ -20,6 +20,7 @@ const { sendVortexLog } = require('../../utils/notifications');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const NOTICE_FIXED_ROLE_IDS = [
   '1499176108753420428',
+  '1201193356810780773',
 ];
 const NOTICE_MAIN_CHANNEL_ID = '1482190594003439678';
 const NOTICE_ALERT_CHANNEL_ID = '1481598629365022800';
@@ -123,6 +124,7 @@ function buildPanelEmbed(interaction) {
       '',
       '**Importante**',
       `A imagem oficial da Vortex continua fixa no aviso principal. Voce pode enviar ate ${MAX_OPTIONAL_IMAGES} fotos extras por aviso usando links diretos ou link de mensagem com uploads. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.`,
+      'Leia os avisos com atenção. Quando um aviso sai daqui, ele é importante e pede resposta rápida.',
     ].join('\n'))
     .addFields(
       { name: 'Individual', value: 'Envia direto no privado do usuário selecionado.', inline: true },

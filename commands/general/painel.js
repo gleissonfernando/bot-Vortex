@@ -1592,7 +1592,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'config_avisos') {
     embed.setTitle('⚙️ CONFIGURAÇÕES | AVISOS').setColor('#7000FF')
-      .setDescription('### Configurar avisos\n\nControle o envio de DMs globais e escolha um cargo extra para ser mencionado nos avisos.')
+      .setDescription('### Configurar avisos\n\nControle o envio de DMs globais e escolha um cargo extra para ser mencionado nos avisos. Quando um aviso for publicado, trate como prioridade.')
       .addFields(
         { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
         { name: 'Cargo extra mencionado', value: conf.NOTICE_MENTION_ROLE_ID ? `<@&${conf.NOTICE_MENTION_ROLE_ID}>` : '`Não configurado`', inline: true }
