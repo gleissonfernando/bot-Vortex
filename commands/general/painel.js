@@ -1475,8 +1475,8 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_disabled_log_channel')
-          .setPlaceholder('Desativar/reativar logs de um canal')
-          .addChannelTypes(ChannelType.GuildText)
+          .setPlaceholder('Desativar/reativar logs de um canal ou call')
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice)
           .setMinValues(1)
           .setMaxValues(1)
       ),
