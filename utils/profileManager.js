@@ -502,6 +502,29 @@ async function ensureAllProfileChannelAccess(client) {
   }
 }
 
+async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servidor') {
+  const data = readProfiles();
+  const profile = data[guild.id]?.[userId] || null;
+  if (!profile) return { ok: false, deleted: false, channelDeleted: false, message: 'Perfil não encontrado.' };
+
+  let channelDeleted = false;
+  if (profile.callChannelId) {
+    const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
+    if (channel) {
+      await channel.delete(reason).catch((error) => {
+        logger.error('Erro ao deletar canal/call do perfil:', error);
+      });
+      channelDeleted = true;
+    }
+  }
+
+  delete data[guild.id][userId];
+  if (Object.keys(data[guild.id]).length === 0) delete data[guild.id];
+  writeProfiles(data);
+
+  return { ok: true, deleted: true, channelDeleted };
+}
+
 function parseTestPeriod(amountInput, unitInput) {
   const amount = Number(amountInput);
   const unit = String(unitInput || '').trim().toLowerCase();
@@ -531,6 +554,7 @@ module.exports = {
   getGuildProfiles,
   registerApprovedProfile,
   registerManualProfile,
+  deleteUserProfile,
   updateProfileLink,
   updateProfileLevel,
   buildProfileEmbed,

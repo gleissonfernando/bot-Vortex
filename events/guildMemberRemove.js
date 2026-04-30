@@ -3,6 +3,7 @@ const { logger } = require('../utils/logger');
 const { logMemberLeave } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
 const { deleteApprovedSetChannel } = require('../utils/approvedSetChannels');
+const { deleteUserProfile } = require('../utils/profileManager');
 
 const SUPPORT_USER_ID = '289227932432334869';
 
@@ -34,6 +35,10 @@ module.exports = {
 
             await deleteApprovedSetChannel(guild, member.id).catch((error) => {
                 logger.error('Erro ao remover canal de usuário aprovado:', error);
+            });
+
+            await deleteUserProfile(guild, member.id, `Usuário ${member.id} saiu do servidor; perfil e call removidos.`).catch((error) => {
+                logger.error('Erro ao remover perfil/call de usuário que saiu:', error);
             });
         } catch (error) {
             logger.error('Erro no evento guildMemberRemove:', error);
