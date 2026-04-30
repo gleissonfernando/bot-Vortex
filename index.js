@@ -20,7 +20,7 @@ const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManage
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 
 const app = express();
-const API_PORT = Number(process.env.PORT || process.env.API_PORT || 80);
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 
 app.use(helmet());

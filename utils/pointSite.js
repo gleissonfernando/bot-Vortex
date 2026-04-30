@@ -157,25 +157,28 @@ function buildPointSiteHtml({ userId, apiPath }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vortex | Folha de ponto</title>
   <style>
-    :root{--bg:#0b0d12;--panel:#141922;--line:#263142;--text:#edf2f7;--muted:#98a6ba;--blue:#3b82f6;--green:#22c55e;--red:#ef4444;--yellow:#facc15}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}
-    header{border-bottom:1px solid var(--line);padding:26px 0;background:#10141c}.wrap{width:min(1180px,calc(100% - 32px));margin:0 auto}
-    h1{margin:0;font-size:30px}.muted{color:var(--muted)}main{display:grid;gap:16px;padding:22px 0 36px}
-    .top{display:flex;align-items:center;justify-content:space-between;gap:16px}.status{border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-weight:700}
-    .status.open{color:var(--green)}.status.closed{color:var(--blue)}
-    .profile,.card,section{background:var(--panel);border:1px solid var(--line);border-radius:8px}.profile{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:16px}
-    .avatar{width:64px;height:64px;border-radius:8px;background:#1d4ed8;object-fit:cover;display:grid;place-items:center;font-weight:700}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{padding:14px}.label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase}
-    strong{display:block;margin-top:4px;font-size:22px}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
-    .meta div{background:#10141c;border:1px solid var(--line);border-radius:8px;padding:10px;overflow-wrap:anywhere}
-    section h2{font-size:18px;margin:0;padding:14px 16px;border-bottom:1px solid var(--line)}.table-scroll{overflow:auto}
-    table{width:100%;min-width:900px;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:11px 12px;font-size:14px}
-    th{color:var(--muted);font-size:12px;text-transform:uppercase}.empty{padding:26px;text-align:center;color:var(--muted)}
-    @media(max-width:800px){.top,.profile{grid-template-columns:1fr}.grid,.meta{grid-template-columns:1fr}}
+    :root{--bg:#07070d;--panel:#11131c;--panel2:#171a25;--line:#2a3144;--text:#f4f7fb;--muted:#9aa7bc;--violet:#7000ff;--cyan:#00d9ff;--green:#22c55e;--red:#ef4444;--yellow:#facc15}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,Helvetica,sans-serif;line-height:1.45}
+    .hero{min-height:260px;background:linear-gradient(90deg,rgba(7,7,13,.92),rgba(7,7,13,.58)),url("/assets/IMG_4234.png") center/cover no-repeat;border-bottom:1px solid rgba(112,0,255,.45);display:flex;align-items:flex-end}
+    .wrap{width:min(1220px,calc(100% - 32px));margin:0 auto}.hero-inner{padding:30px 0 28px;display:grid;gap:18px}
+    .brand{display:flex;align-items:center;justify-content:space-between;gap:18px}.brand-title{font-size:14px;letter-spacing:3px;text-transform:uppercase;color:var(--cyan);font-weight:800}
+    h1{font-size:42px;margin:0;letter-spacing:0}.muted{color:var(--muted)}main{display:grid;gap:16px;padding:22px 0 38px}
+    .status{border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-weight:800;background:rgba(17,19,28,.78);box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}
+    .status.open{color:var(--green);border-color:rgba(34,197,94,.45)}.status.closed{color:var(--cyan);border-color:rgba(0,217,255,.45)}
+    .profile,.card,section{background:linear-gradient(180deg,var(--panel),#0e1018);border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,.24)}
+    .profile{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:18px}.avatar{width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,var(--violet),var(--cyan));object-fit:cover;display:grid;place-items:center;font-weight:900}
+    .profile h2{margin:0;font-size:24px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{padding:16px}.label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;font-weight:800}
+    strong{display:block;margin-top:4px;font-size:24px}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+    .meta div{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:11px;overflow-wrap:anywhere}
+    .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-right:16px}.toolbar h2{border-bottom:0}.pill{border:1px solid rgba(0,217,255,.35);color:var(--cyan);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}
+    section h2{font-size:18px;margin:0;padding:15px 16px;border-bottom:1px solid var(--line)}.table-scroll{overflow:auto}
+    table{width:100%;min-width:920px;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 13px;font-size:14px}
+    th{color:var(--muted);font-size:12px;text-transform:uppercase}tbody tr:hover{background:rgba(112,0,255,.12)}.empty{padding:28px;text-align:center;color:var(--muted)}
+    @media(max-width:800px){.brand,.profile,.toolbar{grid-template-columns:1fr;display:grid}.grid,.meta{grid-template-columns:1fr}h1{font-size:34px}.hero{min-height:220px}}
   </style>
 </head>
 <body>
-  <header><div class="wrap top"><div><h1>Folha de ponto</h1><div class="muted" id="subtitle">Carregando...</div></div><div id="status" class="status">...</div></div></header>
+  <header class="hero"><div class="wrap hero-inner"><div class="brand"><div><div class="brand-title">Vortex Management</div><h1>Folha de ponto</h1><div class="muted" id="subtitle">Carregando...</div></div><div id="status" class="status">...</div></div></div></header>
   <main class="wrap" id="app"><div class="empty">Carregando folha de ponto...</div></main>
   <script>
     const apiPath = ${JSON.stringify(safeApiPath)};
@@ -199,8 +202,8 @@ function buildPointSiteHtml({ userId, apiPath }) {
         '<div><span class="label">Numero</span>' + fmt(data.profile.numeroGame) + '</div><div><span class="label">Nivel</span>' + fmt(data.profile.nivelGame) + '</div><div><span class="label">Cargo</span>' + fmt(data.user.highestRole) + '</div>' +
         '</div></div></div>' +
         '<div class="grid"><div class="card"><span class="label">Tempo total</span><strong>' + esc(data.point.totalFormatted) + '</strong></div><div class="card"><span class="label">Dias com ponto</span><strong>' + esc(data.point.days) + '</strong></div><div class="card"><span class="label">Pontos no mes</span><strong>' + esc(data.summary.month.total) + '</strong></div><div class="card"><span class="label">Ponto atual</span><strong>' + esc(data.point.activeDurationFormatted) + '</strong></div></div>' +
-        '<section><h2>Historico do mes</h2><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.monthSessions) + '</tbody></table></div></section>' +
-        '<section><h2>Todos os pontos</h2><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.sessions) + '</tbody></table></div></section>';
+        '<section><div class="toolbar"><h2>Historico do mes</h2><span class="pill">' + esc(data.summary.month.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.monthSessions) + '</tbody></table></div></section>' +
+        '<section><div class="toolbar"><h2>Todos os pontos</h2><span class="pill">' + esc(data.summary.all.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.sessions) + '</tbody></table></div></section>';
     }).catch((error) => {
       document.getElementById('app').innerHTML = '<div class="empty">' + error.message + '</div>';
     });

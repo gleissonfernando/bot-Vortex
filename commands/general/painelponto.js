@@ -1,7 +1,14 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
-const { createPointTranscriptTextAttachment } = require('../../utils/pontoTranscript');
 const { isGerencia } = require('../../utils/permissions');
+
+function buildPointSiteUrl(guildId, userId) {
+  const baseUrl = String(process.env.POINT_SITE_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const url = new URL(`/ponto/${userId}`, baseUrl);
+  url.searchParams.set('guildId', guildId);
+  if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
+  return url.toString();
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,18 +33,13 @@ module.exports = {
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const data = await getUserPoint(interaction.guild.id, target.id);
     const activeMs = data.activePointStartedAt ? Date.now() - new Date(data.activePointStartedAt).getTime() : 0;
-    const transcript = createPointTranscriptTextAttachment({
-      guild: interaction.guild,
-      target,
-      member,
-      data,
-    });
+    const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, target.id);
 
     const embed = new EmbedBuilder()
       .setColor('#5865F2')
       .setTitle('Painel de Ponto Vortex')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setDescription('Folha de ponto individual gerada em arquivo TXT.')
+      .setDescription('Folha de ponto individual gerada em site. Clique no botão abaixo para abrir no navegador.')
       .addFields(
         { name: 'Usuário Discord', value: `<@${target.id}>`, inline: true },
         { name: 'Discord ID', value: `\`${target.id}\``, inline: true },
@@ -52,6 +54,13 @@ module.exports = {
       .setTimestamp()
       .setFooter({ text: 'Vortex - Sistema de Ponto' });
 
-    return interaction.editReply({ embeds: [embed], files: [transcript] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Abrir folha no navegador')
+        .setStyle(ButtonStyle.Link)
+        .setURL(pointSiteUrl)
+    );
+
+    return interaction.editReply({ embeds: [embed], components: [row] });
   },
 };
