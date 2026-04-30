@@ -13,6 +13,7 @@ const { getGuildProfiles } = require('./profileManager');
 const { getActiveGuildAbsences } = require('./ausenciaManager');
 const { logger } = require('./logger');
 const { sendVortexLog } = require('./notifications');
+const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -20,7 +21,6 @@ const DEFAULT_POINT_CORRECTION_CATEGORY_ID = '1498087442304073870';
 const DEFAULT_PENALTY_CHANNEL_ID = '1499178753207701677';
 const DEFAULT_MANAGER_DM_USER_IDS = ['730925532958425240', '289227932432334869'];
 const MASTER_ROLE_ID = '1497703127074345040';
-const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
@@ -83,13 +83,6 @@ function getStaffRoleIds() {
     ...(Array.isArray(levels.medio) ? levels.medio : []),
     ...(Array.isArray(config.POINT_ADJUST_STAFF_ROLES) ? config.POINT_ADJUST_STAFF_ROLES : []),
   ].filter(Boolean).map(String))];
-}
-
-function getPointAllowedRoleIds() {
-  const config = readJSON(CONFIG_PATH, {});
-  return Array.isArray(config.POINT_ALLOWED_ROLE_IDS) && config.POINT_ALLOWED_ROLE_IDS.length
-    ? config.POINT_ALLOWED_ROLE_IDS.map(String)
-    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
 }
 
 function getStateKey(guildId, userId) {

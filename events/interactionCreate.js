@@ -11,6 +11,7 @@ const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAut
 const { createApprovedSetChannel, handleApprovedChannelGuide } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
+const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -18,7 +19,6 @@ const PEDIDOS_PATH = path.join(__dirname, '..', 'commands', 'pedidos_ativos.json
 const ERROR_LOG_CHANNEL_ID = '1497685822525149337';
 const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
-const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
@@ -32,10 +32,7 @@ function hasMasterPermission(member) {
 }
 
 function hasPointRole(member) {
-    const conf = loadJSON(CONFIG_PATH);
-    const roleIds = Array.isArray(conf.POINT_ALLOWED_ROLE_IDS) && conf.POINT_ALLOWED_ROLE_IDS.length
-        ? conf.POINT_ALLOWED_ROLE_IDS.map(String)
-        : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+    const roleIds = getPointAllowedRoleIds();
     return Boolean(member?.roles?.cache && roleIds.some(roleId => member.roles.cache.has(roleId)));
 }
 
@@ -317,10 +314,7 @@ module.exports = {
             }
 
             if (!hasPointRole(member)) {
-                const pointConf = loadJSON(CONFIG_PATH);
-                const roleIds = Array.isArray(pointConf.POINT_ALLOWED_ROLE_IDS) && pointConf.POINT_ALLOWED_ROLE_IDS.length
-                    ? pointConf.POINT_ALLOWED_ROLE_IDS.map(String)
-                    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+                const roleIds = getPointAllowedRoleIds();
                 return interaction.reply({
                     content: `❌ Você não tem cargo liberado para bater ponto. Cargos permitidos: ${roleIds.map(roleId => `<@&${roleId}>`).join(' ')}`,
                     ephemeral: true,

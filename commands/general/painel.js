@@ -19,12 +19,13 @@ const path = require('path');
 const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
 const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { updateStatusPanel } = require('../../utils/pontoPanel');
-const { createPointTranscriptAttachment } = require('../../utils/pontoTranscript');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
+const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
+const { buildPointSiteUrl } = require('../../utils/pointSite');
 const {
   ALERT_CHANNEL_ID,
   buildLiveTermsUrl,
@@ -44,7 +45,6 @@ const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const LOGS_MANAGER_IDS = ['289227932432334869'];
-const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
@@ -366,22 +366,22 @@ module.exports = {
       const target = await interaction.client.users.fetch(userId).catch(() => null);
       if (!target) return interaction.editReply({ content: '❌ Não consegui encontrar esse usuário.' });
 
-      const member = await interaction.guild.members.fetch(userId).catch(() => null);
       const data = await getUserPoint(interaction.guild.id, userId).catch(() => null);
       if (!data || (!data.activePointStartedAt && !Array.isArray(data.sessions))) {
         return interaction.editReply({ content: `❌ <@${userId}> ainda não possui ponto registrado.` });
       }
 
-      const attachment = createPointTranscriptAttachment({
-        guild: interaction.guild,
-        target,
-        member,
-        data,
-      });
+      const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, userId);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('Abrir folha no navegador')
+          .setStyle(ButtonStyle.Link)
+          .setURL(pointSiteUrl)
+      );
 
       return interaction.editReply({
-        content: `✅ Folha de ponto de <@${userId}> gerada. O arquivo mostra entradas, saídas, dia da semana, mês, duração e origem do ponto.`,
-        files: [attachment],
+        content: `✅ Folha de ponto de <@${userId}> gerada em site:\n${pointSiteUrl}`,
+        components: [row],
         allowedMentions: { users: [userId] },
       });
     }
@@ -1024,8 +1024,7 @@ module.exports = {
 
     if (interaction.customId === 'select_point_allowed_roles') {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar cargos de ponto.', ephemeral: true });
-        data.POINT_ALLOWED_ROLE_IDS = interaction.values.map(String);
-        saveJSON(CONFIG_PATH, data);
+        data.POINT_ALLOWED_ROLE_IDS = setPointAllowedRoleIds(interaction.values);
 
         sendVortexLog(interaction.client, {
             title: 'Cargos de Ponto Alterados',
@@ -1636,9 +1635,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_pontos') {
     const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
     const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[guild.id] || {};
-    const pointAllowedRoles = Array.isArray(conf.POINT_ALLOWED_ROLE_IDS) && conf.POINT_ALLOWED_ROLE_IDS.length
-      ? conf.POINT_ALLOWED_ROLE_IDS.map(String)
-      : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+    const pointAllowedRoles = getPointAllowedRoleIds();
     const openPointOptions = Object.values(pointData)
       .filter((point) => point?.activePointStartedAt)
       .slice(0, 25)

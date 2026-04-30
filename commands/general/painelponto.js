@@ -1,15 +1,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { isGerencia } = require('../../utils/permissions');
-
-function buildPointSiteUrl(guildId, userId) {
-  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
-  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
-  const url = new URL(`/ponto/${userId}`, baseUrl);
-  url.searchParams.set('guildId', guildId);
-  if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
-  return url.toString();
-}
+const { buildPointSiteUrl } = require('../../utils/pointSite');
 
 module.exports = {
   data: new SlashCommandBuilder()

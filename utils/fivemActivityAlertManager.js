@@ -2,6 +2,7 @@ const { ActivityType, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { openPoint, closePoint, getUserPoint, listGuildPoints, formatDate, formatDuration } = require('./pontoManager');
+const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
@@ -13,7 +14,6 @@ const TARGET_SERVER_ALIASES = [
   'Metrópole RP',
   'Metrópole GG',
 ];
-const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
@@ -86,10 +86,7 @@ function areActivityLogsDisabled() {
 }
 
 async function hasPointRole(guild, member, userId) {
-  const config = readConfig();
-  const roleIds = Array.isArray(config.POINT_ALLOWED_ROLE_IDS) && config.POINT_ALLOWED_ROLE_IDS.length
-    ? config.POINT_ALLOWED_ROLE_IDS.map(String)
-    : DEFAULT_POINT_ALLOWED_ROLE_IDS;
+  const roleIds = getPointAllowedRoleIds();
   const resolvedMember = member || await guild.members.fetch(userId).catch(() => null);
   return Boolean(resolvedMember?.roles?.cache && roleIds.some((roleId) => resolvedMember.roles.cache.has(roleId)));
 }
