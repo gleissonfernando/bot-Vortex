@@ -1499,10 +1499,6 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary)
-      ),
-      new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_log')
           .setPlaceholder('Selecionar canal para logs')
