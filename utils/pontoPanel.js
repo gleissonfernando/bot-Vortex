@@ -7,7 +7,7 @@ const { logger } = require('./logger');
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
-const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
+const PONTO_ONLINE_CHANNEL_ID = '1498473417144533255';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 let statusPanelInterval = null;
@@ -105,9 +105,23 @@ function createControlRow() {
   );
 }
 
+async function getOnlinePlayerCount(guild) {
+  const fetched = await guild.members.fetch({ withPresences: true }).catch(() => null);
+  const members = guild.members.cache.size ? guild.members.cache.values() : fetched?.values?.() || [];
+  let onlineCount = 0;
+
+  for (const member of members) {
+    if (!member || member.user?.bot) continue;
+    if (member.presence?.status === 'online') onlineCount += 1;
+  }
+
+  return onlineCount;
+}
+
 async function createStatusEmbed(guild) {
   const allPoints = await listGuildPoints(guild.id);
   const active = allPoints.filter((item) => item.activePointStartedAt);
+  const onlineCount = await getOnlinePlayerCount(guild).catch(() => 0);
 
   const rows = await Promise.all(active.map(async (item) => {
     const member = await guild.members.fetch(item.userId).catch(() => null);
@@ -133,6 +147,7 @@ async function createStatusEmbed(guild) {
 
   const description = [
     `Temos ${active.length} membros da fac em serviço:`,
+    `Jogadores online agora: ${onlineCount}`,
     '',
     table,
   ].join('\n');
@@ -264,6 +279,7 @@ module.exports = {
   getPanel,
   createControlEmbed,
   createControlRow,
+  getOnlinePlayerCount,
   createStatusEmbed,
   setOnlineChannelAccess,
   syncOnlineChannelVisibility,

@@ -405,12 +405,14 @@ function hasAnyRole(member, roleIds) {
   return Boolean(member?.roles?.cache && roleIds.some((roleId) => member.roles.cache.has(roleId)));
 }
 
-async function sendAvailabilityReminderDm(user, guild) {
+async function sendAvailabilityReminderDm(user, guild, onlineCount = 0) {
   const embed = new EmbedBuilder()
     .setColor('#FEE75C')
     .setTitle('Ative o modo disponível no Discord')
     .setDescription([
       'A partir das 19:00, deixe seu Discord em **Disponível/Online**.',
+      '',
+      `Jogadores online agora: **${onlineCount}**`,
       '',
       'Isso ajuda o bot a detectar sua presença no FiveM e manter o ponto automático funcionando corretamente.',
       'Quem já estiver com o status disponível não recebe este aviso.',
@@ -447,6 +449,9 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
     .catch(() => false);
   if (!fetchedPresences && !guild.presences?.cache?.size) return;
 
+  const onlineCount = Array.from(guild.members.cache.values()).filter((member) => (
+    member && !member.user?.bot && member.presence?.status === 'online'
+  )).length;
   const today = getAutomationDateKey();
   const pointRoleIds = getPointAllowedRoleIds();
   const profiles = getGuildProfiles(guild.id);
@@ -473,7 +478,7 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
     if (member.presence?.status === 'online') continue;
     if (!force && item.lastAvailabilityReminderDate === today) continue;
 
-    const sent = await sendAvailabilityReminderDm(member.user, guild);
+    const sent = await sendAvailabilityReminderDm(member.user, guild, onlineCount);
     state[key] = {
       ...item,
       lastAvailabilityReminderDate: today,
