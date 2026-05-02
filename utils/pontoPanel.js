@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const { listGuildPoints, formatPanelDate } = require('./pontoManager');
+const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
 
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
@@ -105,23 +106,36 @@ function createControlRow() {
   );
 }
 
-async function getOnlinePlayerCount(guild) {
+function hasAnyRole(member, roleIds) {
+  return Boolean(member?.roles?.cache && roleIds.some((roleId) => member.roles.cache.has(roleId)));
+}
+
+async function getOnlinePlayers(guild) {
+  const pointRoleIds = getPointAllowedRoleIds();
   const fetched = await guild.members.fetch({ withPresences: true }).catch(() => null);
   const members = guild.members.cache.size ? guild.members.cache.values() : fetched?.values?.() || [];
-  let onlineCount = 0;
+  const onlinePlayers = [];
 
   for (const member of members) {
     if (!member || member.user?.bot) continue;
-    if (member.presence?.status === 'online') onlineCount += 1;
+    if (member.presence?.status !== 'online') continue;
+    if (pointRoleIds.length && !hasAnyRole(member, pointRoleIds)) continue;
+    onlinePlayers.push({
+      id: member.id,
+      name: member.displayName || member.user.username || `ID ${member.id}`,
+      mention: `<@${member.id}>`,
+    });
   }
 
-  return onlineCount;
+  onlinePlayers.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return onlinePlayers;
 }
 
 async function createStatusEmbed(guild) {
   const allPoints = await listGuildPoints(guild.id);
   const active = allPoints.filter((item) => item.activePointStartedAt);
-  const onlineCount = await getOnlinePlayerCount(guild).catch(() => 0);
+  const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
+  const onlineCount = onlinePlayers.length;
 
   const rows = await Promise.all(active.map(async (item) => {
     const member = await guild.members.fetch(item.userId).catch(() => null);
@@ -148,6 +162,9 @@ async function createStatusEmbed(guild) {
   const description = [
     `Temos ${active.length} membros da fac em serviço:`,
     `Jogadores online agora: ${onlineCount}`,
+    onlinePlayers.length
+      ? `Online: ${onlinePlayers.slice(0, 25).map((player) => player.mention).join(' ')}${onlinePlayers.length > 25 ? ` (+${onlinePlayers.length - 25})` : ''}`
+      : 'Online: nenhum membro do ponto detectado agora.',
     '',
     table,
   ].join('\n');
@@ -279,7 +296,7 @@ module.exports = {
   getPanel,
   createControlEmbed,
   createControlRow,
-  getOnlinePlayerCount,
+  getOnlinePlayers,
   createStatusEmbed,
   setOnlineChannelAccess,
   syncOnlineChannelVisibility,
