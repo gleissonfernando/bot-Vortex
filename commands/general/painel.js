@@ -21,7 +21,16 @@ const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, f
 const { updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
-const { getGuildProfiles, checkProfileUpdates, parseTestPeriod, registerManualProfile, readProfileConfig, toggleProfileBilling } = require('../../utils/profileManager');
+const {
+  getGuildProfiles,
+  checkProfileUpdates,
+  parseTestPeriod,
+  registerManualProfile,
+  readProfileConfig,
+  toggleProfileBilling,
+  addBillingExemptUserId,
+  removeUserProfileData,
+} = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
@@ -462,6 +471,39 @@ module.exports = {
         content: deleted.length
           ? `✅ Call/canal de ajuste de <@${userId}> deletado. Total: ${deleted.length}.`
           : `⚠️ Nenhuma call/canal de ajuste encontrada para <@${userId}>.`,
+      });
+    }
+
+    if (customId === 'clear_point_no_billing') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
+      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+
+      const existed = await deleteUserPoint(interaction.guild.id, userId);
+      const exempt = addBillingExemptUserId(userId, interaction.user.id);
+      if (!exempt.ok) return interaction.editReply({ content: `❌ ${exempt.message}` });
+
+      await updateStatusPanel(interaction.client, interaction.guild.id);
+      sendVortexLog(interaction.client, {
+        title: 'Ponto deletado e cobrança bloqueada',
+        description: [
+          `Usuário: <@${userId}> (${userId})`,
+          `Gerente: <@${interaction.user.id}>`,
+          `Registro de ponto existia: ${existed ? 'sim' : 'não'}`,
+          'O usuário foi colocado na lista de isenção de cobranças automáticas.',
+        ].join('\n'),
+        color: '#FF0055',
+        type: 'PONTO',
+        userId: interaction.user.id,
+      }).catch(() => {});
+
+      return interaction.editReply({
+        content: [
+          existed
+            ? `✅ Dados de ponto de <@${userId}> deletados.`
+            : `⚠️ Nenhum dado de ponto encontrado para <@${userId}>.`,
+          '✅ Cobranças automáticas bloqueadas para esse usuário.',
+        ].join('\n'),
       });
     }
 
@@ -908,6 +950,39 @@ module.exports = {
         );
 
         return interaction.showModal(modal);
+    }
+
+    if (customId === 'profile_delete_no_billing') {
+        await interaction.deferReply({ ephemeral: true });
+        const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+        const userId = selected.userId;
+        if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+
+        const removed = removeUserProfileData(interaction.guild.id, userId);
+        const exempt = addBillingExemptUserId(userId, interaction.user.id);
+        if (!exempt.ok) return interaction.editReply({ content: `❌ ${exempt.message}` });
+
+        sendVortexLog(interaction.client, {
+            title: 'Perfil deletado e cobrança bloqueada',
+            description: [
+                `Usuário: <@${userId}> (${userId})`,
+                `Gerente: <@${interaction.user.id}>`,
+                `Perfil existia: ${removed.deleted ? 'sim' : 'não'}`,
+                'O usuário foi colocado na lista de isenção de cobranças automáticas.',
+            ].join('\n'),
+            color: '#FF0055',
+            type: 'PERFIL',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return interaction.editReply({
+            content: [
+                removed.deleted
+                    ? `✅ Dados de perfil de <@${userId}> apagados.`
+                    : `⚠️ Nenhum perfil salvo encontrado para <@${userId}>.`,
+                '✅ Cobranças automáticas bloqueadas para esse usuário.',
+            ].join('\n'),
+        });
     }
 
     if (customId === 'profile_toggle_billing') {
@@ -1678,7 +1753,8 @@ async function renderDashboard(interaction, tab, edit = false) {
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('clear_point_no_billing').setLabel('Deletar ponto + sem cobrança').setStyle(ButtonStyle.Danger)
       ),
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
@@ -1844,8 +1920,9 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto> nivel:<numero>`.',
         'Os links de foto ficam salvos no JSON mesmo se a imagem original for apagada.',
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
+        `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
-        `Selecionado para cadastro: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
+        `Selecionado no perfil: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
         '',
         '**Perfis salvos**',
         profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
@@ -1857,13 +1934,14 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Ver cadastrados').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('profile_test').setLabel('Testar perfil').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar dados').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
     extraRows = [
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_profile_register_user')
-          .setPlaceholder('Selecionar usuário para cadastrar perfil')
+          .setPlaceholder('Selecionar usuário para perfil')
           .setMinValues(1)
           .setMaxValues(1)
       ),

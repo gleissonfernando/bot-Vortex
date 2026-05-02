@@ -48,15 +48,16 @@ function writeProfiles(data) {
 
 function readProfileConfig() {
   if (!fs.existsSync(PROFILE_CONFIG_PATH)) {
-    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: true }, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: true, billingExemptUserIds: [] }, null, 2)}\n`, 'utf8');
   }
   try {
     return {
       billingDmEnabled: true,
+      billingExemptUserIds: [],
       ...(JSON.parse(fs.readFileSync(PROFILE_CONFIG_PATH, 'utf8') || '{}')),
     };
   } catch {
-    return { billingDmEnabled: true };
+    return { billingDmEnabled: true, billingExemptUserIds: [] };
   }
 }
 
@@ -125,6 +126,37 @@ function setProfileBillingEnabled(enabled) {
 function toggleProfileBilling() {
   const current = readProfileConfig();
   return setProfileBillingEnabled(!current.billingDmEnabled);
+}
+
+function normalizeUserIds(userIds) {
+  return [...new Set((Array.isArray(userIds) ? userIds : [])
+    .map((userId) => String(userId || '').trim())
+    .filter((userId) => /^\d{15,25}$/.test(userId)))];
+}
+
+function getBillingExemptUserIds() {
+  return normalizeUserIds(readProfileConfig().billingExemptUserIds);
+}
+
+function addBillingExemptUserId(userId, updatedBy = null) {
+  const normalizedUserId = String(userId || '').trim();
+  if (!/^\d{15,25}$/.test(normalizedUserId)) {
+    return { ok: false, message: 'ID de usuário inválido.' };
+  }
+
+  const config = readProfileConfig();
+  const billingExemptUserIds = normalizeUserIds([
+    ...normalizeUserIds(config.billingExemptUserIds),
+    normalizedUserId,
+  ]);
+  const next = {
+    ...config,
+    billingExemptUserIds,
+    billingExemptUpdatedAt: new Date().toISOString(),
+    billingExemptUpdatedBy: updatedBy ? String(updatedBy) : null,
+  };
+  writeProfileConfig(next);
+  return { ok: true, config: next, userId: normalizedUserId };
 }
 
 function getGuildProfiles(guildId) {
@@ -476,6 +508,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
 async function checkProfileUpdates(client, { guildId = null, userId = null, thresholdMs = PROFILE_UPDATE_INTERVAL_MS, force = false } = {}) {
   const data = readProfiles();
   const results = [];
+  const exemptUserIds = new Set(getBillingExemptUserIds());
 
   for (const [currentGuildId, guildProfiles] of Object.entries(data)) {
     if (guildId && currentGuildId !== String(guildId)) continue;
@@ -484,6 +517,10 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
 
     for (const profile of Object.values(guildProfiles || {})) {
       if (userId && profile.userId !== String(userId)) continue;
+      if (exemptUserIds.has(String(profile.userId))) {
+        results.push({ userId: profile.userId, sent: false, reason: 'billing_exempt' });
+        continue;
+      }
       const result = await sendProfileReminder(client, guild, profile, thresholdMs, force).catch((error) => {
         logger.error('Erro ao enviar lembrete de perfil:', error);
         return { sent: false, reason: error.message };
@@ -508,6 +545,19 @@ async function ensureAllProfileChannelAccess(client) {
       });
     }
   }
+}
+
+function removeUserProfileData(guildId, userId) {
+  const normalizedUserId = String(userId || '').trim();
+  const data = readProfiles();
+  const profile = data[guildId]?.[normalizedUserId] || null;
+  if (!profile) return { ok: true, deleted: false, profile: null };
+
+  delete data[guildId][normalizedUserId];
+  if (Object.keys(data[guildId]).length === 0) delete data[guildId];
+  writeProfiles(data);
+
+  return { ok: true, deleted: true, profile };
 }
 
 async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servidor') {
@@ -558,10 +608,13 @@ module.exports = {
   readProfileConfig,
   setProfileBillingEnabled,
   toggleProfileBilling,
+  getBillingExemptUserIds,
+  addBillingExemptUserId,
   getUserProfile,
   getGuildProfiles,
   registerApprovedProfile,
   registerManualProfile,
+  removeUserProfileData,
   deleteUserProfile,
   updateProfileLink,
   updateProfileLevel,

@@ -9,7 +9,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const { listGuildPoints, formatDate, formatDuration } = require('./pontoManager');
-const { getGuildProfiles } = require('./profileManager');
+const { getGuildProfiles, getBillingExemptUserIds } = require('./profileManager');
 const { getActiveGuildAbsences } = require('./ausenciaManager');
 const { logger } = require('./logger');
 const { sendVortexLog } = require('./notifications');
@@ -364,12 +364,14 @@ async function checkOfflineUsers(client, guild, state, force = false) {
   if (!force && getAutomationHour() !== config.offlineChargeHour) return;
 
   const profiles = Object.values(getGuildProfiles(guild.id));
+  const billingExemptUserIds = new Set(getBillingExemptUserIds());
   const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
   const points = await listGuildPoints(guild.id);
   const pointByUser = new Map(points.map((point) => [point.userId, point]));
   const intervalMs = Math.max(1, config.offlineChargeIntervalDays) * 24 * 60 * 60 * 1000;
 
   for (const profile of profiles) {
+    if (billingExemptUserIds.has(String(profile?.userId))) continue;
     if (!profile?.userId || activeAbsences.has(profile.userId)) continue;
     const point = pointByUser.get(profile.userId);
     if (point?.activePointStartedAt) continue;
@@ -448,11 +450,13 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
   const today = getAutomationDateKey();
   const pointRoleIds = getPointAllowedRoleIds();
   const profiles = getGuildProfiles(guild.id);
+  const billingExemptUserIds = new Set(getBillingExemptUserIds());
   const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
 
   for (const member of guild.members.cache.values()) {
     if (!member || member.user?.bot) continue;
     if (!hasAnyRole(member, pointRoleIds)) continue;
+    if (billingExemptUserIds.has(String(member.id))) continue;
     if (activeAbsences.has(member.id)) continue;
 
     const profile = profiles[member.id];
