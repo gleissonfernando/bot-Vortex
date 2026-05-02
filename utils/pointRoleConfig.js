@@ -2,7 +2,15 @@ const fs = require('fs');
 const path = require('path');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
-const DEFAULT_POINT_ALLOWED_ROLE_IDS = ['1212944805055692840', '1201235607549124639', '1201238413676924979'];
+const DEFAULT_POINT_ALLOWED_ROLE_IDS = [
+  '1498884908028792942',
+  '1201238799494152344',
+  '1212944805055692840',
+  '1458993436513271868',
+  '1201320710459629600',
+  '1460672937634955350',
+  '1201235607549124639',
+];
 
 function readConfig() {
   try {

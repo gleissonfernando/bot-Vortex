@@ -36,10 +36,19 @@ function hasPointRole(member) {
     return Boolean(member?.roles?.cache && roleIds.some(roleId => member.roles.cache.has(roleId)));
 }
 
+function hasAbsenceAccess(member) {
+    return hasPointRole(member) || hasAnyVortexRole(member);
+}
+
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName === 'clear' || commandName === 'clipe' || commandName === 'live') return true;
-    if (commandName === 'perfil' && getUserProfile(interaction.guildId, interaction.user.id)) return true;
+    if (commandName === 'perfil') {
+        return hasAbsenceAccess(interaction.member)
+            || Boolean(getUserProfile(interaction.guildId, interaction.user.id))
+            || hasStaffPermission(interaction.member);
+    }
+    if (commandName === 'ausencia') return hasAbsenceAccess(interaction.member);
 
     const conf = loadJSON(CONFIG_PATH);
     const permissions = conf.COMMAND_ROLE_PERMISSIONS || {};
@@ -48,7 +57,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     if (allowedRoles.length > 0) {
         return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
     }
-    if (commandName === 'painel') return true;
+    if (commandName === 'painel') return hasAnyVortexRole(interaction.member);
     return hasAnyVortexRole(interaction.member);
 }
 
@@ -215,6 +224,16 @@ module.exports = {
                             content: '❌ Você não tem cargo liberado no /painel para usar este comando.',
                             ephemeral: true,
                         });
+                    }
+
+                    if (interaction.commandName === 'perfil') {
+                        const target = interaction.options.getUser('usuario') || interaction.user;
+                        if (target.id !== interaction.user.id && !hasStaffPermission(interaction.member)) {
+                            return safeReply(interaction, {
+                                content: '❌ Você só pode consultar e atualizar o seu próprio perfil.',
+                                ephemeral: true,
+                            });
+                        }
                     }
 
                     sendVortexLog(client, {
@@ -386,6 +405,9 @@ module.exports = {
         }
 
         if (interaction.isButton() && interaction.customId === 'ausencia_request') {
+            if (!hasAbsenceAccess(member)) {
+                return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
+            }
             const ausencia = client.commands.get('ausencia');
             if (!ausencia?.buildAbsenceModal) {
                 return safeReply(interaction, { content: '❌ Sistema de ausência indisponível no momento.', ephemeral: true });
@@ -394,6 +416,9 @@ module.exports = {
         }
 
         if (interaction.isButton() && interaction.customId === 'ausencia_remove') {
+            if (!hasAbsenceAccess(member)) {
+                return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
+            }
             await interaction.deferReply({ ephemeral: true });
             const result = await removeOwnAbsence(interaction);
             if (!result.ok) {
@@ -409,6 +434,9 @@ module.exports = {
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'modal_ausencia_request') {
+            if (!hasAbsenceAccess(member)) {
+                return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
+            }
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply({ ephemeral: true });
             }
