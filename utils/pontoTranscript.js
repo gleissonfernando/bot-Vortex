@@ -1,6 +1,17 @@
 const { AttachmentBuilder } = require('discord.js');
-const { formatDuration, formatDate, getEffectiveTotalMs } = require('./pontoManager');
+const { formatDuration, formatDate, formatLocalDay, formatTime, getEffectiveTotalMs } = require('./pontoManager');
 const { getUserProfile } = require('./profileManager');
+
+const TIME_ZONE = 'America/Sao_Paulo';
+const WEEKDAY_ORDER = [
+  'segunda-feira',
+  'terca-feira',
+  'quarta-feira',
+  'quinta-feira',
+  'sexta-feira',
+  'sabado',
+  'domingo',
+];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -11,17 +22,70 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function getMonthKey(date = new Date()) {
-  return date.toISOString().slice(0, 7);
+function pad(value, size) {
+  const text = String(value ?? '');
+  return text.length > size ? `${text.slice(0, size - 3)}...` : text.padEnd(size, ' ');
 }
 
-function getMonthLabel(monthKey) {
-  const [year, month] = String(monthKey).split('-').map(Number);
-  if (!year || !month) return monthKey;
-  return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', {
-    month: 'long',
+function getLocalParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TIME_ZONE,
     year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'long',
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+}
+
+function getLocalDateKey(date = new Date()) {
+  const parts = getLocalParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getWeekdayIndexFromDate(date = new Date()) {
+  const weekday = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TIME_ZONE,
+    weekday: 'long',
+  }).format(date).toLowerCase();
+
+  const normalized = weekday.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (normalized === 'domingo') return 6;
+  const index = WEEKDAY_ORDER.indexOf(normalized);
+  return index >= 0 ? index : 0;
+}
+
+function shiftDateKey(dateKey, offsetDays) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const base = Date.UTC(year, month - 1, day);
+  return new Date(base + offsetDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function dateKeyToDate(dateKey) {
+  return new Date(`${dateKey}T12:00:00Z`);
+}
+
+function formatDateKey(dateKey) {
+  return dateKeyToDate(dateKey).toLocaleDateString('pt-BR', { timeZone: TIME_ZONE });
+}
+
+function formatWeekdayLabel(dateKey) {
+  const label = dateKeyToDate(dateKey).toLocaleDateString('pt-BR', {
+    timeZone: TIME_ZONE,
+    weekday: 'long',
   });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function formatMomentValue(value) {
+  return value ? formatDate(value) : 'N/A';
+}
+
+function buildWeekRange(referenceDate = new Date()) {
+  const currentKey = getLocalDateKey(referenceDate);
+  const weekStartKey = shiftDateKey(currentKey, -getWeekdayIndexFromDate(referenceDate));
+  const weekEndKey = shiftDateKey(weekStartKey, 6);
+  return { currentKey, weekStartKey, weekEndKey };
 }
 
 function getSessionStartedAt(session) {
@@ -35,665 +99,561 @@ function getSessionClosedAt(session) {
 function getSessionDurationMs(session) {
   const explicit = Number(session.durationMs || session.duracaoMs || 0);
   if (explicit > 0) return explicit;
-
   const startedAt = getSessionStartedAt(session);
   const closedAt = getSessionClosedAt(session);
   if (!startedAt || !closedAt) return 0;
-
   return Math.max(0, new Date(closedAt).getTime() - new Date(startedAt).getTime());
 }
 
-function getSessionSource(session) {
+function getSessionPointId(session, fallbackKey = null) {
+  return session.pointId || session.id || session.sessionId || fallbackKey || null;
+}
+
+function getSessionOrigin(session) {
   if (session.source === 'fivem_metropole_auto') return 'FiveM automatico';
   if (session.adjusted || session.corrected) return 'Ajuste manual';
   return session.source || 'Ponto manual';
 }
 
-function mapSession(session) {
+function normalizeSession(session, index = 0) {
   const startedAt = getSessionStartedAt(session);
   const closedAt = getSessionClosedAt(session);
   const durationMs = getSessionDurationMs(session);
+  const pointId = getSessionPointId(session, startedAt ? `${startedAt}-${closedAt || 'open'}` : null);
+  const dayKey = startedAt ? getLocalDateKey(startedAt) : null;
 
   return {
-    ticketId: session.ticketId || session.ticket || null,
+    index: index + 1,
+    pointId,
     startedAt,
     closedAt,
     durationMs,
-    closedBy: session.closedBy || session.fechadoPor || session.adjustedBy || session.correctedBy || 'Sistema',
+    dayKey,
+    dayLabel: startedAt ? formatWeekdayLabel(dayKey) : 'N/A',
+    startedAtTime: startedAt ? formatTime(startedAt) : 'N/A',
+    closedAtTime: closedAt ? formatTime(closedAt) : 'Em andamento',
+    durationFormatted: formatDuration(durationMs),
     status: closedAt ? 'FECHADO' : 'ABERTO',
-    corrected: Boolean(session.corrected || session.adjusted),
-    source: getSessionSource(session),
+    origin: getSessionOrigin(session),
     serverName: session.serverName || null,
-    reason: session.reason || null,
+    reason: session.reason || session.pointReason || null,
     activityName: session.activityName || null,
     activityDetails: session.activityDetails || null,
     activityState: session.activityState || null,
+    adjusted: Boolean(session.adjusted || session.corrected),
+    adjustedBy: session.adjustedBy || session.correctedBy || session.closedBy || null,
+    adjustedByTag: session.adjustedByTag || session.adjustedByName || null,
+    adjustedByDisplayName: session.adjustedByDisplayName || session.adjustedByName || null,
+    adjustedByRoleIds: Array.isArray(session.adjustedByRoleIds) ? session.adjustedByRoleIds.map(String) : [],
+    adjustedByPermissions: Array.isArray(session.adjustedByPermissions) ? session.adjustedByPermissions.map(String) : [],
   };
-}
-
-function normalizeSessions(sessions) {
-  return sessions
-    .filter((session) => session.startedAt)
-    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
-    .map((session, index) => ({
-      ...session,
-      index: index + 1,
-      ticketId: session.ticketId || `PONTO-${String(index + 1).padStart(3, '0')}`,
-    }));
 }
 
 function getAllSessions(data) {
-  const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-  const closedSessions = sessions.map(mapSession);
-
+  const closedSessions = Array.isArray(data.sessions) ? data.sessions.map(normalizeSession) : [];
   const activeSession = data.activePointStartedAt
-    ? [{
-        ticketId: null,
+    ? [normalizeSession({
+        pointId: data.activePointId || `active-${data.activePointStartedAt}`,
         startedAt: data.activePointStartedAt,
         closedAt: null,
         durationMs: Math.max(0, Date.now() - new Date(data.activePointStartedAt).getTime()),
-        closedBy: 'Em andamento',
-        status: 'ABERTO',
-        corrected: false,
-        source: data.activePointSource === 'fivem_metropole_auto' ? 'FiveM automatico' : 'Ponto manual',
-        serverName: data.activePointServerName || null,
-        reason: data.activePointReason || null,
-        activityName: data.activePointActivityName || null,
-        activityDetails: data.activePointActivityDetails || null,
-        activityState: data.activePointActivityState || null,
-      }]
+        source: data.activePointSource,
+        pointReason: data.activePointReason,
+        serverName: data.activePointServerName,
+        activityName: data.activePointActivityName,
+        activityDetails: data.activePointActivityDetails,
+        activityState: data.activePointActivityState,
+      }, closedSessions.length)]
     : [];
 
-  return normalizeSessions([...closedSessions, ...activeSession]);
+  return [...closedSessions, ...activeSession]
+    .filter((session) => session.startedAt)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
+    .map((session, index) => ({ ...session, index: index + 1 }));
 }
 
-function getMonthlySessions(data, monthKey) {
-  return normalizeSessions(getAllSessions(data)
-    .filter((session) => String(session.startedAt || '').startsWith(monthKey)));
+function getAllAdjustments(data, guildId, userId) {
+  const source = Array.isArray(data.adjustments) && data.adjustments.length
+    ? data.adjustments
+    : Array.isArray(data.corrections)
+      ? data.corrections
+      : [];
+
+  return source.map((entry, index) => normalizeAdjustment(entry, guildId, userId, index))
+    .filter((entry) => entry.adjustedAt || entry.newStartedAt || entry.oldStartedAt);
 }
 
-function getMonthlySummary(sessions) {
-  const closed = sessions.filter((session) => session.closedAt);
-  const open = sessions.filter((session) => !session.closedAt);
-  const totalMs = sessions.reduce((sum, session) => sum + session.durationMs, 0);
-  const averageMs = sessions.length ? totalMs / sessions.length : 0;
-  const smallestMs = sessions.length ? Math.min(...sessions.map((session) => session.durationMs)) : 0;
+function getFallbackPointId(entry, guildId, userId) {
+  const baseDate = entry.newStartedAt || entry.startedAt || entry.oldStartedAt || entry.activePointStartedAt || entry.adjustedAt || new Date().toISOString();
+  return `pt-${String(guildId || 'guild').replace(/[^a-zA-Z0-9]/g, '')}-${String(userId || entry.ownerUserId || 'user').replace(/[^a-zA-Z0-9]/g, '')}-${String(baseDate).replace(/[:.]/g, '-')}`;
+}
+
+function normalizeAdjustment(entry, guildId, userId, index = 0) {
+  const oldStartedAt = entry.oldStartedAt || entry.startedAt || entry.activePointStartedAt || entry.previousActiveStartedAt || null;
+  const oldClosedAt = entry.oldClosedAt || entry.closedAt || entry.previousClosedAt || null;
+  const newStartedAt = entry.newStartedAt || entry.startedAt || entry.activePointStartedAt || oldStartedAt || null;
+  const newClosedAt = entry.newClosedAt || entry.closedAt || null;
+  const adjustedAt = entry.adjustedAt || entry.correctedAt || entry.createdAt || entry.timestamp || null;
+  const pointId = entry.pointId || entry.sessionId || getFallbackPointId(entry, guildId, userId);
+  const typeRaw = String(entry.type || entry.adjustmentType || '').toLowerCase();
+  const type = typeRaw.includes('observ') ? 'observacao'
+    : typeRaw.includes('abert') ? 'abertura'
+    : typeRaw.includes('fech') || typeRaw.includes('close') ? 'fechamento'
+    : 'tempo total';
+  const dayKey = getLocalDateKey(newStartedAt || oldStartedAt || adjustedAt || new Date());
 
   return {
-    totalPoints: sessions.length,
-    closedPoints: closed.length,
-    openPoints: open.length,
-    totalMs,
-    averageMs,
-    smallestMs,
+    index: index + 1,
+    id: entry.id || pointId,
+    pointId,
+    ownerUserId: String(entry.ownerUserId || userId || entry.userId || 'N/A'),
+    guildId: String(entry.guildId || guildId || 'N/A'),
+    type,
+    reason: String(entry.reason || entry.motive || entry.motivo || '').trim() || 'N/A',
+    adjustedBy: entry.adjustedBy || entry.correctedBy || entry.decidedBy || entry.createdBy || null,
+    adjustedByTag: entry.adjustedByTag || entry.adjustedByName || null,
+    adjustedByDisplayName: entry.adjustedByDisplayName || entry.adjustedByName || null,
+    adjustedByRoleIds: Array.isArray(entry.adjustedByRoleIds) ? entry.adjustedByRoleIds.map(String) : [],
+    adjustedByPermissions: Array.isArray(entry.adjustedByPermissions) ? entry.adjustedByPermissions.map(String) : [],
+    oldStartedAt,
+    oldClosedAt,
+    newStartedAt,
+    newClosedAt,
+    adjustedAt,
+    durationMs: Number(entry.durationMs || entry.duration || 0),
+    dayKey,
+    dayLabel: formatWeekdayLabel(dayKey),
+    flexibleInput: entry.flexibleInput || null,
+    extra: entry.extra || null,
   };
 }
 
-function getPointDaysFromSessions(sessions) {
-  return new Set(sessions.filter((session) => session.startedAt).map((session) => session.startedAt.slice(0, 10))).size;
+function groupBy(list, keyGetter) {
+  return list.reduce((acc, item) => {
+    const key = keyGetter(item);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
 }
 
-function buildHistoryRows(sessions) {
+function getWeekDayKeys(referenceDate = new Date()) {
+  const { currentKey, weekStartKey, weekEndKey } = buildWeekRange(referenceDate);
+  const keys = [];
+  let cursor = weekStartKey;
+  for (let i = 0; i < 7; i += 1) {
+    keys.push(cursor);
+    cursor = shiftDateKey(cursor, 1);
+  }
+  return { currentKey, weekStartKey, weekEndKey, keys };
+}
+
+function getDisplayWeekdayFromKey(dateKey) {
+  return formatWeekdayLabel(dateKey);
+}
+
+function formatActor(adjustment) {
+  const display = adjustment.adjustedByDisplayName || adjustment.adjustedByTag || adjustment.adjustedBy || 'Sistema';
+  const roles = adjustment.adjustedByRoleIds.length ? adjustment.adjustedByRoleIds.map((id) => `<@&${id}>`).join(' ') : 'N/A';
+  const perms = adjustment.adjustedByPermissions.length ? adjustment.adjustedByPermissions.join(', ') : 'N/A';
+  return `${display} | cargos: ${roles} | permissao: ${perms}`;
+}
+
+function getPointAdjustmentsForSession(adjustments, session) {
+  const pointId = String(session.pointId || '');
+  const startedKey = session.startedAt ? getLocalDateKey(session.startedAt) : null;
+  return adjustments.filter((adjustment) => {
+    if (adjustment.pointId && String(adjustment.pointId) === pointId) return true;
+    if (!startedKey || !adjustment.dayKey) return false;
+    return adjustment.dayKey === startedKey;
+  });
+}
+
+function groupSessionsByDay(sessions, weekKeys) {
+  const byDay = {};
+  for (const key of weekKeys) byDay[key] = [];
+  for (const session of sessions) {
+    if (!session.dayKey || !byDay[session.dayKey]) continue;
+    byDay[session.dayKey].push(session);
+  }
+  for (const key of weekKeys) {
+    byDay[key].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  }
+  return byDay;
+}
+
+function formatPointLine(label, value) {
+  return `- ${label}: ${value}`;
+}
+
+function buildDayText(dayKey, sessions, adjustments) {
+  const dayLabel = getDisplayWeekdayFromKey(dayKey);
+  const lines = [`${dayLabel}:`];
+
   if (!sessions.length) {
-    return '<tr><td colspan="8" class="empty">Nenhum ponto registrado neste mês. A folha deste usuário está zerada.</td></tr>';
+    lines.push('- Nao abriu ponto');
+    return lines;
   }
 
-  return sessions.map((session) => `
-    <tr>
-      <td>#${session.index}</td>
-      <td>${escapeHtml(formatDate(session.startedAt))}</td>
-      <td>${escapeHtml(session.closedAt ? formatDate(session.closedAt) : 'Em andamento')}</td>
-      <td>${escapeHtml(formatDuration(session.durationMs))}</td>
-      <td>${escapeHtml(session.ticketId)}</td>
-      <td>${escapeHtml(session.closedBy)}</td>
-      <td>${escapeHtml([session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A')}</td>
-      <td><span class="badge ${session.status === 'ABERTO' ? 'open' : 'closed'}">${escapeHtml(session.status)}</span>${session.corrected ? '<span class="tag">corrigido</span>' : ''}${session.source === 'FiveM automatico' ? '<span class="tag">FiveM</span>' : ''}</td>
-    </tr>
-  `).join('');
+  sessions.forEach((session, index) => {
+    const sessionAdjustments = getPointAdjustmentsForSession(adjustments, session);
+    lines.push(`Ponto ${index + 1}:`);
+    lines.push(formatPointLine('Abriu as', session.startedAtTime || 'N/A'));
+    lines.push(formatPointLine('Fechou as', session.closedAtTime || 'Em andamento'));
+    lines.push(formatPointLine('Tempo total', session.durationFormatted));
+    lines.push(formatPointLine('Ajustes feitos no ponto', String(sessionAdjustments.length)));
+    lines.push(formatPointLine('ID do ponto', session.pointId || 'N/A'));
+
+    if (!sessionAdjustments.length) {
+      lines.push(formatPointLine('Motivo do ajuste', 'Nenhum'));
+    } else {
+      sessionAdjustments.forEach((adjustment, adjustmentIndex) => {
+    lines.push(`Ajuste ${adjustmentIndex + 1}:`);
+    lines.push(formatPointLine('Tipo do ajuste', adjustment.type));
+    lines.push(formatPointLine('Quem fez o ajuste', formatActor(adjustment)));
+    lines.push(formatPointLine('Horario antigo', formatMomentValue(adjustment.oldClosedAt || adjustment.oldStartedAt)));
+    lines.push(formatPointLine('Horario novo', formatMomentValue(adjustment.newClosedAt || adjustment.newStartedAt)));
+    lines.push(formatPointLine('Motivo do ajuste', adjustment.reason));
+    lines.push(formatPointLine('Data e hora do ajuste', formatMomentValue(adjustment.adjustedAt)));
+    lines.push(formatPointLine('Usuario dono', `<@${adjustment.ownerUserId}>`));
+    lines.push(formatPointLine('Cargo/permissao', adjustment.adjustedByRoleIds.length ? adjustment.adjustedByRoleIds.map((id) => `<@&${id}>`).join(' ') : (adjustment.adjustedByPermissions.join(', ') || 'N/A')));
+  });
+    }
+  });
+
+  const totalMs = sessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0);
+  lines.push(`Total do dia: ${formatDuration(totalMs)}`);
+  lines.push(`Ajustes do dia: ${sessions.reduce((sum, session) => sum + getPointAdjustmentsForSession(adjustments, session).length, 0)}`);
+
+  return lines;
 }
 
-function buildFrequentLoginRows(sessions) {
-  const rows = sessions
-    .filter((session) => session.startedAt)
-    .map((session) => ({
-      day: new Date(session.startedAt).toLocaleDateString('pt-BR', { weekday: 'long' }),
-      date: new Date(session.startedAt).toLocaleDateString('pt-BR'),
-      startedAt: session.startedAt,
-      closedAt: session.closedAt,
-      durationMs: session.durationMs,
-      source: session.source,
-      serverName: session.serverName,
-    }));
+function buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekStartKey, weekEndKey }) {
+  const daysWithPoints = new Set(sessions.map((session) => session.dayKey).filter(Boolean));
+  const weekSessions = sessions.filter((session) => weekKeys.includes(session.dayKey));
+  const totalMs = weekSessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0);
+  const totalAdjustments = adjustments.length;
+  const lastSession = weekSessions[weekSessions.length - 1] || null;
+  const daysWithoutPoint = weekKeys.filter((key) => !daysWithPoints.has(key)).length;
+  const keysUntilToday = weekKeys.filter((key) => key <= currentKey);
+  const daysWithoutPointUntilToday = keysUntilToday.filter((key) => !daysWithPoints.has(key)).length;
 
-  if (!rows.length) {
-    return '<tr><td colspan="6" class="empty">Nenhum login registrado neste mes.</td></tr>';
-  }
-
-  return rows.map((row) => `
-    <tr>
-      <td>${escapeHtml(row.day.charAt(0).toUpperCase() + row.day.slice(1))}</td>
-      <td>${escapeHtml(row.date)}</td>
-      <td>${escapeHtml(formatDate(row.startedAt))}</td>
-      <td>${escapeHtml(row.closedAt ? formatDate(row.closedAt) : 'Em andamento')}</td>
-      <td>${escapeHtml(formatDuration(row.durationMs))}</td>
-      <td>${escapeHtml([row.source, row.serverName].filter(Boolean).join(' - ') || 'N/A')}</td>
-    </tr>
-  `).join('');
+  return {
+    weekStartKey,
+    weekEndKey,
+    totalMs,
+    totalAdjustments,
+    daysWithPoints: daysWithPoints.size,
+    daysWithoutPoint,
+    totalPoints: weekSessions.length,
+    lastSession,
+    daysWithoutPointUntilToday,
+  };
 }
 
-function buildTimelineRows({ data, sessions, generatedAt }) {
-  const lastSession = sessions[sessions.length - 1] || null;
-  const rows = [];
+function buildAdjustmentHistoryText(adjustments) {
+  if (!adjustments.length) return ['Histórico completo dos ajustes:', '- Nenhum ajuste registrado nesta semana.'];
 
-  if (data.firstPointAt) rows.push(['Primeiro ponto registrado', formatDate(data.firstPointAt)]);
-  if (data.lastPointOpenAt) rows.push(['Última abertura', formatDate(data.lastPointOpenAt)]);
-  if (lastSession?.closedAt) rows.push(['Ultimo fechamento', formatDate(lastSession.closedAt)]);
-  if (lastSession?.closedBy) rows.push(['Responsavel pelo ultimo fechamento', lastSession.closedBy]);
-  rows.push(['Transcript gerado', formatDate(generatedAt)]);
-
-  if (!rows.length) {
-    rows.push(['Status', 'Nenhum evento de ponto encontrado para este usuário.']);
-  }
-
-  return rows.map(([label, value]) => `
-    <div class="timeline-item">
-      <strong>${escapeHtml(label)}</strong>
-      <span>${escapeHtml(value)}</span>
-    </div>
-  `).join('');
+  const lines = ['Historico completo dos ajustes:'];
+  adjustments.forEach((adjustment, index) => {
+    lines.push(`${index + 1}. ${adjustment.dayLabel} - ${adjustment.adjustedAt ? formatDate(adjustment.adjustedAt) : 'N/A'}`);
+    lines.push(formatPointLine('ID do ponto', adjustment.pointId));
+    lines.push(formatPointLine('Usuario dono', `<@${adjustment.ownerUserId}>`));
+    lines.push(formatPointLine('Quem fez o ajuste', formatActor(adjustment)));
+    lines.push(formatPointLine('Tipo do ajuste', adjustment.type));
+    lines.push(formatPointLine('Horario antigo', formatMomentValue(adjustment.oldClosedAt || adjustment.oldStartedAt)));
+    lines.push(formatPointLine('Horario novo', formatMomentValue(adjustment.newClosedAt || adjustment.newStartedAt)));
+    lines.push(formatPointLine('Motivo', adjustment.reason));
+    lines.push(formatPointLine('Data e hora', formatMomentValue(adjustment.adjustedAt)));
+    lines.push(formatPointLine('Cargo/permissao', adjustment.adjustedByRoleIds.length ? adjustment.adjustedByRoleIds.map((id) => `<@&${id}>`).join(' ') : (adjustment.adjustedByPermissions.join(', ') || 'N/A')));
+  });
+  return lines;
 }
 
-function formatProfileStatus(profile) {
-  if (!profile?.approvedAt) return 'Sem cadastro no /set';
-  return profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set';
-}
-
-function getInitials(name) {
-  const parts = String(name || 'Vortex').trim().split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'VX';
-}
-
-function cleanText(value, fallback = 'N/A') {
-  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
-  return text || fallback;
-}
-
-function buildTextLine(label, value) {
-  return `${label.padEnd(24, ' ')}: ${cleanText(value)}`;
-}
-
-function buildTextTable(headers, rows) {
-  const widths = headers.map((header, index) => Math.max(
-    header.length,
-    ...rows.map((row) => cleanText(row[index], '').length)
-  ));
-  const formatRow = (row) => row.map((cell, index) => cleanText(cell, '').padEnd(widths[index], ' ')).join(' | ');
-  return [
-    formatRow(headers),
-    widths.map((width) => '-'.repeat(width)).join('-|-'),
-    ...(rows.length ? rows.map(formatRow) : ['Nenhum registro encontrado.']),
-  ].join('\n');
-}
-
-function createPointTranscriptText({ guild, target, member, data }) {
+function buildTranscriptData({ guild, target, member, data }) {
   const generatedAt = new Date();
-  const monthKey = getMonthKey(generatedAt);
-  const monthLabel = getMonthLabel(monthKey);
+  const { currentKey, weekStartKey, weekEndKey, keys: weekKeys } = getWeekDayKeys(generatedAt);
   const profile = getUserProfile(guild.id, target.id);
-  const allSessions = getAllSessions(data);
-  const sessions = getMonthlySessions(data, monthKey);
-  const summary = getMonthlySummary(sessions);
-  const allSummary = getMonthlySummary(allSessions);
-  const userName = member?.displayName || data.userName || target.username;
-  const roleName = member?.roles?.highest?.name || data.role || 'Membro';
-  const effectiveTotalMs = getEffectiveTotalMs(data);
-  const totalDays = getPointDaysFromSessions(allSessions);
-  const status = data.activePointStartedAt ? 'ABERTO' : 'FECHADO';
-  const activeMs = data.activePointStartedAt
-    ? Math.max(0, generatedAt.getTime() - new Date(data.activePointStartedAt).getTime())
-    : 0;
+  const sessions = getAllSessions(data).filter((session) => session.dayKey && weekKeys.includes(session.dayKey));
+  const adjustments = getAllAdjustments(data, guild.id, target.id)
+    .filter((adjustment) => adjustment.dayKey && adjustment.dayKey >= weekStartKey && adjustment.dayKey <= weekEndKey)
+    .sort((a, b) => new Date(a.adjustedAt || 0).getTime() - new Date(b.adjustedAt || 0).getTime());
+  const sessionsByDay = groupSessionsByDay(sessions, weekKeys);
+  const summary = buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekStartKey, weekEndKey });
 
-  const monthRows = sessions.map((session) => [
-    `#${session.index}`,
-    formatDate(session.startedAt),
-    session.closedAt ? formatDate(session.closedAt) : 'Em andamento',
-    formatDuration(session.durationMs),
-    session.status,
-    [session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A',
-    session.closedBy,
-  ]);
-
-  const allRows = allSessions.slice(-25).map((session) => [
-    `#${session.index}`,
-    formatDate(session.startedAt),
-    session.closedAt ? formatDate(session.closedAt) : 'Em andamento',
-    formatDuration(session.durationMs),
-    session.status,
-    [session.source, session.serverName].filter(Boolean).join(' - ') || 'N/A',
-  ]);
-
-  return [
-    `FOLHA DE PONTO - ${guild.name}`,
-    '='.repeat(72),
-    buildTextLine('Gerado em', formatDate(generatedAt)),
-    buildTextLine('Mes de referencia', monthLabel),
-    buildTextLine('Documento', 'Transcript individual em texto'),
-    '',
-    'DADOS DO USUARIO',
-    '-'.repeat(72),
-    buildTextLine('Usuario Discord', `${userName} (${target.id})`),
-    buildTextLine('Tag Discord', target.tag || target.username),
-    buildTextLine('Cargo', roleName),
-    buildTextLine('Cadastro', formatProfileStatus(profile)),
-    buildTextLine('Nome em game', profile?.nomeGame || data.userName),
-    buildTextLine('ID em game', profile?.idGame || data.registro),
-    buildTextLine('Numero', profile?.numeroGame),
-    buildTextLine('Nivel', profile?.nivelGame),
-    buildTextLine('Call/Canal', profile?.callChannelId ? `#${profile.callChannelId}` : 'N/A'),
-    buildTextLine('Entrou no Discord', member?.joinedAt ? formatDate(member.joinedAt) : 'N/A'),
-    '',
-    'RESUMO GERAL',
-    '-'.repeat(72),
-    buildTextLine('Status atual', status),
-    buildTextLine('Ponto aberto ha', data.activePointStartedAt ? formatDuration(activeMs) : 'N/A'),
-    buildTextLine('Total geral', allSummary.totalPoints),
-    buildTextLine('Pontos fechados', allSummary.closedPoints),
-    buildTextLine('Dias com ponto', totalDays),
-    buildTextLine('Tempo total', formatDuration(effectiveTotalMs)),
-    buildTextLine('Primeiro ponto', formatDate(data.firstPointAt)),
-    buildTextLine('Ultima abertura', formatDate(data.lastPointOpenAt)),
-    buildTextLine('Ultimo fechamento', formatDate(data.lastPointCloseAt)),
-    '',
-    'RESUMO DO MES',
-    '-'.repeat(72),
-    buildTextLine('Pontos no mes', summary.totalPoints),
-    buildTextLine('Fechados no mes', summary.closedPoints),
-    buildTextLine('Abertos no mes', summary.openPoints),
-    buildTextLine('Tempo no mes', formatDuration(summary.totalMs)),
-    buildTextLine('Media no mes', formatDuration(summary.averageMs)),
-    '',
-    'HISTORICO DO MES',
-    '-'.repeat(72),
-    buildTextTable(['N.', 'Abertura', 'Fechamento', 'Duracao', 'Status', 'Origem', 'Responsavel'], monthRows),
-    '',
-    'ULTIMOS 25 PONTOS',
-    '-'.repeat(72),
-    buildTextTable(['N.', 'Abertura', 'Fechamento', 'Duracao', 'Status', 'Origem'], allRows),
-    '',
-    'Observacao: este arquivo e gerado direto dos registros JSON do sistema de ponto.',
-  ].join('\n');
+  return {
+    generatedAt,
+    guild,
+    target,
+    member,
+    profile,
+    sessions,
+    adjustments,
+    weekKeys,
+    sessionsByDay,
+    summary,
+    weekStartKey,
+    weekEndKey,
+  };
 }
 
-function createPointTranscriptHtml({ guild, target, member, data }) {
-  const generatedAt = new Date();
-  const monthKey = getMonthKey(generatedAt);
-  const monthLabel = getMonthLabel(monthKey);
-  const profile = getUserProfile(guild.id, target.id);
-  const allSessions = getAllSessions(data);
-  const sessions = getMonthlySessions(data, monthKey);
-  const summary = getMonthlySummary(sessions);
-  const allSummary = getMonthlySummary(allSessions);
-  const userName = member?.displayName || data.userName || target.username;
-  const roleName = member?.roles?.highest?.name || data.role || 'Membro';
-  const activeMs = data.activePointStartedAt
-    ? Math.max(0, generatedAt.getTime() - new Date(data.activePointStartedAt).getTime())
-    : 0;
-  const status = data.activePointStartedAt ? 'ABERTO' : 'FECHADO';
-  const lastSession = sessions[sessions.length - 1] || null;
-  const ticketLabel = lastSession?.ticketId || 'Folha do Mes';
-  const effectiveTotalMs = getEffectiveTotalMs(data);
-  const totalDays = getPointDaysFromSessions(allSessions);
+function buildTextBody(report) {
+  const { generatedAt, guild, target, member, profile, sessionsByDay, summary, weekStartKey, weekEndKey, adjustments } = report;
+  const userName = member?.displayName || profile?.displayName || target.username;
+  const lines = [
+    `Usuario: ${userName}`,
+    `Discord ID: ${target.id}`,
+    '',
+    `Semana: ${formatDateKey(weekStartKey)} ate ${formatDateKey(weekEndKey)}`,
+    `Gerado em: ${formatDate(generatedAt)}`,
+    `Servidor: ${guild.name}`,
+    '',
+  ];
+
+  for (const dayKey of report.weekKeys) {
+    lines.push(...buildDayText(dayKey, sessionsByDay[dayKey] || [], adjustments));
+    lines.push('');
+  }
+
+  lines.push('Resumo da semana:');
+  lines.push(formatPointLine('Dias que abriu ponto', String(summary.daysWithPoints)));
+  lines.push(formatPointLine('Dias sem abrir ponto', String(summary.daysWithoutPoint)));
+  lines.push(formatPointLine('Total de pontos abertos', String(summary.totalPoints)));
+  lines.push(formatPointLine('Total de horas na semana', formatDuration(summary.totalMs)));
+  lines.push(formatPointLine('Total de ajustes feitos', String(summary.totalAdjustments)));
+  lines.push(formatPointLine('Ultimo ponto aberto', summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A'));
+  lines.push(formatPointLine('Dias sem abrir ponto ate hoje', String(summary.daysWithoutPointUntilToday)));
+  lines.push('');
+  lines.push(...buildAdjustmentHistoryText(adjustments));
+
+  return `${lines.join('\n')}\n`;
+}
+
+function renderPointAdjustmentHtml(adjustment) {
+  return `
+    <div class="adjustment">
+      <div class="adjustment-title">${escapeHtml(adjustment.adjustedAt ? formatDate(adjustment.adjustedAt) : 'N/A')} - ${escapeHtml(adjustment.type)}</div>
+      <div class="adjustment-grid">
+        <div><span>ID do ponto</span><strong>${escapeHtml(adjustment.pointId)}</strong></div>
+        <div><span>Usuario dono</span><strong>${escapeHtml(adjustment.ownerUserId)}</strong></div>
+        <div><span>Quem fez o ajuste</span><strong>${escapeHtml(adjustment.adjustedByDisplayName || adjustment.adjustedByTag || adjustment.adjustedBy || 'Sistema')}</strong></div>
+        <div><span>Cargo/permissao</span><strong>${escapeHtml((adjustment.adjustedByRoleIds || []).join(' ') || (adjustment.adjustedByPermissions || []).join(', ') || 'N/A')}</strong></div>
+        <div><span>Horario antigo</span><strong>${escapeHtml(formatMomentValue(adjustment.oldClosedAt || adjustment.oldStartedAt))}</strong></div>
+        <div><span>Horario novo</span><strong>${escapeHtml(formatMomentValue(adjustment.newClosedAt || adjustment.newStartedAt))}</strong></div>
+        <div><span>Motivo</span><strong>${escapeHtml(adjustment.reason)}</strong></div>
+        <div><span>Data e hora</span><strong>${escapeHtml(formatMomentValue(adjustment.adjustedAt))}</strong></div>
+      </div>
+    </div>`;
+}
+
+function buildHtmlBody(report) {
+  const { generatedAt, guild, target, member, profile, sessionsByDay, summary, weekStartKey, weekEndKey, adjustments } = report;
+  const userName = member?.displayName || profile?.displayName || target.username;
+  const profileStatus = profile ? (profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set') : 'Sem cadastro no /set';
+
+  const dayBlocks = report.weekKeys.map((dayKey) => {
+    const sessions = sessionsByDay[dayKey] || [];
+    const dayAdjustments = adjustments.filter((adjustment) => adjustment.dayKey === dayKey);
+    const pointBlocks = sessions.length
+      ? sessions.map((session, index) => {
+          const sessionAdjustments = getPointAdjustmentsForSession(adjustments, session);
+          const adjustmentItems = sessionAdjustments.length
+            ? sessionAdjustments.map((adjustment) => `
+                <li>
+                  <strong>${escapeHtml(adjustment.type)}</strong>
+                  <div>ID do ponto: ${escapeHtml(adjustment.pointId)}</div>
+                  <div>Quem fez: ${escapeHtml(adjustment.adjustedByDisplayName || adjustment.adjustedByTag || adjustment.adjustedBy || 'Sistema')}</div>
+                  <div>Cargo/permissao: ${escapeHtml((adjustment.adjustedByRoleIds || []).join(' ') || (adjustment.adjustedByPermissions || []).join(', ') || 'N/A')}</div>
+                  <div>Horario antigo: ${escapeHtml(formatMomentValue(adjustment.oldClosedAt || adjustment.oldStartedAt))}</div>
+                  <div>Horario novo: ${escapeHtml(formatMomentValue(adjustment.newClosedAt || adjustment.newStartedAt))}</div>
+                  <div>Motivo: ${escapeHtml(adjustment.reason)}</div>
+                  <div>Data/hora: ${escapeHtml(formatMomentValue(adjustment.adjustedAt))}</div>
+                </li>
+              `).join('')
+            : '<li><strong>Sem ajustes</strong></li>';
+
+          return `
+            <div class="point-card">
+              <h4>Ponto ${index + 1}</h4>
+              <div class="point-grid">
+                <div><span>Abriu as</span><strong>${escapeHtml(session.startedAtTime)}</strong></div>
+                <div><span>Fechou as</span><strong>${escapeHtml(session.closedAtTime)}</strong></div>
+                <div><span>Tempo total</span><strong>${escapeHtml(session.durationFormatted)}</strong></div>
+                <div><span>Ajustes no ponto</span><strong>${escapeHtml(String(sessionAdjustments.length))}</strong></div>
+                <div><span>ID do ponto</span><strong>${escapeHtml(session.pointId || 'N/A')}</strong></div>
+              </div>
+              <div class="adjustments">
+                <div class="subheading">Ajustes deste ponto</div>
+                <ul>${adjustmentItems}</ul>
+              </div>
+            </div>`;
+        }).join('')
+      : '<div class="empty">Nao abriu ponto.</div>';
+
+    return `
+      <section class="day">
+        <header class="day-header">
+          <h3>${escapeHtml(formatWeekdayLabel(dayKey))}</h3>
+          <div class="day-meta">${escapeHtml(formatDateKey(dayKey))} | Ajustes do dia: ${escapeHtml(String(dayAdjustments.length))}</div>
+        </header>
+        <div class="day-body">
+          ${pointBlocks}
+          <div class="day-total">Total do dia: ${escapeHtml(formatDuration(sessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0)))}</div>
+        </div>
+      </section>`;
+  }).join('');
+
+  const historyBlocks = adjustments.length
+    ? adjustments.map((adjustment, index) => `
+        <div class="history-item">
+          <div class="history-title">${index + 1}. ${escapeHtml(adjustment.dayLabel)} | ${escapeHtml(adjustment.adjustedAt ? formatDate(adjustment.adjustedAt) : 'N/A')}</div>
+          <div class="history-grid">
+            <div><span>ID do ponto</span><strong>${escapeHtml(adjustment.pointId)}</strong></div>
+            <div><span>Usuario dono</span><strong>${escapeHtml(adjustment.ownerUserId)}</strong></div>
+            <div><span>Quem fez</span><strong>${escapeHtml(adjustment.adjustedByDisplayName || adjustment.adjustedByTag || adjustment.adjustedBy || 'Sistema')}</strong></div>
+            <div><span>Cargo/permissao</span><strong>${escapeHtml((adjustment.adjustedByRoleIds || []).join(' ') || (adjustment.adjustedByPermissions || []).join(', ') || 'N/A')}</strong></div>
+            <div><span>Tipo</span><strong>${escapeHtml(adjustment.type)}</strong></div>
+            <div><span>Motivo</span><strong>${escapeHtml(adjustment.reason)}</strong></div>
+            <div><span>Horario antigo</span><strong>${escapeHtml(formatMomentValue(adjustment.oldClosedAt || adjustment.oldStartedAt))}</strong></div>
+            <div><span>Horario novo</span><strong>${escapeHtml(formatMomentValue(adjustment.newClosedAt || adjustment.newStartedAt))}</strong></div>
+          </div>
+        </div>`).join('')
+    : '<div class="empty">Nenhum ajuste registrado nesta semana.</div>';
 
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Folha de Ponto Vortex - ${escapeHtml(userName)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <title>Vortex | Folha de ponto</title>
   <style>
-    :root {
-      --bg: #0a0a0f;
-      --panel: #10131d;
-      --panel-2: #141a27;
-      --line: rgba(59, 130, 246, 0.32);
-      --line-soft: rgba(232, 234, 240, 0.10);
-      --text: #e8eaf0;
-      --muted: #9ca8bd;
-      --blue: #3b82f6;
-      --blue-dark: #1d4ed8;
-      --green: #22c55e;
-      --red: #ef4444;
-      --yellow: #facc15;
+    :root{--bg:#090a0f;--panel:#10131b;--panel2:#151a25;--line:#273042;--text:#edf2fb;--muted:#94a3b8;--accent:#7000ff;--accent2:#00d9ff;--good:#22c55e;--warn:#facc15}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;line-height:1.45}
+    header.hero{padding:28px 0;border-bottom:1px solid rgba(112,0,255,.3);background:linear-gradient(135deg,rgba(9,10,15,.95),rgba(9,10,15,.75)),url("/assets/IMG_4234.png") center/cover no-repeat}
+    .wrap{width:min(1220px,calc(100% - 32px));margin:0 auto}
+    .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+    .brand{font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--accent2);font-weight:700}
+    h1{margin:6px 0 0;font-size:40px;line-height:1.05}
+    .subtitle{color:var(--muted);margin-top:6px;font-size:13px}
+    .status{align-self:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-weight:700;background:rgba(16,19,27,.8)}
+    main{display:grid;gap:16px;padding:22px 0 40px}
+    .profile,.summary,.day,.history{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+    .profile{padding:18px}
+    .profile-grid,.summary-grid,.point-grid,.adjustment-grid,.history-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .profile-head{display:flex;gap:16px;align-items:center}
+    .avatar{width:64px;height:64px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:800}
+    .meta-item,.summary-item,.point-card,.adjustment,.history-item{background:var(--panel2);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px}
+    .meta-item span,.summary-item span,.point-grid span,.adjustment-grid span,.history-grid span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:700}
+    .meta-item strong,.summary-item strong,.point-grid strong,.adjustment-grid strong,.history-grid strong{display:block;margin-top:4px;font-size:14px;overflow-wrap:anywhere}
+    .summary{padding:14px 16px}
+    .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .summary-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .pill{border:1px solid rgba(0,217,255,.35);color:var(--accent2);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}
+    .day{overflow:hidden}
+    .day-header{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+    .day-header h3{margin:0;font-size:20px}
+    .day-meta{margin-top:6px;color:var(--muted);font-size:12px}
+    .day-body{padding:16px;display:grid;gap:12px}
+    .point-card h4{margin:0 0 10px;font-size:15px}
+    .adjustments,.day-total,.empty{border-top:1px solid var(--line);padding-top:12px}
+    .subheading{font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+    .adjustments ul{margin:0;padding-left:18px}
+    .adjustments li{margin-bottom:10px}
+    .history{padding:16px}
+    .history-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .history-title{font-weight:700;margin-bottom:10px}
+    .section-title{font-size:18px;margin:0 0 12px}
+    .empty{color:var(--muted)}
+    .stack{display:grid;gap:16px}
+    .muted{color:var(--muted)}
+    @media(max-width:900px){
+      .hero-top,.profile-head{grid-template-columns:1fr;display:grid}
+      .profile-grid,.summary-grid,.point-grid,.adjustment-grid,.history-grid{grid-template-columns:1fr 1fr}
+      h1{font-size:32px}
     }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Rajdhani', Arial, sans-serif;
-      font-size: 16px;
-      line-height: 1.45;
-    }
-
-    header {
-      border-bottom: 1px solid var(--line);
-      background: #0d111a;
-      padding: 28px;
-    }
-
-    .wrap {
-      width: min(1180px, calc(100% - 32px));
-      margin: 0 auto;
-    }
-
-    .brand {
-      display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      align-items: center;
-      margin-bottom: 22px;
-    }
-
-    .logo {
-      font-family: 'Bebas Neue', Impact, sans-serif;
-      font-size: 56px;
-      line-height: 0.9;
-      color: var(--text);
-      text-shadow: 0 0 0 var(--blue), 3px 3px 0 var(--blue-dark);
-      letter-spacing: 0;
-    }
-
-    .status {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-family: 'Share Tech Mono', monospace;
-      color: ${status === 'ABERTO' ? 'var(--green)' : 'var(--blue)'};
-      background: rgba(59, 130, 246, 0.08);
-    }
-
-    h1, h2 {
-      font-family: 'Bebas Neue', Impact, sans-serif;
-      letter-spacing: 0;
-      margin: 0;
-    }
-
-    h1 { font-size: 42px; }
-    h2 { font-size: 26px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
-
-    .subtitle {
-      color: var(--muted);
-      margin: 6px 0 0;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px;
-    }
-
-    main {
-      display: grid;
-      gap: 18px;
-      padding: 24px 0 36px;
-    }
-
-    .profile, section, .card, .notice {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-    }
-
-    .profile {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 16px;
-      padding: 18px;
-      align-items: center;
-    }
-
-    .avatar {
-      width: 58px;
-      height: 58px;
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      display: grid;
-      place-items: center;
-      background: var(--blue-dark);
-      font-family: 'Bebas Neue', Impact, sans-serif;
-      font-size: 28px;
-    }
-
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .meta div, .card {
-      padding: 14px;
-      background: var(--panel-2);
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-    }
-
-    .label {
-      display: block;
-      color: var(--muted);
-      text-transform: uppercase;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .value, code {
-      font-family: 'Share Tech Mono', monospace;
-      color: var(--text);
-      overflow-wrap: anywhere;
-    }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .card strong {
-      display: block;
-      margin-top: 6px;
-      font-size: 24px;
-      font-family: 'Share Tech Mono', monospace;
-    }
-
-    .notice {
-      padding: 14px 18px;
-      border-color: ${profile?.approvedAt ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.45)'};
-      background: ${profile?.approvedAt ? 'rgba(34, 197, 94, 0.07)' : 'rgba(239, 68, 68, 0.08)'};
-      color: var(--text);
-    }
-
-    section { overflow: hidden; }
-    .table-scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 980px; }
-    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line-soft); text-align: left; }
-    th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-    td { font-family: 'Share Tech Mono', monospace; font-size: 13px; }
-    tr:last-child td { border-bottom: 0; }
-
-    .badge, .tag {
-      display: inline-block;
-      border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 12px;
-      margin-right: 6px;
-    }
-
-    .badge.open { color: var(--green); border: 1px solid rgba(34, 197, 94, 0.45); }
-    .badge.closed { color: var(--blue); border: 1px solid var(--line); }
-    .tag { color: var(--yellow); border: 1px solid rgba(250, 204, 21, 0.38); }
-    .empty { color: var(--muted); text-align: center; padding: 26px; }
-
-    .timeline {
-      padding: 16px 18px;
-      display: grid;
-      gap: 10px;
-    }
-
-    .timeline-item {
-      border-left: 2px solid var(--blue);
-      padding-left: 12px;
-      display: grid;
-      gap: 2px;
-    }
-
-    .timeline-item span {
-      color: var(--muted);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px;
-    }
-
-    footer {
-      color: var(--muted);
-      text-align: center;
-      padding: 18px 0 30px;
-      font-size: 13px;
-      font-family: 'Share Tech Mono', monospace;
-    }
-
-    @media (max-width: 820px) {
-      header { padding: 22px 0; }
-      .brand { align-items: flex-start; flex-direction: column; }
-      .logo { font-size: 44px; }
-      .profile, .meta, .cards { grid-template-columns: 1fr; }
+    @media(max-width:620px){
+      .profile-grid,.summary-grid,.point-grid,.adjustment-grid,.history-grid{grid-template-columns:1fr}
+      .hero-top{gap:12px}
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="wrap">
-      <div class="brand">
-        <div class="logo">VORTEX</div>
-        <div class="status">${escapeHtml(status)}</div>
+  <header class="hero">
+    <div class="wrap hero-top">
+      <div>
+        <div class="brand">Vortex Management</div>
+        <h1>Folha de ponto</h1>
+        <div class="subtitle">Usuario: ${escapeHtml(userName)} | Discord ID: ${escapeHtml(target.id)}</div>
+        <div class="subtitle">Semana: ${escapeHtml(formatDateKey(weekStartKey))} ate ${escapeHtml(formatDateKey(weekEndKey))}</div>
+        <div class="subtitle">Gerado em: ${escapeHtml(formatDate(generatedAt))}</div>
       </div>
-      <h1>Folha de Ponto</h1>
-      <p class="subtitle">Ticket: ${escapeHtml(ticketLabel)} | Mes: ${escapeHtml(monthLabel)} | Documento confidencial</p>
+      <div class="status">${escapeHtml(summary.lastSession ? `${summary.lastSession.status} / ${summary.lastSession.dayLabel}` : 'Sem ponto')}</div>
     </div>
   </header>
 
-  <main class="wrap">
-    <div class="profile">
-      <div class="avatar">${escapeHtml(getInitials(userName))}</div>
-      <div>
-        <h2>Dados do Usuario</h2>
-        <div class="meta">
-          <div><span class="label">Nome Discord</span><span class="value">${escapeHtml(userName)}</span></div>
-          <div><span class="label">ID Discord</span><span class="value">${escapeHtml(target.id)}</span></div>
-          <div><span class="label">Cargo/Role</span><span class="value">${escapeHtml(roleName)}</span></div>
-          <div><span class="label">Cadastro</span><span class="value">${escapeHtml(formatProfileStatus(profile))}</span></div>
-          <div><span class="label">Nome em game</span><span class="value">${escapeHtml(profile?.nomeGame || data.userName || 'N/A')}</span></div>
-          <div><span class="label">ID em game</span><span class="value">${escapeHtml(profile?.idGame || data.registro || 'N/A')}</span></div>
-          <div><span class="label">Numero</span><span class="value">${escapeHtml(profile?.numeroGame || 'N/A')}</span></div>
-          <div><span class="label">Nivel</span><span class="value">${escapeHtml(profile?.nivelGame || 'N/A')}</span></div>
-          <div><span class="label">Call/Canal</span><span class="value">${profile?.callChannelId ? `#${escapeHtml(profile.callChannelId)}` : 'N/A'}</span></div>
-          <div><span class="label">Mes de referencia</span><span class="value">${escapeHtml(monthLabel)}</span></div>
-          <div><span class="label">Ultimo ponto</span><span class="value">${escapeHtml(formatDate(data.lastPointCloseAt || data.lastPointOpenAt))}</span></div>
-          <div><span class="label">Quem fechou ultimo</span><span class="value">${escapeHtml(lastSession?.closedBy || 'N/A')}</span></div>
+  <main class="wrap stack">
+    <section class="profile">
+      <div class="profile-head">
+        <div class="avatar">${escapeHtml((userName || 'VX').slice(0, 2).toUpperCase())}</div>
+        <div>
+          <h2 style="margin:0 0 4px;font-size:22px;">Dados do usuario</h2>
+          <div class="muted">${escapeHtml(profile ? (profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set') : 'Sem cadastro no /set')}</div>
         </div>
       </div>
-    </div>
-
-    <div class="notice">
-      <strong>Status do cadastro:</strong> ${escapeHtml(formatProfileStatus(profile))}
-      ${profile?.lastProfileUpdateAt ? ` | Ultima atualizacao do perfil: ${escapeHtml(formatDate(profile.lastProfileUpdateAt))}` : ''}
-    </div>
-
-    <div class="cards">
-      <div class="card"><span class="label">Total geral</span><strong>${escapeHtml(allSummary.totalPoints)}</strong></div>
-      <div class="card"><span class="label">Tempo geral</span><strong>${escapeHtml(formatDuration(effectiveTotalMs))}</strong></div>
-      <div class="card"><span class="label">Dias com ponto</span><strong>${escapeHtml(totalDays)}</strong></div>
-      <div class="card"><span class="label">Status atual</span><strong>${escapeHtml(status)}</strong></div>
-    </div>
-
-    <div class="cards">
-      <div class="card"><span class="label">Pontos no mes</span><strong>${escapeHtml(summary.totalPoints)}</strong></div>
-      <div class="card"><span class="label">Fechados no mes</span><strong>${escapeHtml(summary.closedPoints)}</strong></div>
-      <div class="card"><span class="label">Tempo no mes</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
-      <div class="card"><span class="label">Media do mes</span><strong>${escapeHtml(formatDuration(summary.averageMs))}</strong></div>
-    </div>
-
-    <section>
-      <h2>Historico do Mes</h2>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Abertura</th>
-              <th>Fechamento</th>
-              <th>Duração</th>
-              <th>Ticket</th>
-              <th>Responsavel</th>
-              <th>Origem</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>${buildHistoryRows(sessions)}</tbody>
-        </table>
+      <div class="profile-grid" style="margin-top:16px;">
+        <div class="meta-item"><span>Nome Discord</span><strong>${escapeHtml(userName)}</strong></div>
+        <div class="meta-item"><span>Discord ID</span><strong>${escapeHtml(target.id)}</strong></div>
+        <div class="meta-item"><span>Tag</span><strong>${escapeHtml(target.tag || target.username)}</strong></div>
+        <div class="meta-item"><span>Role principal</span><strong>${escapeHtml(member?.roles?.highest?.name || 'N/A')}</strong></div>
+        <div class="meta-item"><span>Nome em game</span><strong>${escapeHtml(profile?.nomeGame || 'N/A')}</strong></div>
+        <div class="meta-item"><span>ID em game</span><strong>${escapeHtml(profile?.idGame || 'N/A')}</strong></div>
+        <div class="meta-item"><span>Numero</span><strong>${escapeHtml(profile?.numeroGame || 'N/A')}</strong></div>
+        <div class="meta-item"><span>Nivel</span><strong>${escapeHtml(profile?.nivelGame || 'N/A')}</strong></div>
       </div>
     </section>
 
-    <section>
-      <h2>Logins Frequentes</h2>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Dia da semana</th>
-              <th>Data</th>
-              <th>Entrada</th>
-              <th>Saida</th>
-              <th>Tempo online</th>
-              <th>Origem</th>
-            </tr>
-          </thead>
-          <tbody>${buildFrequentLoginRows(sessions)}</tbody>
-        </table>
+    <section class="summary">
+      <div class="summary-title">
+        <h2 class="section-title" style="margin:0;">Resumo da semana</h2>
+        <div class="pill">Historico completo preservado</div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-item"><span>Dias que abriu ponto</span><strong>${escapeHtml(String(summary.daysWithPoints))}</strong></div>
+        <div class="summary-item"><span>Dias sem abrir ponto</span><strong>${escapeHtml(String(summary.daysWithoutPoint))}</strong></div>
+        <div class="summary-item"><span>Total de pontos abertos</span><strong>${escapeHtml(String(summary.totalPoints))}</strong></div>
+        <div class="summary-item"><span>Total de horas na semana</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
+        <div class="summary-item"><span>Total de ajustes feitos</span><strong>${escapeHtml(String(summary.totalAdjustments))}</strong></div>
+        <div class="summary-item"><span>Ultimo ponto aberto</span><strong>${escapeHtml(summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A')}</strong></div>
+        <div class="summary-item"><span>Dias sem abrir ate hoje</span><strong>${escapeHtml(String(summary.daysWithoutPointUntilToday))}</strong></div>
+        <div class="summary-item"><span>Tempo geral salvo</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
       </div>
     </section>
 
-    <section>
-      <h2>Linha do Tempo</h2>
-      <div class="timeline">
-        ${buildTimelineRows({ data, sessions, generatedAt })}
-        ${data.activePointStartedAt ? `
-          <div class="timeline-item">
-            <strong>Ponto em andamento</strong>
-            <span>Aberto ha ${escapeHtml(formatDuration(activeMs))}</span>
-          </div>
-        ` : ''}
-      </div>
-    </section>
+    ${dayBlocks}
 
-    <section>
-      <h2>Transcricao do Chat</h2>
-      <div class="timeline">
-        <div class="timeline-item">
-          <strong>Sistema</strong>
-          <span>Este transcript foi gerado a partir dos registros salvos em JSON. Mensagens completas de ticket ficam disponiveis quando forem salvas junto ao ponto.</span>
-        </div>
-      </div>
+    <section class="history">
+      <h2 class="section-title">Historico completo dos ajustes</h2>
+      ${historyBlocks}
     </section>
   </main>
-
-  <footer>Gerado automaticamente pelo sistema de ponto | VORTEX | Documento confidencial</footer>
 </body>
 </html>`;
+}
+
+function createPointTranscriptText({ guild, target, member, data }) {
+  const report = buildTranscriptData({ guild, target, member, data });
+  return buildTextBody(report);
+}
+
+function createPointTranscriptHtml({ guild, target, member, data }) {
+  const report = buildTranscriptData({ guild, target, member, data });
+  return buildHtmlBody(report);
 }
 
 function createPointTranscriptAttachment({ guild, target, member, data }) {
   const html = createPointTranscriptHtml({ guild, target, member, data });
   const timestamp = new Date().toISOString().replace(/:/g, '-');
-
   return new AttachmentBuilder(Buffer.from(html, 'utf8'), {
     name: `${target.id}_${timestamp}_ticket.html`,
   });
@@ -702,7 +662,6 @@ function createPointTranscriptAttachment({ guild, target, member, data }) {
 function createPointTranscriptTextAttachment({ guild, target, member, data }) {
   const text = createPointTranscriptText({ guild, target, member, data });
   const timestamp = new Date().toISOString().replace(/:/g, '-');
-
   return new AttachmentBuilder(Buffer.from(text, 'utf8'), {
     name: `${target.id}_${timestamp}_folha-ponto.txt`,
   });

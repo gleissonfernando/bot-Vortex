@@ -810,6 +810,15 @@ module.exports = {
                         .setPlaceholder('Ex: 23 às 02, 23:00 até 02:00 ou 12 às 23')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('reason')
+                        .setLabel('MOTIVO DO AJUSTE')
+                        .setPlaceholder('Explique por que o ponto foi ajustado')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                        .setMaxLength(900)
                 )
             );
         }
@@ -1250,12 +1259,13 @@ module.exports = {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
         const dateInput = interaction.fields.getTextInputValue('point_date').trim();
         const timeRangeInput = interaction.fields.getTextInputValue('time_range').trim();
+        const reason = interaction.fields.getTextInputValue('reason').trim();
 
         if (!/^\d{15,25}$/.test(userId)) {
             return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
         }
 
-        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, timeRangeInput, interaction.user.id);
+        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, timeRangeInput, interaction.member, reason);
         if (!result.ok) {
             return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
         }

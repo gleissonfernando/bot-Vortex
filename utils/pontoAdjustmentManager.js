@@ -181,7 +181,8 @@ async function decideAdjustment(interaction, requestId, approved) {
     request.guildId,
     request.userId,
     request.closedAtInput,
-    interaction.user.id
+    interaction.member,
+    request.reason
   );
 
   if (!result.ok) {

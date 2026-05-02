@@ -59,9 +59,11 @@ function emptyUser(guildId, userId) {
     firstPointAt: null,
     lastPointOpenAt: null,
     lastPointCloseAt: null,
+    activePointId: null,
     ...clearActivePointFields(),
     totalMs: 0,
     sessions: [],
+    adjustments: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -128,6 +130,88 @@ function buildSessionMetadata(startedAtValue, closedAtValue = null) {
   };
 }
 
+function createPointId(guildId, userId, startedAt = new Date(), suffix = null) {
+  const started = toDate(startedAt) || new Date();
+  const base = [
+    'pt',
+    String(guildId || 'guild').replace(/[^a-zA-Z0-9]/g, ''),
+    String(userId || 'user').replace(/[^a-zA-Z0-9]/g, ''),
+    started.toISOString().replace(/[:.]/g, '-'),
+  ].filter(Boolean).join('-');
+  return suffix ? `${base}-${String(suffix).replace(/[^a-zA-Z0-9_-]/g, '-')}` : base;
+}
+
+function normalizeAdjustmentActor(adjustedBy) {
+  if (!adjustedBy) return { id: null, tag: null, displayName: null, roleIds: [], permissions: [] };
+  if (typeof adjustedBy === 'string') {
+    return { id: adjustedBy, tag: null, displayName: null, roleIds: [], permissions: [] };
+  }
+
+  const roleIds = adjustedBy?.roles?.cache
+    ? Array.from(adjustedBy.roles.cache.keys()).map(String)
+    : Array.isArray(adjustedBy?.roleIds)
+      ? adjustedBy.roleIds.map(String)
+      : [];
+  const permissions = adjustedBy?.permissions?.toArray?.() || [];
+
+  return {
+    id: adjustedBy?.id || adjustedBy?.user?.id || adjustedBy?.userId || null,
+    tag: adjustedBy?.user?.tag || adjustedBy?.tag || null,
+    displayName: adjustedBy?.displayName || adjustedBy?.user?.username || adjustedBy?.username || null,
+    roleIds: [...new Set(roleIds.filter(Boolean))],
+    permissions: [...new Set(permissions.filter(Boolean))],
+  };
+}
+
+function buildAdjustmentRecord({
+  pointId,
+  guildId,
+  userId,
+  type,
+  actor,
+  reason,
+  oldStartedAt = null,
+  oldClosedAt = null,
+  newStartedAt = null,
+  newClosedAt = null,
+  durationMs = 0,
+  extra = {},
+}) {
+  const adjustedAt = new Date().toISOString();
+  const normalizedActor = normalizeAdjustmentActor(actor);
+  return {
+    id: createPointId(guildId, userId, adjustedAt, 'adjustment'),
+    pointId: pointId || createPointId(guildId, userId, adjustedAt, 'point'),
+    ownerUserId: String(userId),
+    guildId: String(guildId),
+    type,
+    reason: String(reason || '').trim() || null,
+    adjustedBy: normalizedActor.id,
+    adjustedByTag: normalizedActor.tag,
+    adjustedByDisplayName: normalizedActor.displayName,
+    adjustedByRoleIds: normalizedActor.roleIds,
+    adjustedByPermissions: normalizedActor.permissions,
+    oldStartedAt,
+    oldClosedAt,
+    newStartedAt,
+    newClosedAt,
+    durationMs,
+    adjustedAt,
+    ...extra,
+  };
+}
+
+function appendAdjustment(current, record) {
+  return [...(current.adjustments || []), record].slice(-100);
+}
+
+function getPointRecordId(current, guildId, userId, startedAt = null, closedAt = null) {
+  if (current?.activePointId) return String(current.activePointId);
+  const baseStarted = startedAt || current?.activePointStartedAt || current?.lastPointOpenAt || new Date().toISOString();
+  const baseClosed = closedAt || current?.lastPointCloseAt || null;
+  return createPointId(guildId, userId, baseStarted, baseClosed ? String(baseClosed).slice(11, 19).replace(/:/g, '-') : null);
+}
+
 function buildPointSourceMetadata(source = {}) {
   return {
     source: source.pointSource || source.source || null,
@@ -141,6 +225,7 @@ function buildPointSourceMetadata(source = {}) {
 
 function clearActivePointFields() {
   return {
+    activePointId: null,
     activePointStartedAt: null,
     activePointDate: null,
     activePointDay: null,
@@ -352,7 +437,7 @@ function parseFlexiblePointAdjustment(dateInput, timeRangeInput, now = new Date(
   return { ok: true, startedAt, closedAt };
 }
 
-async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correctedBy = null) {
+async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correctedBy = null, reason = null) {
   const current = await getUserPoint(guildId, userId);
   if (!current.activePointStartedAt) {
     return { ok: false, code: 'not_open', message: 'Este usuário não possui ponto aberto para corrigir.', data: current };
@@ -382,7 +467,9 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
   const nowIso = new Date().toISOString();
+  const pointId = getPointRecordId(current, guildId, userId, current.activePointStartedAt, closedAt.toISOString());
   const session = {
+    pointId,
     startedAt: current.activePointStartedAt,
     closedAt: closedAt.toISOString(),
     durationMs,
@@ -397,6 +484,25 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
     correctedAt: nowIso,
   };
 
+  const adjustmentRecord = buildAdjustmentRecord({
+    pointId,
+    guildId,
+    userId,
+    type: 'fechamento',
+    actor: correctedBy,
+    reason,
+    oldStartedAt: current.activePointStartedAt,
+    oldClosedAt: current.lastPointCloseAt || null,
+    newStartedAt: current.activePointStartedAt,
+    newClosedAt: closedAt.toISOString(),
+    durationMs,
+    extra: {
+      previousActiveStartedAt: current.activePointStartedAt,
+      currentPointSource: current.activePointSource || null,
+      currentPointReason: current.activePointReason || null,
+    },
+  });
+
   const next = await saveUserPoint(guildId, userId, {
     ...current,
     ...clearActivePointFields(),
@@ -405,22 +511,15 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
     sessions: [...(current.sessions || []), session].slice(-300),
     corrections: [
       ...(current.corrections || []),
-      {
-        type: 'manual_close',
-        activePointStartedAt: current.activePointStartedAt,
-        closedAt: closedAt.toISOString(),
-        durationMs,
-        ...buildSessionMetadata(current.activePointStartedAt, closedAt),
-        correctedBy: correctedBy ? String(correctedBy) : null,
-        correctedAt: nowIso,
-      },
+      adjustmentRecord,
     ].slice(-100),
+    adjustments: appendAdjustment(current, adjustmentRecord),
   });
 
   return { ok: true, action: 'corrected_closed', durationMs, closedAt: closedAt.toISOString(), data: next };
 }
 
-async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput, adjustedBy = null) {
+async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput, adjustedBy = null, reason = null) {
   if (!hasBrazilDate(startedAtInput)) {
     const current = await getUserPoint(guildId, userId);
     return { ok: false, code: 'missing_start_date', message: 'O reajuste precisa ter a data de abertura. Use `DD/MM/AAAA HH:mm:ss`.', data: current };
@@ -434,6 +533,10 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
   const startedAt = parseBrazilDateTime(startedAtInput);
   const closedAt = parseBrazilDateTime(closedAtInput, startedAt || new Date());
   const current = await getUserPoint(guildId, userId);
+
+  if (!String(reason || '').trim()) {
+    return { ok: false, code: 'missing_reason', message: 'O motivo do ajuste é obrigatório.', data: current };
+  }
 
   if (!startedAt) {
     return { ok: false, code: 'invalid_start', message: 'Horário de abertura inválido. Use `HH:mm:ss` ou `DD/MM/AAAA HH:mm:ss`. Os segundos são opcionais.', data: current };
@@ -453,7 +556,9 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
   const nowIso = new Date().toISOString();
+  const pointId = getPointRecordId(current, guildId, userId, startedAt.toISOString(), closedAt.toISOString());
   const session = {
+    pointId,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     durationMs,
@@ -466,6 +571,26 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
   };
 
   const previousActiveStartedAt = current.activePointStartedAt;
+  const adjustmentRecord = buildAdjustmentRecord({
+    pointId,
+    guildId,
+    userId,
+    type: 'tempo total',
+    actor: adjustedBy,
+    reason,
+    oldStartedAt: previousActiveStartedAt || startedAt.toISOString(),
+    oldClosedAt: current.lastPointCloseAt || null,
+    newStartedAt: startedAt.toISOString(),
+    newClosedAt: closedAt.toISOString(),
+    durationMs,
+    extra: {
+      previousActiveStartedAt,
+      originalInput: {
+        startedAtInput: String(startedAtInput || '').trim(),
+        closedAtInput: String(closedAtInput || '').trim(),
+      },
+    },
+  });
   const next = await saveUserPoint(guildId, userId, {
     ...current,
     firstPointAt: current.firstPointAt || startedAt.toISOString(),
@@ -475,21 +600,14 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
     activePointDate: null,
     activePointDay: null,
     activePointStartTime: null,
+    activePointId: null,
     totalMs: Number(current.totalMs || 0) + durationMs,
     sessions: [...(current.sessions || []), session].slice(-300),
     corrections: [
       ...(current.corrections || []),
-      {
-        type: 'manual_readjust',
-        startedAt: startedAt.toISOString(),
-        closedAt: closedAt.toISOString(),
-        previousActiveStartedAt,
-        durationMs,
-        ...buildSessionMetadata(startedAt, closedAt),
-        adjustedBy: adjustedBy ? String(adjustedBy) : null,
-        adjustedAt: nowIso,
-      },
+      adjustmentRecord,
     ].slice(-100),
+    adjustments: appendAdjustment(current, adjustmentRecord),
   });
 
   return {
@@ -502,11 +620,15 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
   };
 }
 
-async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeInput, adjustedBy = null) {
+async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeInput, adjustedBy = null, reason = null) {
   const parsed = parseFlexiblePointAdjustment(dateInput, timeRangeInput);
   const current = await getUserPoint(guildId, userId);
   if (!parsed.ok) {
     return { ok: false, code: 'invalid_flexible_adjustment', message: parsed.message, data: current };
+  }
+
+  if (!String(reason || '').trim()) {
+    return { ok: false, code: 'missing_reason', message: 'O motivo do ajuste é obrigatório.', data: current };
   }
 
   const startedAt = parsed.startedAt;
@@ -518,7 +640,9 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
   const nowIso = new Date().toISOString();
+  const pointId = getPointRecordId(current, guildId, userId, startedAt.toISOString(), closedAt.toISOString());
   const session = {
+    pointId,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     durationMs,
@@ -535,6 +659,23 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
   };
 
   const previousActiveStartedAt = current.activePointStartedAt;
+  const adjustmentRecord = buildAdjustmentRecord({
+    pointId,
+    guildId,
+    userId,
+    type: 'tempo total',
+    actor: adjustedBy,
+    reason,
+    oldStartedAt: previousActiveStartedAt || startedAt.toISOString(),
+    oldClosedAt: current.lastPointCloseAt || null,
+    newStartedAt: startedAt.toISOString(),
+    newClosedAt: closedAt.toISOString(),
+    durationMs,
+    extra: {
+      previousActiveStartedAt,
+      flexibleInput: session.flexibleInput,
+    },
+  });
   const next = await saveUserPoint(guildId, userId, {
     ...current,
     firstPointAt: current.firstPointAt || startedAt.toISOString(),
@@ -544,22 +685,14 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
     activePointDate: null,
     activePointDay: null,
     activePointStartTime: null,
+    activePointId: null,
     totalMs: Number(current.totalMs || 0) + durationMs,
     sessions: [...(current.sessions || []), session].slice(-300),
     corrections: [
       ...(current.corrections || []),
-      {
-        type: 'manual_readjust_flexible',
-        startedAt: startedAt.toISOString(),
-        closedAt: closedAt.toISOString(),
-        previousActiveStartedAt,
-        durationMs,
-        ...buildSessionMetadata(startedAt, closedAt),
-        adjustedBy: adjustedBy ? String(adjustedBy) : null,
-        adjustedAt: nowIso,
-        flexibleInput: session.flexibleInput,
-      },
+      adjustmentRecord,
     ].slice(-100),
+    adjustments: appendAdjustment(current, adjustmentRecord),
   });
 
   return {
@@ -579,7 +712,9 @@ async function togglePoint(guildId, userId) {
   if (current.activePointStartedAt) {
     const startedAt = new Date(current.activePointStartedAt);
     const durationMs = Math.max(0, now.getTime() - startedAt.getTime());
+    const pointId = getPointRecordId(current, guildId, userId, current.activePointStartedAt, now.toISOString());
     const session = {
+      pointId,
       startedAt: current.activePointStartedAt,
       closedAt: now.toISOString(),
       durationMs,
@@ -606,6 +741,7 @@ async function togglePoint(guildId, userId) {
     ...current,
     firstPointAt: current.firstPointAt || now.toISOString(),
     lastPointOpenAt: now.toISOString(),
+    activePointId: createPointId(guildId, userId, now.toISOString(), 'open'),
     activePointStartedAt: now.toISOString(),
     activePointDate: formatLocalDate(now),
     activePointDay: formatLocalDay(now),
@@ -626,6 +762,7 @@ async function openPoint(guildId, userId, profile = {}) {
 
   const now = new Date();
   const moment = buildPointMoment(now);
+  const activePointId = createPointId(guildId, userId, now.toISOString(), 'open');
   const next = await saveUserPoint(guildId, userId, {
     ...current,
     userName: profile.userName || current.userName || null,
@@ -633,6 +770,7 @@ async function openPoint(guildId, userId, profile = {}) {
     registro: profile.registro || current.registro || current.idRegistro || userId,
     firstPointAt: current.firstPointAt || now.toISOString(),
     lastPointOpenAt: now.toISOString(),
+    activePointId,
     activePointStartedAt: now.toISOString(),
     activePointDate: moment.date,
     activePointDay: moment.day,
@@ -657,7 +795,9 @@ async function closePoint(guildId, userId, options = {}) {
   const now = new Date();
   const startedAt = new Date(current.activePointStartedAt);
   const durationMs = Math.max(0, now.getTime() - startedAt.getTime());
+  const pointId = getPointRecordId(current, guildId, userId, current.activePointStartedAt, now.toISOString());
   const session = {
+    pointId,
     startedAt: current.activePointStartedAt,
     closedAt: now.toISOString(),
     durationMs,
