@@ -13,7 +13,12 @@ const TARGET_SERVER_ALIASES = [
   'Metrópole RP - Season 2!',
   'Metrópole RP',
   'Metrópole GG',
+  ...String(process.env.FIVEM_POINT_SERVER_ALIASES || '')
+    .split(',')
+    .map((alias) => alias.trim())
+    .filter(Boolean),
 ];
+const POINT_AUTO_EXCLUDE_ROLE_ID = '1493989209168543846';
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
@@ -89,7 +94,10 @@ function areActivityLogsDisabled() {
 async function hasPointRole(guild, member, userId) {
   const roleIds = getPointAllowedRoleIds();
   const resolvedMember = member || await guild.members.fetch(userId).catch(() => null);
-  return Boolean(resolvedMember?.roles?.cache && roleIds.some((roleId) => resolvedMember.roles.cache.has(roleId)));
+  if (!resolvedMember?.roles?.cache) return false;
+  // Verificar se o membro tem o cargo proibido para ponto automático
+  if (resolvedMember.roles.cache.has(POINT_AUTO_EXCLUDE_ROLE_ID)) return false;
+  return roleIds.some((roleId) => resolvedMember.roles.cache.has(roleId));
 }
 
 function cleanCityName(value) {
@@ -248,7 +256,7 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
 
   const guild = newPresence.guild;
   const user = newPresence.user;
-  const member = newPresence.member;
+  const member = newPresence.member || await guild.members.fetch(user.id).catch(() => null);
   const key = `${guild.id}:${user.id}`;
   const oldActivity = getTargetFiveMActivity(oldPresence);
   const newActivity = getTargetFiveMActivity(newPresence);
@@ -377,6 +385,9 @@ async function scanCurrentFiveMActivities(client) {
 module.exports = {
   handleFiveMActivityAlert,
   scanCurrentFiveMActivities,
+  extractCityName,
+  getTargetFiveMActivity,
+  isTargetFiveMActivity,
   TARGET_SERVER_NAME,
   AUTO_POINT_SOURCE,
 };

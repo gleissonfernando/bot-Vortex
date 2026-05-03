@@ -4,6 +4,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('
 const { listGuildPoints, formatPanelDate } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
+const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
 
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -112,18 +113,23 @@ function hasAnyRole(member, roleIds) {
 
 async function getOnlinePlayers(guild) {
   const pointRoleIds = getPointAllowedRoleIds();
-  const fetched = await guild.members.fetch({ withPresences: true }).catch(() => null);
-  const members = guild.members.cache.size ? guild.members.cache.values() : fetched?.values?.() || [];
+  await guild.members.fetch({ withPresences: true }).catch(() => null);
+  const presences = guild.presences?.cache;
   const onlinePlayers = [];
 
-  for (const member of members) {
-    if (!member || member.user?.bot) continue;
-    if (member.presence?.status !== 'online') continue;
+  for (const presence of presences?.values?.() || []) {
+    if (!presence?.user || presence.user.bot) continue;
+    const activity = getTargetFiveMActivity(presence);
+    if (!activity) continue;
+    const member = presence.member || await guild.members.fetch(presence.user.id).catch(() => null);
+    if (!member) continue;
     if (pointRoleIds.length && !hasAnyRole(member, pointRoleIds)) continue;
+    const cityName = extractCityName(activity);
     onlinePlayers.push({
       id: member.id,
       name: member.displayName || member.user.username || `ID ${member.id}`,
       mention: `<@${member.id}>`,
+      cityName,
     });
   }
 
@@ -161,10 +167,10 @@ async function createStatusEmbed(guild) {
 
   const description = [
     `Temos ${active.length} membros da fac em serviço:`,
-    `Jogadores online agora: ${onlineCount}`,
+    `Jogadores na cidade agora: ${onlineCount}`,
     onlinePlayers.length
-      ? `Online: ${onlinePlayers.slice(0, 25).map((player) => player.mention).join(' ')}${onlinePlayers.length > 25 ? ` (+${onlinePlayers.length - 25})` : ''}`
-      : 'Online: nenhum membro do ponto detectado agora.',
+      ? `Na cidade: ${onlinePlayers.slice(0, 25).map((player) => `${player.mention} (${player.cityName})`).join(' ')}${onlinePlayers.length > 25 ? ` (+${onlinePlayers.length - 25})` : ''}`
+      : 'Na cidade: nenhum membro do ponto detectado agora.',
     '',
     table,
   ].join('\n');
