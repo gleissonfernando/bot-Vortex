@@ -62,10 +62,11 @@ function activityText(activity) {
 }
 
 function isTargetFiveMActivity(activity) {
-  if (!isFiveMActivity(activity)) return false;
+  if (!activity || activity.type !== ActivityType.Playing) return false;
   const haystack = normalizeComparableText(activityText(activity));
   const targets = [TARGET_SERVER_NAME, ...TARGET_SERVER_ALIASES].map(normalizeComparableText);
-  return targets.some((target) => target && haystack.includes(target));
+  const hasTargetServer = targets.some((target) => target && haystack.includes(target));
+  return hasTargetServer;
 }
 
 function getTargetFiveMActivity(presence) {
@@ -168,7 +169,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
           .setColor('#57F287')
           .setTitle('Ponto aberto automaticamente')
           .setDescription([
-            `Detectei você no **${TARGET_SERVER_NAME}** e abri seu ponto.`,
+            `Detectei você na cidade **${cityName || TARGET_SERVER_NAME}** e abri seu ponto.`,
             '',
             `Entrada: **${formatDate(result.data.activePointStartedAt)}**`,
             'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
@@ -197,7 +198,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
         .setColor('#5865F2')
         .setTitle('Ponto fechado automaticamente')
         .setDescription([
-          `Não detectei mais você no **${TARGET_SERVER_NAME}** e fechei seu ponto.`,
+          `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** e fechei seu ponto.`,
           '',
           `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
           `Tempo online: **${formatDuration(result.durationMs)}**`,
@@ -359,7 +360,7 @@ async function scanCurrentFiveMActivities(client) {
             .setColor('#5865F2')
             .setTitle('Ponto fechado automaticamente')
             .setDescription([
-              `Não detectei mais você no **${TARGET_SERVER_NAME}** após o bot iniciar e fechei seu ponto.`,
+              `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** após o bot iniciar e fechei seu ponto.`,
               '',
               `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
               `Tempo online: **${formatDuration(result.durationMs)}**`,

@@ -1,5 +1,15 @@
-const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDate, formatDuration } = require('./pontoManager');
+const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDate, formatDuration, formatLocalDay } = require('./pontoManager');
 const { getUserProfile } = require('./profileManager');
+
+const WEEKDAY_LABELS = [
+  { key: 'segunda-feira', label: 'Segunda' },
+  { key: 'terca-feira', label: 'Terça' },
+  { key: 'quarta-feira', label: 'Quarta' },
+  { key: 'quinta-feira', label: 'Quinta' },
+  { key: 'sexta-feira', label: 'Sexta' },
+  { key: 'sabado', label: 'Sábado' },
+  { key: 'domingo', label: 'Domingo' },
+];
 
 function buildPointSiteUrl(guildId, userId) {
   const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
@@ -92,6 +102,34 @@ function summarizeSessions(sessions) {
   };
 }
 
+function getLastActivityAt(point, profile) {
+  return point.lastPointCloseAt
+    || point.lastPointOpenAt
+    || point.firstPointAt
+    || profile?.lastProfileUpdateAt
+    || profile?.approvedAt
+    || point.updatedAt
+    || null;
+}
+
+function buildWeekdaySummary(sessions) {
+  const groups = new Map(WEEKDAY_LABELS.map(({ key, label }) => [key, { key, label, count: 0, totalMs: 0, totalFormatted: '0min' }]));
+
+  for (const session of sessions) {
+    if (!session.startedAt) continue;
+    const weekday = formatLocalDay(session.startedAt).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const group = groups.get(weekday);
+    if (!group) continue;
+    group.count += 1;
+    group.totalMs += Number(session.durationMs || 0);
+  }
+
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    totalFormatted: formatDuration(group.totalMs),
+  }));
+}
+
 async function buildPointSitePayload({ client, guildId, userId }) {
   const point = await getUserPoint(guildId, userId);
   const profile = getUserProfile(guildId, userId);
@@ -102,6 +140,9 @@ async function buildPointSitePayload({ client, guildId, userId }) {
   const monthKey = getMonthKey();
   const monthSessions = sessions.filter((session) => String(session.startedAt || '').startsWith(monthKey));
   const activeMs = point.activePointStartedAt ? Math.max(0, Date.now() - new Date(point.activePointStartedAt).getTime()) : 0;
+  const lastActivityAt = getLastActivityAt(point, profile);
+  const offlineMs = lastActivityAt ? Math.max(0, Date.now() - new Date(lastActivityAt).getTime()) : 0;
+  const weekdaySummary = buildWeekdaySummary(monthSessions);
 
   return {
     ok: true,
@@ -138,6 +179,10 @@ async function buildPointSitePayload({ client, guildId, userId }) {
       status: point.activePointStartedAt ? 'ABERTO' : 'FECHADO',
       activePointStartedAt: point.activePointStartedAt || null,
       activeDurationFormatted: point.activePointStartedAt ? formatDuration(activeMs) : 'N/A',
+      lastActivityAt,
+      lastActivityFormatted: lastActivityAt ? formatDate(lastActivityAt) : 'N/A',
+      offlineDurationFormatted: lastActivityAt ? formatDuration(offlineMs) : 'N/A',
+      lastActivityDay: lastActivityAt ? formatLocalDay(lastActivityAt) : 'N/A',
       firstPointAtFormatted: formatDate(point.firstPointAt),
       lastPointOpenAtFormatted: formatDate(point.lastPointOpenAt),
       lastPointCloseAtFormatted: formatDate(point.lastPointCloseAt),
@@ -147,6 +192,7 @@ async function buildPointSitePayload({ client, guildId, userId }) {
     summary: {
       all: summarizeSessions(sessions),
       month: summarizeSessions(monthSessions),
+      weekdays: weekdaySummary,
     },
     sessions: sessions.map((session) => ({
       ...session,
@@ -177,13 +223,18 @@ function buildPointSiteHtml({ userId, apiPath }) {
     .profile,.card,section{background:linear-gradient(180deg,var(--panel),#0e1018);border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,.24)}
     .profile{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:18px}.avatar{width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,var(--violet),var(--cyan));object-fit:cover;display:grid;place-items:center;font-weight:900}
     .profile h2{margin:0;font-size:24px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{padding:16px}.label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;font-weight:800}
+    .weekday-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+    .weekday-card{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:12px}
+    .weekday-card strong{font-size:16px}
     strong{display:block;margin-top:4px;font-size:24px}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
     .meta div{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:11px;overflow-wrap:anywhere}
     .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-right:16px}.toolbar h2{border-bottom:0}.pill{border:1px solid rgba(0,217,255,.35);color:var(--cyan);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}
     section h2{font-size:18px;margin:0;padding:15px 16px;border-bottom:1px solid var(--line)}.table-scroll{overflow:auto}
     table{width:100%;min-width:920px;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 13px;font-size:14px}
     th{color:var(--muted);font-size:12px;text-transform:uppercase}tbody tr:hover{background:rgba(112,0,255,.12)}.empty{padding:28px;text-align:center;color:var(--muted)}
-    @media(max-width:800px){.brand,.profile,.toolbar{grid-template-columns:1fr;display:grid}.grid,.meta{grid-template-columns:1fr}h1{font-size:34px}.hero{min-height:220px}}
+    @media(max-width:1100px){.weekday-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media(max-width:800px){.brand,.profile,.toolbar{grid-template-columns:1fr;display:grid}.grid,.meta,.weekday-grid{grid-template-columns:1fr 1fr}h1{font-size:34px}.hero{min-height:220px}}
+    @media(max-width:620px){.grid,.meta,.weekday-grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -214,7 +265,8 @@ function buildPointSiteHtml({ userId, apiPath }) {
         '<div><span class="label">Cadastro</span>' + fmt(data.profile.status) + '</div><div><span class="label">Nome em game</span>' + fmt(data.profile.nomeGame) + '</div><div><span class="label">ID em game</span>' + fmt(data.profile.idGame) + '</div>' +
         '<div><span class="label">Numero</span>' + fmt(data.profile.numeroGame) + '</div><div><span class="label">Nivel</span>' + fmt(data.profile.nivelGame) + '</div><div><span class="label">Cargo</span>' + fmt(data.user.highestRole) + '</div>' +
         '</div></div></div>' +
-        '<div class="grid"><div class="card"><span class="label">Tempo total</span><strong>' + esc(data.point.totalFormatted) + '</strong></div><div class="card"><span class="label">Dias com ponto</span><strong>' + esc(data.point.days) + '</strong></div><div class="card"><span class="label">Pontos no mes</span><strong>' + esc(data.summary.month.total) + '</strong></div><div class="card"><span class="label">Ponto atual</span><strong>' + esc(data.point.activeDurationFormatted) + '</strong></div></div>' +
+        '<div class="grid"><div class="card"><span class="label">Tempo total</span><strong>' + esc(data.point.totalFormatted) + '</strong></div><div class="card"><span class="label">Dias com ponto</span><strong>' + esc(data.point.days) + '</strong></div><div class="card"><span class="label">Pontos no mes</span><strong>' + esc(data.summary.month.total) + '</strong></div><div class="card"><span class="label">Ponto atual</span><strong>' + esc(data.point.activeDurationFormatted) + '</strong></div><div class="card"><span class="label">Última atividade</span><strong>' + esc(data.point.lastActivityFormatted) + '</strong></div><div class="card"><span class="label">Tempo sem logar</span><strong>' + esc(data.point.offlineDurationFormatted) + '</strong></div><div class="card"><span class="label">Dia da última atividade</span><strong>' + esc(data.point.lastActivityDay) + '</strong></div><div class="card"><span class="label">Status do ponto</span><strong>' + esc(data.point.status) + '</strong></div></div>' +
+        '<section><div class="toolbar"><h2>Dias da semana</h2><span class="pill">Resumo do período</span></div><div class="weekday-grid">' + data.summary.weekdays.map((item) => '<div class="weekday-card"><span class="label">' + esc(item.label) + '</span><strong>' + esc(String(item.count)) + ' ponto(s)</strong><div class="muted">' + esc(item.totalFormatted) + '</div></div>').join('') + '</div></section>' +
         '<section><div class="toolbar"><h2>Historico do mes</h2><span class="pill">' + esc(data.summary.month.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.monthSessions) + '</tbody></table></div></section>' +
         '<section><div class="toolbar"><h2>Todos os pontos</h2><span class="pill">' + esc(data.summary.all.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.sessions) + '</tbody></table></div></section>';
     }).catch((error) => {

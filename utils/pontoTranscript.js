@@ -337,6 +337,9 @@ function buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekS
   const daysWithoutPoint = weekKeys.filter((key) => !daysWithPoints.has(key)).length;
   const keysUntilToday = weekKeys.filter((key) => key <= currentKey);
   const daysWithoutPointUntilToday = keysUntilToday.filter((key) => !daysWithPoints.has(key)).length;
+  const weekdaysWithPoints = weekKeys
+    .filter((key) => daysWithPoints.has(key))
+    .map((key) => formatWeekdayLabel(key));
 
   return {
     weekStartKey,
@@ -348,6 +351,7 @@ function buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekS
     totalPoints: weekSessions.length,
     lastSession,
     daysWithoutPointUntilToday,
+    weekdaysWithPoints,
   };
 }
 
@@ -380,6 +384,14 @@ function buildTranscriptData({ guild, target, member, data }) {
     .sort((a, b) => new Date(a.adjustedAt || 0).getTime() - new Date(b.adjustedAt || 0).getTime());
   const sessionsByDay = groupSessionsByDay(sessions, weekKeys);
   const summary = buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekStartKey, weekEndKey });
+  const lastActivityAt = data.lastPointCloseAt
+    || data.lastPointOpenAt
+    || data.firstPointAt
+    || profile?.lastProfileUpdateAt
+    || profile?.approvedAt
+    || data.updatedAt
+    || null;
+  const offlineDurationFormatted = lastActivityAt ? formatDuration(Date.now() - new Date(lastActivityAt).getTime()) : 'N/A';
 
   return {
     generatedAt,
@@ -394,6 +406,8 @@ function buildTranscriptData({ guild, target, member, data }) {
     summary,
     weekStartKey,
     weekEndKey,
+    lastActivityAt,
+    offlineDurationFormatted,
   };
 }
 
@@ -423,6 +437,9 @@ function buildTextBody(report) {
   lines.push(formatPointLine('Total de ajustes feitos', String(summary.totalAdjustments)));
   lines.push(formatPointLine('Ultimo ponto aberto', summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A'));
   lines.push(formatPointLine('Dias sem abrir ponto ate hoje', String(summary.daysWithoutPointUntilToday)));
+  lines.push(formatPointLine('Dias da semana com ponto', summary.weekdaysWithPoints.join(', ') || 'N/A'));
+  lines.push(formatPointLine('Ultima atividade', report.lastActivityAt ? formatDate(report.lastActivityAt) : 'N/A'));
+  lines.push(formatPointLine('Tempo sem logar', report.offlineDurationFormatted));
   lines.push('');
   lines.push(...buildAdjustmentHistoryText(adjustments));
 
@@ -627,6 +644,9 @@ function buildHtmlBody(report) {
         <div class="summary-item"><span>Ultimo ponto aberto</span><strong>${escapeHtml(summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A')}</strong></div>
         <div class="summary-item"><span>Dias sem abrir ate hoje</span><strong>${escapeHtml(String(summary.daysWithoutPointUntilToday))}</strong></div>
         <div class="summary-item"><span>Tempo geral salvo</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
+        <div class="summary-item"><span>Dias da semana com ponto</span><strong>${escapeHtml(summary.weekdaysWithPoints.join(', ') || 'N/A')}</strong></div>
+        <div class="summary-item"><span>Última atividade</span><strong>${escapeHtml(report.lastActivityAt ? formatDate(report.lastActivityAt) : 'N/A')}</strong></div>
+        <div class="summary-item"><span>Tempo sem logar</span><strong>${escapeHtml(report.offlineDurationFormatted)}</strong></div>
       </div>
     </section>
 
