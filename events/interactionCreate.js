@@ -655,6 +655,7 @@ module.exports = {
                         const channelResult = await createApprovedSetChannel(guild, target, {
                             nomeGame,
                             idGame,
+                            nivelGame,
                             staffUserId: user.id,
                         }).catch((error) => ({ ok: false, message: error.message, channel: null }));
                         approvedChannel = channelResult.channel;

@@ -39,6 +39,36 @@ function sanitizeChannelName(value) {
     .slice(0, 70) || 'usuario';
 }
 
+function formatApprovedSetDisplayName(profile = {}) {
+  return String(profile.nomeGame || profile.displayName || profile.userName || profile.discordTag || 'usuario').trim() || 'usuario';
+}
+
+function formatApprovedSetLevel(profile = {}) {
+  return String(profile.nivelGame || '').trim();
+}
+
+function buildApprovedSetChannelPayload(profile = {}) {
+  const displayName = formatApprovedSetDisplayName(profile);
+  const displayLevel = formatApprovedSetLevel(profile);
+  const channelNameParts = [sanitizeChannelName(displayName)];
+
+  if (displayLevel) {
+    channelNameParts.push(sanitizeChannelName(displayLevel));
+  }
+
+  return {
+    displayName,
+    displayLevel,
+    channelName: channelNameParts.join('-').slice(0, 100),
+    topic: [
+      displayName,
+      displayLevel ? `Nível ${displayLevel}` : null,
+      profile.idGame ? `ID ${profile.idGame}` : null,
+      `Discord: ${profile.userId || 'N/A'}`,
+    ].filter(Boolean).join(' | '),
+  };
+}
+
 function getManagementRoleIds() {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8') || '{}');
@@ -53,7 +83,7 @@ function getManagementRoleIds() {
   }
 }
 
-async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame = null, staffUserId = null } = {}) {
+async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame = null, nivelGame = null, staffUserId = null } = {}) {
   const category = await guild.channels.fetch(APPROVED_SET_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
     return { ok: false, message: `Categoria <#${APPROVED_SET_CATEGORY_ID}> não encontrada.`, channel: null };
@@ -63,17 +93,29 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
   const existingId = data[guild.id]?.[member.id]?.channelId;
   const existing = existingId ? await guild.channels.fetch(existingId).catch(() => null) : null;
   if (existing) {
+    await syncApprovedSetChannel(guild, {
+      userId: member.id,
+      callChannelId: existing.id,
+      nomeGame: nomeGame || data[guild.id]?.[member.id]?.nomeGame || member.displayName || member.user.username,
+      idGame: idGame || data[guild.id]?.[member.id]?.idGame || member.id,
+      nivelGame: nivelGame || data[guild.id]?.[member.id]?.nivelGame || null,
+    }).catch(() => null);
     return { ok: true, message: 'Canal do usuário aprovado já existia.', channel: existing };
   }
 
-  const displayName = nomeGame || member.displayName || member.user.username;
-  const displayId = idGame || member.id;
+  const profile = {
+    userId: member.id,
+    nomeGame: nomeGame || member.displayName || member.user.username,
+    idGame: idGame || member.id,
+    nivelGame: nivelGame || null,
+  };
+  const payload = buildApprovedSetChannelPayload(profile);
   const managementRoleIds = getManagementRoleIds();
   const channel = await guild.channels.create({
-    name: `${sanitizeChannelName(displayName)}-${sanitizeChannelName(displayId)}`.slice(0, 100),
+    name: payload.channelName,
     type: ChannelType.GuildText,
     parent: category.id,
-    topic: `${displayName} | ${displayId} | Discord: ${member.id}`,
+    topic: payload.topic,
     permissionOverwrites: [
       {
         id: guild.id,
@@ -114,8 +156,9 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
   data[guild.id][member.id] = {
     channelId: channel.id,
     userId: member.id,
-    nomeGame: displayName,
-    idGame: displayId,
+    nomeGame: profile.nomeGame,
+    idGame: profile.idGame,
+    nivelGame: profile.nivelGame,
     createdAt: new Date().toISOString(),
     createdBy: staffUserId ? String(staffUserId) : null,
   };
@@ -135,6 +178,56 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
   }).catch(() => null);
 
   return { ok: true, message: 'Canal criado para usuário aprovado.', channel };
+}
+
+async function syncApprovedSetChannel(guild, profile = {}, options = {}) {
+  const userId = String(profile.userId || '').trim();
+  const channelId = String(profile.callChannelId || '').trim();
+  if (!userId || !channelId) {
+    return { ok: false, reason: 'missing_data' };
+  }
+
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.edit) {
+    return { ok: false, reason: 'missing_channel' };
+  }
+
+  const payload = buildApprovedSetChannelPayload({ ...profile, userId });
+  const changes = {};
+
+  if (channel.name !== payload.channelName) {
+    changes.name = payload.channelName;
+  }
+
+  if ((channel.topic || '') !== payload.topic) {
+    changes.topic = payload.topic;
+  }
+
+  if (Object.keys(changes).length > 0) {
+    await channel.edit(changes, {
+      reason: `Sincronizar nome da call do perfil de ${userId}${options.reason ? ` - ${options.reason}` : ''}`,
+    }).catch((error) => {
+      logger.error('Erro ao sincronizar nome da call do perfil:', error);
+      return null;
+    });
+  }
+
+  const data = readChannels();
+  if (!data[guild.id]) data[guild.id] = {};
+  if (!data[guild.id][userId]) {
+    data[guild.id][userId] = { channelId };
+  }
+  data[guild.id][userId] = {
+    ...data[guild.id][userId],
+    channelId,
+    userId,
+    nomeGame: payload.displayName,
+    nivelGame: payload.displayLevel || data[guild.id][userId].nivelGame || null,
+    updatedAt: new Date().toISOString(),
+  };
+  writeChannels(data);
+
+  return { ok: true, channel, name: payload.channelName, topic: payload.topic };
 }
 
 function buildGuideEmbed(userId, step = 1) {
@@ -256,4 +349,5 @@ module.exports = {
   createApprovedSetChannel,
   deleteApprovedSetChannel,
   handleApprovedChannelGuide,
+  syncApprovedSetChannel,
 };

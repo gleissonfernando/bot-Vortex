@@ -3,6 +3,7 @@ const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
+const { syncApprovedSetChannel } = require('./approvedSetChannels');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -270,6 +271,7 @@ async function registerApprovedProfile(guild, member, {
   data[guild.id][member.id] = profile;
   writeProfiles(data);
   await ensureProfileChannelAccess(guild, profile.callChannelId, member.id).catch(() => null);
+  await syncApprovedSetChannel(guild, profile, { reason: 'registerApprovedProfile' }).catch(() => null);
   return profile;
 }
 
@@ -308,6 +310,7 @@ async function updateProfileLink(guild, user, link, updatedBy) {
   data[guild.id][user.id] = profile;
   writeProfiles(data);
   await ensureProfileChannelAccess(guild, profile.callChannelId, user.id).catch(() => null);
+  await syncApprovedSetChannel(guild, profile, { reason: 'updateProfileLink' }).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -344,6 +347,7 @@ async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
 
   data[guild.id][user.id] = profile;
   writeProfiles(data);
+  await syncApprovedSetChannel(guild, profile, { reason: 'updateProfileLevel' }).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -394,6 +398,7 @@ async function registerManualProfile(guild, user, {
 
   data[guild.id][user.id] = profile;
   writeProfiles(data);
+  await syncApprovedSetChannel(guild, profile, { reason: 'registerManualProfile' }).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -542,6 +547,9 @@ async function ensureAllProfileChannelAccess(client) {
       if (!profile?.callChannelId) continue;
       await ensureProfileChannelAccess(guild, profile.callChannelId, profile.userId).catch((error) => {
         logger.error('Erro ao garantir acesso ao canal privado do perfil:', error);
+      });
+      await syncApprovedSetChannel(guild, profile, { reason: 'startup' }).catch((error) => {
+        logger.error('Erro ao sincronizar nome da call do perfil no startup:', error);
       });
     }
   }
