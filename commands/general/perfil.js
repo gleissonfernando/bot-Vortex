@@ -39,12 +39,12 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('link')
-        .setDescription('Link da foto do perfil para atualizar')
+        .setDescription('Link da mídia do perfil para atualizar')
         .setRequired(false))
     .addAttachmentOption((option) =>
       option
         .setName('foto')
-        .setDescription('Upload direto da foto do perfil')
+        .setDescription('Upload direto da mídia do perfil')
         .setRequired(false))
     .addStringOption((option) =>
       option
@@ -81,11 +81,19 @@ module.exports = {
     }
 
     if (link || photo) {
-      if (photo && !photo.contentType?.startsWith('image/')) {
-        return interaction.editReply({ content: '❌ O upload precisa ser uma imagem.' });
+      const isImageUpload = Boolean(photo?.contentType?.startsWith('image/'));
+      const isVideoUpload = Boolean(photo?.contentType?.startsWith('video/'));
+      if (photo && !isImageUpload && !isVideoUpload) {
+        return interaction.editReply({ content: '❌ O upload precisa ser uma imagem ou vídeo.' });
       }
       const imageUrl = photo?.url || link;
-      const result = await updateProfileLink(interaction.guild, target, imageUrl, interaction.user.id);
+      const result = await updateProfileLink(
+        interaction.guild,
+        target,
+        imageUrl,
+        interaction.user.id,
+        isVideoUpload ? 'video' : 'image'
+      );
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
           await sendMissingProfileDm(target, interaction.guild);

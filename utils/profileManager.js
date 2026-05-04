@@ -181,6 +181,25 @@ function normalizeProfileUrl(input) {
   }
 }
 
+function isLikelyImageUrl(value) {
+  const text = String(value || '').toLowerCase();
+  return /\.(png|jpe?g|gif|webp|bmp|avif)(\?.*)?$/.test(text);
+}
+
+function isLikelyVideoUrl(value) {
+  const text = String(value || '').toLowerCase();
+  return /\.(mp4|webm|mov|m4v|avi|mkv)(\?.*)?$/.test(text);
+}
+
+function inferProfileMediaType(url, contentType = null) {
+  const type = String(contentType || '').toLowerCase();
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  if (isLikelyImageUrl(url)) return 'image';
+  if (isLikelyVideoUrl(url)) return 'video';
+  return 'link';
+}
+
 function addPhotoLink(existingLinks, link, addedBy = null) {
   const links = Array.isArray(existingLinks) ? existingLinks.slice() : [];
   if (!link) return links;
@@ -275,10 +294,10 @@ async function registerApprovedProfile(guild, member, {
   return profile;
 }
 
-async function updateProfileLink(guild, user, link, updatedBy) {
+async function updateProfileLink(guild, user, link, updatedBy, mediaType = null) {
   const profileUrl = normalizeProfileUrl(link);
   if (!profileUrl) {
-    return { ok: false, message: 'Link inválido. Use um link http/https do Discord ou de imagem.' };
+    return { ok: false, message: 'Link inválido. Use um link http/https válido.' };
   }
 
   const data = readProfiles();
@@ -300,6 +319,7 @@ async function updateProfileLink(guild, user, link, updatedBy) {
     avatarUrl: images.avatarUrl || existing.avatarUrl || null,
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: profileUrl,
+    profileMediaType: mediaType || inferProfileMediaType(profileUrl),
     photoLinks: addPhotoLink(existing.photoLinks, profileUrl, updatedBy || user.id),
     lastProfileUpdateAt: now.toISOString(),
     lastReminderAt: null,
@@ -355,12 +375,13 @@ async function registerManualProfile(guild, user, {
   name,
   callChannelId = null,
   photoLink = null,
+  photoMediaType = null,
   nivelGame = null,
   registeredBy = null,
 } = {}) {
   const profileUrl = photoLink ? normalizeProfileUrl(photoLink) : null;
   if (photoLink && !profileUrl) {
-    return { ok: false, message: 'Link da foto inválido. Use um link http/https.' };
+    return { ok: false, message: 'Link da mídia inválido. Use um link http/https.' };
   }
   const normalizedLevel = nivelGame ? normalizeProfileLevel(nivelGame) : null;
   if (nivelGame && !normalizedLevel) {
@@ -386,6 +407,7 @@ async function registerManualProfile(guild, user, {
     avatarUrl: images.avatarUrl || existing.avatarUrl || null,
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: profileUrl || existing.profileImageUrl || images.avatarUrl || null,
+    profileMediaType: profileUrl ? (photoMediaType || inferProfileMediaType(profileUrl)) : (existing.profileMediaType || null),
     photoLinks: profileUrl ? addPhotoLink(existing.photoLinks, profileUrl, registeredBy) : (existing.photoLinks || []),
     callChannelId: callChannelId ? String(callChannelId) : existing.callChannelId || null,
     approvedAt: existing.approvedAt || now.toISOString(),
@@ -407,7 +429,9 @@ function buildProfileEmbed({ guild, user, member, profile }) {
   const lastUpdate = profile?.lastProfileUpdateAt ? new Date(profile.lastProfileUpdateAt).getTime() : 0;
   const elapsed = lastUpdate ? now - lastUpdate : 0;
   const nextUpdateAt = lastUpdate ? new Date(lastUpdate + PROFILE_UPDATE_INTERVAL_MS) : null;
-  const imageUrl = profile?.profileImageUrl || user.displayAvatarURL({ dynamic: true, size: 1024 });
+  const mediaUrl = profile?.profileImageUrl || user.displayAvatarURL({ dynamic: true, size: 1024 });
+  const mediaType = String(profile?.profileMediaType || (isLikelyImageUrl(mediaUrl) ? 'image' : isLikelyVideoUrl(mediaUrl) ? 'video' : 'link')).toLowerCase();
+  const canPreviewImage = mediaType === 'image';
   const photoLinks = Array.isArray(profile?.photoLinks) ? profile.photoLinks : [];
   const latestPhotos = photoLinks.slice(-5).reverse().map((item, index) => `${index + 1}. ${item.url}`).join('\n') || 'N/A';
 
@@ -416,7 +440,6 @@ function buildProfileEmbed({ guild, user, member, profile }) {
     .setAuthor({ name: 'VORTEX | Perfil', iconURL: guild.client.user?.displayAvatarURL?.() || undefined })
     .setTitle(`Perfil de ${member?.displayName || user.username}`)
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-    .setImage(imageUrl)
     .addFields(
       { name: 'Usuário', value: `<@${user.id}>`, inline: true },
       { name: 'Discord ID', value: `\`${user.id}\``, inline: true },
@@ -428,7 +451,7 @@ function buildProfileEmbed({ guild, user, member, profile }) {
       { name: 'Call/Canal', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
       { name: 'Tipo', value: profile?.tipo || 'N/A', inline: true },
       { name: 'Cargo mais alto', value: member?.roles?.highest ? `<@&${member.roles.highest.id}>` : 'N/A', inline: true },
-      { name: 'Links de fotos salvos', value: latestPhotos.slice(0, 1024), inline: false },
+      { name: 'Links de mídias salvos', value: latestPhotos.slice(0, 1024), inline: false },
       { name: 'Última atualização', value: profile?.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A', inline: false },
       { name: 'Tempo desde atualização', value: lastUpdate ? formatDuration(elapsed) : 'N/A', inline: true },
       { name: 'Próxima atualização', value: nextUpdateAt ? formatDate(nextUpdateAt) : 'N/A', inline: true }
@@ -436,7 +459,15 @@ function buildProfileEmbed({ guild, user, member, profile }) {
     .setFooter({ text: `Vortex - Perfil • ${formatDate(new Date())}` })
     .setTimestamp();
 
-  if (profile?.bannerUrl) embed.setImage(profile.profileImageUrl || profile.bannerUrl);
+  if (canPreviewImage && mediaUrl) {
+    embed.setImage(mediaUrl);
+  } else if (mediaUrl) {
+    embed.addFields({
+      name: 'Mídia do perfil',
+      value: `[Abrir mídia](${mediaUrl})`,
+      inline: false,
+    });
+  }
   return embed;
 }
 
@@ -469,7 +500,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Tempo sem atualizar:** ${formatDuration(now - lastUpdateMs)}`,
       `**Horário do aviso:** ${formatDate(new Date())}`,
       '',
-      'Use `/perfil link:<link da imagem> nivel:<numero>` para atualizar.',
+      'Use `/perfil link:<link da mídia> nivel:<numero>` para atualizar.',
       'O prazo para atualizar o nível após o /set é de 2 dias.',
     ].join('\n'))
     .setTimestamp();

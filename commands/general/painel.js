@@ -952,7 +952,7 @@ module.exports = {
                 new TextInputBuilder()
                     .setCustomId('photo_link')
                     .setLabel('LINK DA FOTO')
-                    .setPlaceholder('Cole o link da foto do Discord ou imagem')
+                    .setPlaceholder('Cole o link da mídia, print ou vídeo')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(false)
             )
@@ -1461,7 +1461,7 @@ module.exports = {
                 `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
                 `Nível: ${result.profile.nivelGame || 'N/A'}`,
                 `Call/Canal: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
-                `Fotos salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
+                `Mídias salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
                 `Data/hora real: ${formatDate(new Date())}`,
             ].join('\n'),
             ephemeral: true,
@@ -1928,7 +1928,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Este módulo acompanha os usuários aprovados no `/set`.',
         'Também permite cadastrar manualmente pessoas que já estão no Discord.',
         'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto> nivel:<numero>`.',
-        'Os links de foto ficam salvos no JSON mesmo se a imagem original for apagada.',
+        'Os links de mídia ficam salvos no JSON mesmo se o arquivo original for apagado.',
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
