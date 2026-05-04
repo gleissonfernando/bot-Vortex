@@ -67,7 +67,12 @@ const logChannelSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/painel', value: 'painel', description: 'Quem pode usar o painel de controle' },
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
+    { label: '/clear', value: 'clear', description: 'Quem pode limpar mensagens no chat' },
+    { label: '/clipe', value: 'clipe', description: 'Quem pode enviar clipes' },
+    { label: '/live', value: 'live', description: 'Quem pode gerenciar links de live' },
+    { label: '/painelponto', value: 'painelponto', description: 'Quem pode abrir o painel de ponto' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
+    { label: '/serve', value: 'serve', description: 'Quem pode consultar ou usar serve' },
     { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
     { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatório de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
@@ -1917,7 +1922,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Configurar comandos e ações',
         '',
-        'Selecione um comando/ação e depois selecione os cargos que podem usar.',
+        'Selecione um comando e depois escolha os cargos que podem usar esse comando.',
         'Se nenhum cargo for selecionado, o comando fica liberado para todos que passarem nas regras internas dele.',
         '',
         `Modo privado do /painel: **${conf.PANEL_PRIVATE_MODE ? 'ligado' : 'desligado'}**`,
