@@ -32,7 +32,7 @@ const {
   removeUserProfileData,
 } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
-const { hasAnyVortexRole, hasVortexLevel } = require('../../utils/permissions');
+const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
 const { createPointTranscriptAttachment, createPointTranscriptTextAttachment } = require('../../utils/pontoTranscript');
 const {
@@ -64,6 +64,7 @@ const pointReadjustSelections = new Map();
 const profileRegisterSelections = new Map();
 const logChannelSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
+    { label: '/painel', value: 'painel', description: 'Quem pode usar o painel de controle' },
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
@@ -82,7 +83,7 @@ function hasStaffPermission(member) {
 }
 
 function hasPanelAccess(member) {
-    return hasAnyVortexRole(member);
+    return canUsePanel(member);
 }
 
 function hasMasterPermission(member) {
@@ -654,6 +655,24 @@ module.exports = {
       }).catch(() => {});
 
       return renderDashboard(interaction, 'config_logs', true);
+    }
+
+    if (customId === 'toggle_panel_private_mode') {
+      if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
+      }
+      conf.PANEL_PRIVATE_MODE = !conf.PANEL_PRIVATE_MODE;
+      saveJSON(CONFIG_PATH, conf);
+
+      sendVortexLog(interaction.client, {
+          title: 'Modo Privado do /painel Alterado',
+          description: `O modo privado do /painel foi **${conf.PANEL_PRIVATE_MODE ? 'ATIVADO' : 'DESATIVADO'}** por <@${interaction.user.id}>.`,
+          color: conf.PANEL_PRIVATE_MODE ? '#FF0055' : '#57F287',
+          type: 'CONFIGURAÇÃO',
+          userId: interaction.user.id
+      }).catch(() => {});
+
+      return renderDashboard(interaction, 'tab_config', true);
     }
 
     if (customId === 'toggle_selected_log_channel') {
@@ -1531,6 +1550,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
         { name: 'Médio Vortex', value: formatRoleList(levels.medio), inline: false },
         { name: 'Membro Vortex', value: formatRoleList(levels.membro), inline: false },
+        { name: '/painel privado', value: formatRoleList(permissions.painel, '`Somente Admin/Médio`'), inline: false },
         { name: 'Set', value: formatRoleList(permissions.set, '`Sem filtro extra`'), inline: true },
         { name: 'Avisos', value: formatRoleList(permissions.avisos, '`Sem filtro extra`'), inline: true },
         { name: 'Registro', value: formatRoleList(permissions.registro, '`Sem filtro extra`'), inline: true },
@@ -1603,10 +1623,12 @@ async function renderDashboard(interaction, tab, edit = false) {
       ),
     ];
   } else if (tab === 'tab_config') {
+    const privateMode = Boolean(conf.PANEL_PRIVATE_MODE);
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF')
       .setDescription('### Configuração geral\n\nUse os botões abaixo para abrir a configuração específica de **Set**, **Avisos** ou **Logs**.')
       .addFields(
         { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
+        { name: '/painel privado', value: privateMode ? '`Ativado`' : '`Desativado`', inline: true },
         { name: 'Set', value: 'Configure cargos e permissões do sistema de set.', inline: true },
         { name: 'Avisos', value: 'Configure DMs e cargo mencionado nos avisos.', inline: true },
         { name: 'Logs', value: 'Configure canal e modos de logs do bot.', inline: true }
@@ -1617,6 +1639,12 @@ async function renderDashboard(interaction, tab, edit = false) {
         new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('config_logs').setLabel('Logs').setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('toggle_panel_private_mode')
+          .setLabel(privateMode ? 'Desativar modo privado' : 'Ativar modo privado')
+          .setStyle(privateMode ? ButtonStyle.Success : ButtonStyle.Danger)
       ),
     ];
   } else if (tab === 'config_logs') {
@@ -1857,6 +1885,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         'Selecione um comando/ação e depois selecione os cargos que podem usar.',
         'Se nenhum cargo for selecionado, o comando fica liberado para todos que passarem nas regras internas dele.',
+        '',
+        `Modo privado do /painel: **${conf.PANEL_PRIVATE_MODE ? 'ligado' : 'desligado'}**`,
         '',
         lines,
         '',

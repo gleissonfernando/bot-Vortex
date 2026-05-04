@@ -35,6 +35,11 @@ function getAllVortexRoleIds() {
     return getVortexRoleIds(['admin', 'medio', 'membro']);
 }
 
+function isPanelPrivateModeEnabled() {
+    const panelConfig = getPanelConfig();
+    return Boolean(panelConfig.PANEL_PRIVATE_MODE);
+}
+
 function hasAnyVortexRole(member) {
     if (member?.roles?.cache && MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     return memberHasAnyRole(member, getAllVortexRoleIds());
@@ -54,6 +59,17 @@ function hasCommandRole(member, commandName) {
     const permissions = panelConfig.COMMAND_ROLE_PERMISSIONS || {};
     const roleIds = normalizeIds(permissions[commandName] || []);
     return memberHasAnyRole(member, roleIds);
+}
+
+function hasPanelAccess(member) {
+    if (!member?.roles?.cache) return false;
+    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
+    if (!isPanelPrivateModeEnabled()) {
+        return hasAnyVortexRole(member);
+    }
+
+    if (hasVortexLevel(member, ['admin', 'medio'])) return true;
+    return hasCommandRole(member, 'painel');
 }
 
 function isRegisteredUser(interaction) {
@@ -79,5 +95,7 @@ module.exports = {
     hasAnyVortexRole,
     hasVortexLevel,
     hasCommandRole,
+    hasPanelAccess,
+    isPanelPrivateModeEnabled,
     denyNotRegistered
 };

@@ -10,7 +10,7 @@ const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdj
 const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
 const { createApprovedSetChannel, handleApprovedChannelGuide } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
-const { hasAnyVortexRole, hasVortexLevel } = require('../utils/permissions');
+const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -57,7 +57,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     if (allowedRoles.length > 0) {
         return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
     }
-    if (commandName === 'painel') return hasAnyVortexRole(interaction.member);
+    if (commandName === 'painel') return hasPanelAccess(interaction.member);
     return hasAnyVortexRole(interaction.member);
 }
 
