@@ -60,6 +60,7 @@ const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.pn
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md');
 const commandPermissionSelections = new Map();
+const vortexRoleModeSelections = new Map();
 const pointReadjustSelections = new Map();
 const profileRegisterSelections = new Map();
 const logChannelSelections = new Map();
@@ -124,6 +125,10 @@ function ensureCommandPermissions(conf) {
 
 function getSelectionKey(interaction) {
     return `${interaction.guildId}:${interaction.user.id}`;
+}
+
+function getVortexRoleMode(interaction) {
+    return vortexRoleModeSelections.get(getSelectionKey(interaction)) || 'set';
 }
 
 function formatRoleList(roleIds, emptyText = '`Nenhum`') {
@@ -675,6 +680,18 @@ module.exports = {
       return renderDashboard(interaction, 'tab_config', true);
     }
 
+    if (customId === 'toggle_vortex_role_remove_mode') {
+      if (!hasVortexLevel(interaction.member, ['admin'])) {
+        return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
+      }
+
+      const key = getSelectionKey(interaction);
+      const nextMode = vortexRoleModeSelections.get(key) === 'remove' ? 'set' : 'remove';
+      vortexRoleModeSelections.set(key, nextMode);
+
+      return renderDashboard(interaction, 'tab_roles', true);
+    }
+
     if (customId === 'toggle_selected_log_channel') {
       if (!hasLogsManagerPermission(interaction)) {
         return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode alterar essa configuração.', ephemeral: true });
@@ -1150,12 +1167,21 @@ module.exports = {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
         const level = interaction.customId.replace('select_vortex_role_', '');
         const levels = ensureRoleLevels(data);
-        levels[level] = interaction.values.map(String);
+        const mode = getVortexRoleMode(interaction);
+        const selectedRoles = interaction.values.map(String);
+        const currentRoles = Array.isArray(levels[level]) ? levels[level].map(String) : [];
+        levels[level] = mode === 'remove'
+          ? currentRoles.filter((roleId) => !selectedRoles.includes(roleId))
+          : selectedRoles;
         saveJSON(CONFIG_PATH, data);
 
         sendVortexLog(interaction.client, {
             title: 'Cargo Vortex Alterado',
-            description: `Nivel **${level}** atualizado para: ${levels[level].map(id => `<@&${id}>`).join(' ') || 'nenhum'} por <@${interaction.user.id}>.`,
+            description: [
+              `Nivel **${level}** atualizado para: ${levels[level].map(id => `<@&${id}>`).join(' ') || 'nenhum'}`,
+              `Modo usado: **${mode === 'remove' ? 'remover' : 'definir'}**`,
+              `Por <@${interaction.user.id}>.`,
+            ].join('\n'),
             color: '#5865F2',
             type: 'SEGURANÇA',
             userId: interaction.user.id
@@ -1535,10 +1561,12 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_roles') {
     const levels = ensureRoleLevels(conf);
     const permissions = ensureCommandPermissions(conf);
+    const vortexRoleMode = getVortexRoleMode(interaction);
     embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#5865F2')
       .setDescription('### 🔐 Controle de Cargos Vortex\n\n' + 
                       'Nesta aba você seleciona cargos pesquisando pelo nome e define o nível de acesso de cada grupo.\n\n' +
+                      `**Modo atual:** ${vortexRoleMode === 'remove' ? 'Remover cargos selecionados' : 'Definir cargos selecionados'}\n\n` +
                       '**Como funciona**\n' +
                       '**Admin:** mexe em avisos, set e todos os sistemas de ponto, mas não usa manutenção.\n' +
                       '**Médio:** aceita set e envia avisos.\n' +
@@ -1568,6 +1596,12 @@ async function renderDashboard(interaction, tab, edit = false) {
       ),
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder().setCustomId('select_vortex_role_membro').setPlaceholder('Selecionar cargos Membro Vortex').setMinValues(0).setMaxValues(5)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('toggle_vortex_role_remove_mode')
+          .setLabel(vortexRoleMode === 'remove' ? 'Desativar modo remover' : 'Ativar modo remover')
+          .setStyle(vortexRoleMode === 'remove' ? ButtonStyle.Success : ButtonStyle.Danger)
       ),
     ];
   } else if (tab === 'tab_manutencao') {
