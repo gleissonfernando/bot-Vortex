@@ -1,10 +1,12 @@
 const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
 const {
   getUserProfile,
+  registerApprovedProfile,
   updateProfileLink,
   updateProfileLevel,
   buildProfileEmbed,
 } = require('../../utils/profileManager');
+const { getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../../utils/approvedSetChannels');
 const { hasVortexLevel } = require('../../utils/permissions');
 
 async function sendMissingProfileDm(user, guild) {
@@ -25,6 +27,23 @@ async function sendMissingProfileDm(user, guild) {
 
 function isMissingProfileResult(result) {
   return String(result?.message || '').toLowerCase().includes('perfil aprovado');
+}
+
+async function ensureProfileFromApprovedSet(guild, user, record) {
+  const existingProfile = getUserProfile(guild.id, user.id);
+  if (existingProfile) return existingProfile;
+  if (!record?.channelId || String(record.userId) !== String(user.id)) return null;
+
+  const member = await guild.members.fetch(user.id).catch(() => null);
+  if (!member) return null;
+
+  return registerApprovedProfile(guild, member, {
+    nomeGame: record.nomeGame || member.displayName || user.username,
+    idGame: record.idGame || user.id,
+    nivelGame: record.nivelGame || null,
+    callChannelId: record.channelId,
+    approvedBy: record.createdBy || null,
+  }).catch(() => null);
 }
 
 module.exports = {
@@ -59,12 +78,20 @@ module.exports = {
     const link = interaction.options.getString('link');
     const photo = interaction.options.getAttachment('foto');
     const nivel = interaction.options.getString('nivel');
-    const requesterProfile = getUserProfile(interaction.guild.id, interaction.user.id);
+    const approvedSetChannelRecord = getApprovedSetChannelRecord(interaction.guild.id, interaction.channelId);
+    const requesterApprovedRecord = getApprovedSetChannelRecordByUser(interaction.guild.id, interaction.user.id);
+    const targetApprovedRecord = getApprovedSetChannelRecordByUser(interaction.guild.id, target.id);
+    let requesterProfile = await ensureProfileFromApprovedSet(
+      interaction.guild,
+      interaction.user,
+      requesterApprovedRecord || (approvedSetChannelRecord?.userId === interaction.user.id ? approvedSetChannelRecord : null)
+    );
     const canManageProfiles = hasVortexLevel(interaction.member, ['admin', 'medio']);
+    const isApprovedSetChannelOwner = approvedSetChannelRecord?.userId === interaction.user.id;
 
-    if (!requesterProfile && !canManageProfiles) {
+    if (!requesterProfile && !isApprovedSetChannelOwner && !canManageProfiles) {
       return interaction.editReply({
-        content: '❌ Você precisa ter cadastro no /perfil ou ter sido aprovado no /set para ver perfis.',
+        content: '❌ Você precisa ter cadastro no /perfil ou estar no seu canal criado pelo /set para usar este comando.',
       });
     }
 
@@ -80,7 +107,14 @@ module.exports = {
       });
     }
 
+    if (!canManageProfiles && !requesterProfile?.callChannelId && !isApprovedSetChannelOwner && approvedSetChannelRecord) {
+      return interaction.editReply({
+        content: `❌ Use o /perfil no seu canal criado pelo /set: <#${approvedSetChannelRecord.channelId}>.`,
+      });
+    }
+
     if (link || photo) {
+      await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
       const isImageUpload = Boolean(photo?.contentType?.startsWith('image/'));
       const isVideoUpload = Boolean(photo?.contentType?.startsWith('video/'));
       if (photo && !isImageUpload && !isVideoUpload) {
@@ -104,6 +138,7 @@ module.exports = {
     }
 
     if (nivel) {
+      await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
       const result = await updateProfileLevel(interaction.guild, target, nivel, interaction.user.id);
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
@@ -115,7 +150,8 @@ module.exports = {
     }
 
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
-    const profile = getUserProfile(interaction.guild.id, target.id);
+    const profile = getUserProfile(interaction.guild.id, target.id)
+      || await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
     if (!profile) {
       await sendMissingProfileDm(target, interaction.guild);
       return interaction.editReply({

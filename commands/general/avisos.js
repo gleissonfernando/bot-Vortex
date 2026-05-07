@@ -6,7 +6,6 @@ const {
   ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
-  RoleSelectMenuBuilder,
   UserSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
@@ -19,26 +18,19 @@ const { sendVortexLog } = require('../../utils/notifications');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const NOTICE_FIXED_ROLE_IDS = [
-  '1499176108753420428',
   '1201193356810780773',
 ];
 const NOTICE_MAIN_CHANNEL_ID = '1482190594003439678';
 const NOTICE_ALERT_CHANNEL_ID = '1481598629365022800';
-const NOTICE_ALERT_ROLE_ID = '1499176108753420428';
+const NOTICE_ALERT_ROLE_ID = '1201193356810780773';
 const CUSTOM_IDS = {
   selectChannel: 'avisos_select_channel',
   selectUser: 'avisos_select_user',
-  selectRole: 'avisos_select_role',
-  selectCall: 'avisos_select_call',
   guild: 'avisos_send_guild',
   global: 'avisos_send_global',
   direct: 'avisos_send_direct',
 };
 const selections = new Map();
-const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
-const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
-const MAX_OPTIONAL_IMAGES = 9;
-const OPTIONAL_IMAGE_EMBEDS_PER_MESSAGE = 4;
 
 function canUseAvisos(interaction) {
   return hasAnyVortexRole(interaction.member)
@@ -60,21 +52,13 @@ function getSelection(interaction) {
     selections.set(key, {
       channelId: null,
       userId: null,
-      roleIds: [],
-      callId: null,
     });
   }
   return selections.get(key);
 }
 
-function getNoticeMentionRoleIds(interaction) {
-  const conf = loadConfig();
-  const selected = interaction ? getSelection(interaction) : {};
-  return [...new Set([
-    ...NOTICE_FIXED_ROLE_IDS,
-    conf.NOTICE_MENTION_ROLE_ID,
-    ...(selected.roleIds || []),
-  ].filter(Boolean).map(String))];
+function getNoticeMentionRoleIds() {
+  return NOTICE_FIXED_ROLE_IDS;
 }
 
 function buildNoticeMentionPayload(interaction, { includeUser = false } = {}) {
@@ -96,13 +80,6 @@ function getSelectionKey(interaction) {
   return `${interaction.guildId}:${interaction.user.id}`;
 }
 
-function withPanelImage(options) {
-  return {
-    ...options,
-    files: [{ attachment: VORTEX_PANEL_IMAGE, name: VORTEX_PANEL_IMAGE_NAME }],
-  };
-}
-
 function buildPanelEmbed(interaction) {
   return new EmbedBuilder()
     .setColor('#7000FF')
@@ -112,27 +89,17 @@ function buildPanelEmbed(interaction) {
     })
     .setTitle('Vortex informa')
     .setDescription([
-      'Use este painel para enviar avisos oficiais com foto, mencoes e explicacoes completas.',
+      'Use este painel para enviar avisos oficiais de forma simples.',
       '',
-      '**Como funciona**',
-      '1. Selecione o canal de texto onde o aviso sera publicado.',
-      '2. Se quiser relacionar uma pessoa ao aviso local, pesquise e selecione o usuário pelo nome.',
-      '3. Selecione cargos extras para mencionar, alem dos cargos fixos do sistema.',
-      '4. Selecione a call quando o aviso estiver ligado a uma reuniao ou atendimento.',
-      '5. Se quiser, adicione links de imagens ou um link de mensagem do Discord com fotos anexadas. Esse campo não é obrigatório.',
-      '6. Individual envia DM para o usuário selecionado. Local publica no canal selecionado. Global envia DM para todos.',
+      `Todo aviso publicado em canal marca apenas <@&${NOTICE_FIXED_ROLE_IDS[0]}>.`,
       '',
-      '**Importante**',
-      `A imagem oficial da Vortex continua fixa no aviso principal. Voce pode enviar ate ${MAX_OPTIONAL_IMAGES} fotos extras por aviso usando links diretos ou link de mensagem com uploads. Alguns usuarios podem estar com a DM fechada; nesses casos, o bot contabiliza como falha e continua.`,
-      'Leia os avisos com atenção. Quando um aviso sai daqui, ele é importante e pede resposta rápida.',
+      'Selecione o canal para aviso local ou selecione um usuário para aviso individual.',
     ].join('\n'))
     .addFields(
       { name: 'Individual', value: 'Envia direto no privado do usuário selecionado.', inline: true },
       { name: 'Local', value: 'Envia somente no canal selecionado.', inline: true },
-      { name: 'Global Vortex', value: 'Envia DM para todos deste Discord.', inline: true },
-      { name: 'Usuário selecionado', value: 'Quando preenchido, aparece e pode ser mencionado no aviso local.', inline: true }
+      { name: 'Global Vortex', value: 'Envia DM para todos deste Discord.', inline: true }
     )
-    .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
     .setTimestamp();
 }
@@ -155,23 +122,6 @@ function buildPanelComponents() {
       .setMaxValues(1)
   );
 
-  const roleRow = new ActionRowBuilder().addComponents(
-    new RoleSelectMenuBuilder()
-      .setCustomId(CUSTOM_IDS.selectRole)
-      .setPlaceholder('Selecione cargos extras para mencionar no aviso')
-      .setMinValues(0)
-      .setMaxValues(5)
-  );
-
-  const callRow = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId(CUSTOM_IDS.selectCall)
-      .setPlaceholder('Selecione a call relacionada ao aviso')
-      .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
-      .setMinValues(1)
-      .setMaxValues(1)
-  );
-
   const buttonRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.direct)
@@ -187,7 +137,7 @@ function buildPanelComponents() {
       .setStyle(ButtonStyle.Danger)
   );
 
-  return [selectRow, userRow, roleRow, callRow, buttonRow];
+  return [selectRow, userRow, buttonRow];
 }
 
 function buildMessageModal(scope) {
@@ -215,116 +165,10 @@ function buildMessageModal(scope) {
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(1800)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('image_url')
-        .setLabel('LINKS OU MENSAGEM COM FOTOS')
-        .setPlaceholder('Cole ate 9 links de imagem, um por linha, ou um link de mensagem do Discord com varias fotos')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(false)
-        .setMaxLength(1800)
     )
   );
 
   return modal;
-}
-
-function withNoticeImage(payload) {
-  return {
-    ...payload,
-    files: [{ attachment: VORTEX_PANEL_IMAGE, name: VORTEX_PANEL_IMAGE_NAME }],
-  };
-}
-
-function isDirectImageUrl(value) {
-  return /^https?:\/\/.+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)
-    || /^https?:\/\/cdn\.discordapp\.com\/attachments\//i.test(value)
-    || /^https?:\/\/media\.discordapp\.net\//i.test(value);
-}
-
-function parseDiscordMessageLink(value) {
-  const match = String(value).match(
-    /^https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)$/i
-  );
-  if (!match) return null;
-
-  return {
-    guildId: match[1],
-    channelId: match[2],
-    messageId: match[3],
-  };
-}
-
-function extractImageInputs(rawValue) {
-  return String(rawValue || '')
-    .split(/[\s,]+/)
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-async function resolveImagesFromDiscordMessage(interaction, parsed) {
-  if (parsed.guildId !== interaction.guildId) {
-    return [];
-  }
-
-  const channel = await interaction.guild.channels.fetch(parsed.channelId).catch(() => null);
-  if (!channel || !channel.isTextBased?.()) {
-    return [];
-  }
-
-  const message = await channel.messages.fetch(parsed.messageId).catch(() => null);
-  if (!message) {
-    return [];
-  }
-
-  const attachmentUrls = message.attachments
-    .filter((item) => {
-      const name = item.name || '';
-      const url = item.url || '';
-      return item.contentType?.startsWith('image/')
-        || /\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(name)
-        || isDirectImageUrl(url);
-    })
-    .map((item) => item.url)
-    .filter(Boolean);
-
-  const embedUrls = message.embeds
-    .map((embed) => embed.image?.url || embed.thumbnail?.url)
-    .filter(Boolean);
-
-  return [...attachmentUrls, ...embedUrls];
-}
-
-async function resolveOptionalImageUrls(interaction, rawValue) {
-  const values = extractImageInputs(rawValue);
-  if (!values.length) return [];
-
-  const urls = [];
-  const seen = new Set();
-
-  for (const value of values) {
-    let resolved = [];
-
-    if (isDirectImageUrl(value)) {
-      resolved = [value];
-    } else {
-      const parsed = parseDiscordMessageLink(value);
-      if (parsed) {
-        resolved = await resolveImagesFromDiscordMessage(interaction, parsed);
-      }
-    }
-
-    for (const url of resolved) {
-      const key = String(url).trim();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      urls.push(key);
-      if (urls.length >= MAX_OPTIONAL_IMAGES) return urls;
-    }
-  }
-
-  return urls;
 }
 
 function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
@@ -337,12 +181,6 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
   if ((scope === 'guild' || scope === 'direct') && selection.userId) {
     fields.push({ name: 'Usuário relacionado', value: `<@${selection.userId}>`, inline: true });
   }
-  if (selection.roleIds?.length) {
-    fields.push({ name: 'Cargos extras', value: selection.roleIds.map((roleId) => `<@&${roleId}>`).join(' '), inline: true });
-  }
-  if (selection.callId) {
-    fields.push({ name: 'Call relacionada', value: `<#${selection.callId}>`, inline: true });
-  }
 
   return new EmbedBuilder()
     .setColor('#7000FF')
@@ -351,51 +189,14 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
       iconURL: interaction.client.user.displayAvatarURL(),
     })
     .setTitle(`Vortex informa | ${title}`)
-    .setDescription([
-      '### Vortex informa',
-      '',
-      message,
-    ].join('\n'))
+    .setDescription(message)
     .addFields(fields)
-    .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setFooter({ text: 'Vortex Management System' })
     .setTimestamp();
 }
 
-function buildOptionalImageEmbeds(interaction, imageUrls) {
-  return imageUrls.map((imageUrl, index) => new EmbedBuilder()
-    .setColor('#111111')
-    .setAuthor({
-      name: 'VORTEX | Imagem do Aviso',
-      iconURL: interaction.client.user.displayAvatarURL(),
-    })
-    .setTitle(imageUrls.length > 1 ? `Midia vinculada ao aviso ${index + 1}` : 'Midia vinculada ao aviso')
-    .setImage(imageUrl)
-    .setFooter({ text: 'Vortex Management System' })
-    .setTimestamp());
-}
-
-function chunkArray(items, size) {
-  const chunks = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
-}
-
-function buildNoticePayloads(basePayload, imageEmbeds) {
-  if (!imageEmbeds.length) {
-    return [withNoticeImage(basePayload)];
-  }
-
-  const [firstChunk, ...extraChunks] = chunkArray(imageEmbeds, OPTIONAL_IMAGE_EMBEDS_PER_MESSAGE);
-  return [
-    withNoticeImage({
-      ...basePayload,
-      embeds: [...basePayload.embeds, ...firstChunk],
-    }),
-    ...extraChunks.map((embeds) => ({ embeds })),
-  ];
+function buildNoticePayloads(basePayload) {
+  return [basePayload];
 }
 
 async function getSelectedChannel(interaction) {
@@ -496,10 +297,10 @@ module.exports = {
       return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no sistema para usar o /avisos.', ephemeral: true });
     }
 
-    return safeReply(interaction, withPanelImage({
+    return safeReply(interaction, {
       embeds: [buildPanelEmbed(interaction)],
       components: buildPanelComponents(),
-    }));
+    });
   },
 
   async handleSelectMenu(interaction) {
@@ -517,26 +318,6 @@ module.exports = {
 
       selection.userId = user.id;
       return safeReply(interaction, { content: `✅ Usuário selecionado para aviso individual: <@${user.id}>`, ephemeral: true });
-    }
-
-    if (interaction.customId === CUSTOM_IDS.selectRole) {
-      selection.roleIds = interaction.values.map(String);
-      return safeReply(interaction, {
-        content: selection.roleIds.length
-          ? `✅ Cargos extras selecionados: ${selection.roleIds.map((roleId) => `<@&${roleId}>`).join(' ')}`
-          : '✅ Nenhum cargo extra selecionado.',
-        ephemeral: true,
-      });
-    }
-
-    if (interaction.customId === CUSTOM_IDS.selectCall) {
-      const call = interaction.channels?.first?.() || await interaction.guild.channels.fetch(interaction.values[0]).catch(() => null);
-      if (!call || ![ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(call.type)) {
-        return safeReply(interaction, { content: '❌ Selecione uma call válida.', ephemeral: true });
-      }
-
-      selection.callId = call.id;
-      return safeReply(interaction, { content: `✅ Call selecionada: <#${call.id}>`, ephemeral: true });
     }
 
     if (interaction.customId === CUSTOM_IDS.selectChannel) {
@@ -599,7 +380,6 @@ module.exports = {
         : 'guild';
     const title = interaction.fields.getTextInputValue('title').trim();
     const message = interaction.fields.getTextInputValue('message').trim();
-    const rawImageUrls = interaction.fields.getTextInputValue('image_url')?.trim();
     const scopeLabel = scope === 'global' ? 'Global Vortex' : scope === 'direct' ? 'Individual' : 'Local';
 
     await interaction.deferReply({ ephemeral: true });
@@ -608,16 +388,8 @@ module.exports = {
       return interaction.editReply({ content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.' });
     }
 
-    const imageUrls = await resolveOptionalImageUrls(interaction, rawImageUrls);
-    if (rawImageUrls && imageUrls.length === 0) {
-      return interaction.editReply({
-        content: '❌ Nenhuma imagem válida foi encontrada. Use links diretos de imagem ou um link de mensagem deste servidor com fotos anexadas.',
-      });
-    }
-
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
-    const imageEmbeds = buildOptionalImageEmbeds(interaction, imageUrls);
-    const noticePayloads = buildNoticePayloads({ embeds: [noticeEmbed] }, imageEmbeds);
+    const noticePayloads = buildNoticePayloads({ embeds: [noticeEmbed] });
     let channelSent = false;
     let result = { sent: 0, failed: 0, total: 0 };
 
@@ -658,11 +430,7 @@ module.exports = {
         `**Alcance:** ${scopeLabel}`,
         scope === 'guild' && getSelection(interaction).channelId ? `**Canal:** <#${getSelection(interaction).channelId}> (${getSelection(interaction).channelId})` : null,
         (scope === 'guild' || scope === 'direct') && getSelection(interaction).userId ? `**Usuário relacionado:** <@${getSelection(interaction).userId}> (${getSelection(interaction).userId})` : null,
-        getSelection(interaction).roleIds?.length ? `**Cargos extras:** ${getSelection(interaction).roleIds.map((roleId) => `<@&${roleId}>`).join(' ')}` : null,
-        getSelection(interaction).callId ? `**Call:** <#${getSelection(interaction).callId}> (${getSelection(interaction).callId})` : null,
         `**Titulo:** ${title}`,
-        imageUrls.length ? `**Imagens opcionais:** ${imageUrls.length}` : null,
-        imageUrls.length ? `**Primeira imagem:** ${imageUrls[0]}` : null,
         `**Mensagem no canal:** ${channelSent ? 'sim' : 'não'}`,
         scope === 'global' ? `**Total DM:** ${result.total}` : null,
         scope === 'global' ? `**DMs enviadas:** ${result.sent}` : null,
@@ -674,7 +442,6 @@ module.exports = {
       channelId: interaction.channelId,
       relatedChannelIds: [
         getSelection(interaction).channelId,
-        getSelection(interaction).callId,
       ].filter(Boolean),
     }).catch(() => {});
 
@@ -684,10 +451,6 @@ module.exports = {
       scope === 'guild' ? `Canal: <#${getSelection(interaction).channelId}>` : null,
       scope === 'guild' ? `Mensagem no canal: **${channelSent ? 'enviada' : 'falhou'}**` : 'Mensagem no canal: **não enviada**',
     ];
-
-    if (imageUrls.length) {
-      summary.push(`Imagens opcionais: **${imageUrls.length}**`);
-    }
 
     if ((scope === 'guild' || scope === 'direct') && getSelection(interaction).userId) {
       summary.push(

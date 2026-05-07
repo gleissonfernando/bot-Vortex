@@ -325,6 +325,17 @@ async function handleApprovedChannelGuide(interaction) {
   });
 }
 
+function getApprovedSetChannelRecord(guildId, channelId) {
+  const data = readChannels();
+  const guildRecords = data[String(guildId)] || {};
+  return Object.values(guildRecords).find((item) => String(item.channelId) === String(channelId)) || null;
+}
+
+function getApprovedSetChannelRecordByUser(guildId, userId) {
+  const data = readChannels();
+  return data[String(guildId)]?.[String(userId)] || null;
+}
+
 async function deleteApprovedSetChannel(guild, userId) {
   const data = readChannels();
   const record = data[guild.id]?.[userId];
@@ -348,6 +359,8 @@ module.exports = {
   APPROVED_SET_CATEGORY_ID,
   createApprovedSetChannel,
   deleteApprovedSetChannel,
+  getApprovedSetChannelRecord,
+  getApprovedSetChannelRecordByUser,
   handleApprovedChannelGuide,
   syncApprovedSetChannel,
 };
