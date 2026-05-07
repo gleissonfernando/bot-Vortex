@@ -73,7 +73,7 @@ function buildAbsencePanel(interaction = null) {
     .setDescription([
       'Use este painel para solicitar afastamento temporário ou retirar uma ausência ativa.',
       '',
-      'Ao solicitar, o sistema registra o motivo, calcula o retorno e aplica o cargo de ausência configurado pela gerência.',
+      'Ao solicitar, o sistema registra o motivo, calcula o retorno e abre um canal para a administração aprovar ou recusar.',
     ].join('\n'))
     .addFields(
       {
@@ -81,7 +81,7 @@ function buildAbsencePanel(interaction = null) {
         value: [
           '`1.` Clique em **Solicitar ausência**.',
           '`2.` Informe nome, ID, motivo e período.',
-          '`3.` Aguarde o registro automático do sistema.',
+          '`3.` Aguarde a aprovação da administração para receber o cargo de ausência.',
         ].join('\n'),
         inline: false,
       },

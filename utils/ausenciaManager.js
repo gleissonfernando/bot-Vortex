@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { EmbedBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  EmbedBuilder,
+  PermissionFlagsBits,
+} = require('discord.js');
 const { logger } = require('./logger');
 const { formatDate: formatRealDate } = require('./pontoManager');
 
@@ -8,6 +15,8 @@ const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_ABSENCE_ROLE_ID = '1498359212252725339';
 const DEFAULT_ABSENCE_LOG_CHANNEL_ID = '1498359968087146516';
+const ABSENCE_REQUEST_CATEGORY_ID = '1497749211775766538';
+const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 const CHECK_INTERVAL_MS = 60 * 1000;
 
 let interval = null;
@@ -55,6 +64,16 @@ function saveAbsenceConfig(nextConfig) {
 function formatDate(value) {
   if (!value) return 'N/A';
   return formatRealDate(value);
+}
+
+function getAbsenceManagementRoleIds() {
+  const conf = loadJSON(CONFIG_PATH, {});
+  const levels = conf.VORTEX_ROLE_LEVELS || {};
+  return [
+    ...MASTER_ROLE_IDS,
+    ...(Array.isArray(levels.admin) ? levels.admin : []),
+    ...(Array.isArray(levels.medio) ? levels.medio : []),
+  ].map(String).filter(Boolean).filter((roleId, index, list) => list.indexOf(roleId) === index);
 }
 
 function formatDuration(ms = 0) {
@@ -140,6 +159,90 @@ function getActiveGuildAbsences(guildId) {
   return getGuildAbsences(guildId).filter((absence) => absence.status === 'active');
 }
 
+function getOpenGuildAbsences(guildId) {
+  return getGuildAbsences(guildId).filter((absence) => ['pending', 'active'].includes(absence.status));
+}
+
+function sanitizeChannelName(value) {
+  return String(value || 'usuario')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 70) || 'usuario';
+}
+
+function buildAbsenceRequestEmbed(absence) {
+  return new EmbedBuilder()
+    .setColor('#FEE75C')
+    .setTitle('Solicitação de Ausência')
+    .setDescription(`O usuário <@${absence.userId}> solicitou ausência e aguarda aprovação da administração.`)
+    .addFields(
+      { name: 'Nome', value: absence.name || 'N/A', inline: true },
+      { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
+      { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
+      { name: 'Período informado', value: absence.periodInput || 'N/A', inline: true },
+      { name: 'Retorno previsto', value: formatDate(absence.endsAt), inline: true }
+    )
+    .setFooter({ text: 'Vortex - Aprovação de Ausência' })
+    .setTimestamp();
+}
+
+function buildAbsenceDecisionRow(userId, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ausencia_accept_${userId}`)
+      .setLabel('Ausência aceita')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(`ausencia_reject_${userId}`)
+      .setLabel('Ausência recusada')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(disabled)
+  );
+}
+
+async function createAbsenceRequestChannel(interaction, absence) {
+  const category = await interaction.guild.channels.fetch(ABSENCE_REQUEST_CATEGORY_ID).catch(() => null);
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    return { ok: false, message: `Categoria de ausência <#${ABSENCE_REQUEST_CATEGORY_ID}> não encontrada.`, channel: null };
+  }
+
+  const channel = await interaction.guild.channels.create({
+    name: `ausencia | ${sanitizeChannelName(absence.name || interaction.user.username)}`,
+    type: ChannelType.GuildText,
+    parent: category.id,
+    topic: `ausencia | ${absence.name || interaction.user.username} | ${absence.userId}`,
+    permissionOverwrites: [
+      { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+      {
+        id: interaction.user.id,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      },
+      {
+        id: interaction.client.user.id,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory],
+      },
+      ...getAbsenceManagementRoleIds().map((roleId) => ({
+        id: roleId,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      })),
+    ],
+    reason: `Solicitação de ausência de ${absence.userId}`,
+  });
+
+  await channel.send({
+    content: `<@${absence.userId}> ${getAbsenceManagementRoleIds().map((roleId) => `<@&${roleId}>`).join(' ')}`,
+    embeds: [buildAbsenceRequestEmbed(absence)],
+    components: [buildAbsenceDecisionRow(absence.userId)],
+    allowedMentions: { users: [absence.userId], roles: getAbsenceManagementRoleIds() },
+  }).catch(() => null);
+
+  return { ok: true, channel };
+}
+
 async function sendAbsenceLog(client, guildId, absence, action = 'created') {
   const config = getAbsenceConfig();
   const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
@@ -203,27 +306,27 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
     return { ok: false, message: `Cargo de ausência <@&${config.roleId}> não encontrado.` };
   }
 
-  const activeAbsence = getActiveGuildAbsences(interaction.guild.id).find((absence) => absence.userId === interaction.user.id);
-  if (member.roles.cache.has(role.id) || activeAbsence) {
+  const openAbsence = getOpenGuildAbsences(interaction.guild.id).find((absence) => absence.userId === interaction.user.id);
+  if (member.roles.cache.has(role.id) || openAbsence) {
     return {
       ok: false,
-      message: 'Solicitação recusada: você já está em ausência. Quando sua ausência acabar, você poderá solicitar outra. Se precisar alterar algo, entre em contato com a gerência para avaliarem seu caso.',
+      message: openAbsence?.status === 'pending'
+        ? 'Você já possui uma solicitação de ausência aguardando aprovação.'
+        : 'Solicitação recusada: você já está em ausência. Quando sua ausência acabar, você poderá solicitar outra. Se precisar alterar algo, entre em contato com a gerência para avaliarem seu caso.',
     };
   }
 
-  await member.roles.add(role.id, 'Ausência registrada pelo sistema Vortex');
-
   const now = new Date();
-  const absence = saveAbsence({
+  let absence = saveAbsence({
     guildId: interaction.guild.id,
     userId: interaction.user.id,
     name: name.trim(),
     discordId: targetId,
     reason: reason.trim(),
     periodInput: periodInput.trim(),
-    startedAt: now.toISOString(),
+    startedAt: null,
     endsAt: endsAt.toISOString(),
-    status: 'active',
+    status: 'pending',
     roleId: role.id,
     logChannelId: config.logChannelId,
     endMessageSentAt: null,
@@ -231,9 +334,103 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
     updatedAt: now.toISOString(),
   });
 
-  await sendAbsenceLog(interaction.client, interaction.guild.id, absence, 'created');
+  const channelResult = await createAbsenceRequestChannel(interaction, absence);
+  if (!channelResult.ok) {
+    const data = readAbsences();
+    delete data[interaction.guild.id]?.[interaction.user.id];
+    writeAbsences(data);
+    return { ok: false, message: channelResult.message };
+  }
 
-  return { ok: true, absence };
+  absence = {
+    ...absence,
+    requestChannelId: channelResult.channel.id,
+    updatedAt: new Date().toISOString(),
+  };
+  saveAbsence(absence);
+
+  return { ok: true, absence, channel: channelResult.channel };
+}
+
+async function notifyAbsenceDecision(client, guild, absence, approved) {
+  const user = await client.users.fetch(absence.userId).catch(() => null);
+  if (!user) return false;
+
+  const embed = new EmbedBuilder()
+    .setColor(approved ? '#57F287' : '#ED4245')
+    .setTitle(approved ? 'Ausência aceita' : 'Ausência recusada')
+    .setDescription(approved
+      ? 'Sua ausência foi aceita pela administração. O cargo de ausência foi aplicado.'
+      : 'Sua ausência foi recusada. Tente da próxima.')
+    .addFields(
+      { name: 'Servidor', value: guild?.name || 'Vortex', inline: true },
+      { name: 'Retorno solicitado', value: formatDate(absence.endsAt), inline: true },
+      { name: 'Motivo informado', value: absence.reason || 'N/A', inline: false }
+    )
+    .setFooter({ text: 'Vortex - Sistema de Ausência' })
+    .setTimestamp();
+
+  await user.send({ embeds: [embed] });
+  return true;
+}
+
+async function approveAbsenceRequest(interaction, userId) {
+  const data = readAbsences();
+  const absence = data[interaction.guild.id]?.[userId];
+  if (!absence || absence.status !== 'pending') {
+    return { ok: false, message: 'Essa solicitação de ausência não está pendente.' };
+  }
+
+  const config = getAbsenceConfig();
+  const member = await interaction.guild.members.fetch(userId).catch(() => null);
+  if (!member) return { ok: false, message: 'Usuário não encontrado no servidor.' };
+
+  const role = await interaction.guild.roles.fetch(absence.roleId || config.roleId).catch(() => null);
+  if (!role) return { ok: false, message: `Cargo de ausência <@&${absence.roleId || config.roleId}> não encontrado.` };
+
+  await member.roles.add(role.id, `Ausência aprovada por ${interaction.user.id}`);
+
+  const now = new Date();
+  const next = {
+    ...absence,
+    status: 'active',
+    roleId: role.id,
+    startedAt: now.toISOString(),
+    approvedBy: interaction.user.id,
+    approvedAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  data[interaction.guild.id][userId] = next;
+  writeAbsences(data);
+
+  await notifyAbsenceDecision(interaction.client, interaction.guild, next, true).catch(() => null);
+  await sendAbsenceLog(interaction.client, interaction.guild.id, next, 'created');
+
+  return { ok: true, absence: next };
+}
+
+async function rejectAbsenceRequest(interaction, userId) {
+  const data = readAbsences();
+  const absence = data[interaction.guild.id]?.[userId];
+  if (!absence || absence.status !== 'pending') {
+    return { ok: false, message: 'Essa solicitação de ausência não está pendente.' };
+  }
+
+  const now = new Date();
+  const next = {
+    ...absence,
+    status: 'rejected',
+    rejectedBy: interaction.user.id,
+    rejectedAt: now.toISOString(),
+    finishedAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  data[interaction.guild.id][userId] = next;
+  writeAbsences(data);
+
+  await notifyAbsenceDecision(interaction.client, interaction.guild, next, false).catch(() => null);
+
+  return { ok: true, absence: next };
 }
 
 async function removeOwnAbsence(interaction) {
@@ -392,6 +589,8 @@ module.exports = {
   getGuildAbsences,
   getActiveGuildAbsences,
   createAbsence,
+  approveAbsenceRequest,
+  rejectAbsenceRequest,
   updateAbsenceReturn,
   removeOwnAbsence,
   initAbsenceManager,

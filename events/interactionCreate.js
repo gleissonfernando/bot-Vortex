@@ -5,12 +5,13 @@ const config = require('../config/config');
 const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReenableChannelLogsButton } = require('../utils/notifications');
 const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
-const { createAbsence, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
+const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
 const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
 const { createApprovedSetChannel, handleApprovedChannelGuide } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
+const { getApprovedSetChannelRecord } = require('../utils/approvedSetChannels');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -44,8 +45,12 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName === 'clear' || commandName === 'clipe' || commandName === 'live') return true;
     if (commandName === 'perfil') {
+        const approvedSetChannelRecord = interaction.channelId
+            ? getApprovedSetChannelRecord(interaction.guildId, interaction.channelId)
+            : null;
         return hasAbsenceAccess(interaction.member)
             || Boolean(getUserProfile(interaction.guildId, interaction.user.id))
+            || Boolean(approvedSetChannelRecord?.userId === interaction.user.id)
             || hasStaffPermission(interaction.member);
     }
     if (commandName === 'ausencia') return hasAbsenceAccess(interaction.member);
@@ -429,6 +434,37 @@ module.exports = {
             });
         }
 
+        if (interaction.isButton() && (interaction.customId.startsWith('ausencia_accept_') || interaction.customId.startsWith('ausencia_reject_'))) {
+            if (!hasStaffPermission(member)) {
+                return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+            const approved = interaction.customId.startsWith('ausencia_accept_');
+            const userId = interaction.customId.replace(approved ? 'ausencia_accept_' : 'ausencia_reject_', '');
+            const result = approved
+                ? await approveAbsenceRequest(interaction, userId)
+                : await rejectAbsenceRequest(interaction, userId);
+
+            if (!result.ok) {
+                return interaction.editReply({ content: `❌ ${result.message}` });
+            }
+
+            await interaction.message.edit({ components: [] }).catch(() => null);
+            await interaction.channel.send({
+                content: approved
+                    ? `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`
+                    : `❌ Ausência recusada para <@${userId}>. O usuário foi avisado por DM.`,
+                allowedMentions: { users: [userId] },
+            }).catch(() => null);
+
+            return interaction.editReply({
+                content: approved
+                    ? `✅ Ausência aceita para <@${userId}>.`
+                    : `❌ Ausência recusada para <@${userId}>.`,
+            });
+        }
+
         if (interaction.isButton() && interaction.customId === 're_enable_channel_logs') {
             return runInteractionHandler(interaction, 'Botao DM: religar logs', () => handleReenableChannelLogsButton(interaction));
         }
@@ -454,9 +490,9 @@ module.exports = {
 
             return safeEdit(interaction, {
                 content: [
-                    '✅ Ausência registrada com sucesso.',
-                    `Cargo aplicado: <@&${result.absence.roleId}>`,
-                    `Fim da ausência: ${formatAbsenceDate(result.absence.endsAt)}`,
+                    '✅ Solicitação de ausência enviada para aprovação.',
+                    `Canal: <#${result.channel.id}>`,
+                    `Retorno solicitado: ${formatAbsenceDate(result.absence.endsAt)}`,
                 ].join('\n'),
             });
         }
@@ -714,9 +750,7 @@ module.exports = {
                         `DM enviada: ${dmSent ? 'sim' : 'não'}`,
                         isApp ? `Canal aprovado: ${approvedChannel ? `<#${approvedChannel.id}>` : approvedChannelMessage || 'não criado'}` : null,
                         '',
-                        isApp
-                            ? 'Canal mantido. Use o botão Apagar para remover.'
-                            : 'Canal será deletado em 1 minuto.',
+                        'Canal será deletado em 1 minuto.',
                     ].filter((line) => line !== null).join('\n'))
                     .setTimestamp();
 
@@ -748,9 +782,7 @@ module.exports = {
                     channelId: interaction.channelId,
                 });
 
-                if (!isApp) {
-                    setTimeout(() => interaction.channel.delete().catch(() => {}), 60000);
-                }
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 60000);
             }
         }
     }

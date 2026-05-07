@@ -78,8 +78,7 @@ function getProfileManagementRoleIds() {
 }
 
 function getProfileManagementChannelId() {
-  const config = readPanelConfig();
-  return String(config.POINT_PENALTY_CHANNEL_ID || DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID);
+  return DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID;
 }
 
 async function ensureProfileChannelAccess(guild, channelId, userId = null) {
@@ -227,6 +226,14 @@ function getSaoPauloDateParts(date = new Date()) {
 function getSaoPauloDateKey(date = new Date()) {
   const parts = getSaoPauloDateParts(date);
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function canSendScheduledProfileReminder(date = new Date()) {
@@ -478,8 +485,8 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
   const effectiveThresholdMs = Math.max(Number(thresholdMs) || 0, PROFILE_UPDATE_INTERVAL_MS);
   if (!lastUpdateMs) return { sent: false, reason: 'missing_update' };
   if (now - lastUpdateMs < effectiveThresholdMs) return { sent: false, reason: 'not_due' };
-  if (!force && lastReminderMs && getSaoPauloDateKey(new Date(lastReminderMs)) === getSaoPauloDateKey(new Date())) {
-    return { sent: false, reason: 'already_reminded_today' };
+  if (!force && lastReminderMs && now - lastReminderMs < PROFILE_UPDATE_INTERVAL_MS) {
+    return { sent: false, reason: 'already_reminded_this_week' };
   }
 
   const user = await client.users.fetch(profile.userId).catch(() => null);
@@ -513,19 +520,6 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
     }
   }
 
-  const shouldNotifyManagement = now - lastUpdateMs >= PROFILE_UPDATE_INTERVAL_MS;
-  if (shouldNotifyManagement) {
-    const channel = await client.channels.fetch(getProfileManagementChannelId()).catch(() => null);
-    const roleMentions = PROFILE_ALERT_ROLE_IDS.map((id) => `<@&${id}>`).join(' ');
-    if (channel?.isTextBased?.()) {
-      await channel.send({
-        content: `${roleMentions} <@${profile.userId}>`,
-        embeds: [embed],
-        allowedMentions: { users: [profile.userId], roles: PROFILE_ALERT_ROLE_IDS },
-      }).catch(() => null);
-    }
-  }
-
   const data = readProfiles();
   if (data[profile.guildId]?.[profile.userId]) {
     data[profile.guildId][profile.userId].lastReminderAt = new Date().toISOString();
@@ -534,6 +528,44 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
   }
 
   return { sent: true };
+}
+
+async function sendProfileManagementSummary(client, guild, dueProfiles) {
+  if (!dueProfiles.length) return false;
+
+  const channel = await client.channels.fetch(getProfileManagementChannelId()).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  const roleMentions = PROFILE_ALERT_ROLE_IDS.map((id) => `<@&${id}>`).join(' ');
+  const chunks = chunkArray(dueProfiles, 40);
+
+  for (const [chunkIndex, profiles] of chunks.entries()) {
+    const userMentions = profiles.map((profile) => `<@${profile.userId}>`);
+    const lines = userMentions.map((mention, index) => `${chunkIndex * 40 + index + 1}. ${mention}`);
+
+    await channel.send({
+      content: `${roleMentions} ${userMentions.join(' ')}`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor('#FEE75C')
+          .setTitle('Perfis para atualizar')
+          .setDescription([
+            'Os usuários abaixo não atualizaram o /perfil dentro de 7 dias.',
+            '',
+            lines.join('\n'),
+            '',
+            `Horário da cobrança: ${formatDate(new Date())}`,
+          ].join('\n'))
+          .setTimestamp(),
+      ],
+      allowedMentions: {
+        users: profiles.map((profile) => String(profile.userId)),
+        roles: PROFILE_ALERT_ROLE_IDS,
+      },
+    }).catch(() => null);
+  }
+
+  return true;
 }
 
 async function checkProfileUpdates(client, { guildId = null, userId = null, thresholdMs = PROFILE_UPDATE_INTERVAL_MS, force = false } = {}) {
@@ -545,6 +577,7 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
     if (guildId && currentGuildId !== String(guildId)) continue;
     const guild = await client.guilds.fetch(currentGuildId).catch(() => null);
     if (!guild) continue;
+    const dueProfiles = [];
 
     for (const profile of Object.values(guildProfiles || {})) {
       if (userId && profile.userId !== String(userId)) continue;
@@ -557,7 +590,14 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
         return { sent: false, reason: error.message };
       });
       results.push({ userId: profile.userId, ...result });
+      if (result.sent) {
+        dueProfiles.push(profile);
+      }
     }
+
+    await sendProfileManagementSummary(client, guild, dueProfiles).catch((error) => {
+      logger.error('Erro ao enviar resumo de cobrança de perfil:', error);
+    });
   }
 
   return results;
