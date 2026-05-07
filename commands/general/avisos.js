@@ -31,6 +31,8 @@ const CUSTOM_IDS = {
   direct: 'avisos_send_direct',
 };
 const selections = new Map();
+const VORTEX_BANNER_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
+const VORTEX_BANNER_IMAGE_NAME = 'IMG_4234.png';
 
 function canUseAvisos(interaction) {
   return hasAnyVortexRole(interaction.member)
@@ -173,30 +175,32 @@ function buildMessageModal(scope) {
 
 function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
   const selection = getSelection(interaction);
-  const fields = [
-    { name: 'Origem', value: interaction.guild?.name || 'Vortex', inline: true },
-    { name: 'Alcance', value: scopeLabel, inline: true },
-  ];
+  const fields = [];
 
   if ((scope === 'guild' || scope === 'direct') && selection.userId) {
     fields.push({ name: 'Usuário relacionado', value: `<@${selection.userId}>`, inline: true });
   }
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor('#7000FF')
-    .setAuthor({
-      name: 'VORTEX | Aviso Oficial',
-      iconURL: interaction.client.user.displayAvatarURL(),
-    })
-    .setTitle(`Vortex informa | ${title}`)
+    .setTitle(title)
     .setDescription(message)
-    .addFields(fields)
+    .setImage(`attachment://${VORTEX_BANNER_IMAGE_NAME}`)
     .setFooter({ text: 'Vortex Management System' })
     .setTimestamp();
+
+  if (fields.length) {
+    embed.addFields(fields);
+  }
+
+  return embed;
 }
 
 function buildNoticePayloads(basePayload) {
-  return [basePayload];
+  return [{
+    ...basePayload,
+    files: [{ attachment: VORTEX_BANNER_IMAGE, name: VORTEX_BANNER_IMAGE_NAME }],
+  }];
 }
 
 async function getSelectedChannel(interaction) {
