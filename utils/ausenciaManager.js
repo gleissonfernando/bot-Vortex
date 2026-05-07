@@ -16,6 +16,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_ABSENCE_ROLE_ID = '1498359212252725339';
 const DEFAULT_ABSENCE_LOG_CHANNEL_ID = '1498359968087146516';
 const ABSENCE_REQUEST_CATEGORY_ID = '1497749211775766538';
+const ABSENCE_REQUEST_MENTION_ROLE_ID = '1201193356810780773';
 const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 const CHECK_INTERVAL_MS = 60 * 1000;
 
@@ -218,10 +219,6 @@ async function createAbsenceRequestChannel(interaction, absence) {
     permissionOverwrites: [
       { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
-        id: interaction.user.id,
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-      },
-      {
         id: interaction.client.user.id,
         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory],
       },
@@ -234,10 +231,10 @@ async function createAbsenceRequestChannel(interaction, absence) {
   });
 
   await channel.send({
-    content: `<@${absence.userId}> ${getAbsenceManagementRoleIds().map((roleId) => `<@&${roleId}>`).join(' ')}`,
+    content: `<@&${ABSENCE_REQUEST_MENTION_ROLE_ID}>`,
     embeds: [buildAbsenceRequestEmbed(absence)],
     components: [buildAbsenceDecisionRow(absence.userId)],
-    allowedMentions: { users: [absence.userId], roles: getAbsenceManagementRoleIds() },
+    allowedMentions: { roles: [ABSENCE_REQUEST_MENTION_ROLE_ID] },
   }).catch(() => null);
 
   return { ok: true, channel };

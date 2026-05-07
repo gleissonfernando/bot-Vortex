@@ -455,8 +455,9 @@ module.exports = {
                 content: approved
                     ? `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`
                     : `❌ Ausência recusada para <@${userId}>. O usuário foi avisado por DM.`,
-                allowedMentions: { users: [userId] },
+                allowedMentions: { parse: [] },
             }).catch(() => null);
+            setTimeout(() => interaction.channel.delete('Solicitação de ausência concluída.').catch(() => null), 30000);
 
             return interaction.editReply({
                 content: approved
