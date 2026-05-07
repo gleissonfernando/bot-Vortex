@@ -101,18 +101,6 @@ module.exports = {
       });
     }
 
-    if (!canManageProfiles && requesterProfile?.callChannelId && interaction.channelId !== requesterProfile.callChannelId) {
-      return interaction.editReply({
-        content: `❌ Use o /perfil no seu canal cadastrado: <#${requesterProfile.callChannelId}>.`,
-      });
-    }
-
-    if (!canManageProfiles && !requesterProfile?.callChannelId && !isApprovedSetChannelOwner && approvedSetChannelRecord) {
-      return interaction.editReply({
-        content: `❌ Use o /perfil no seu canal criado pelo /set: <#${approvedSetChannelRecord.channelId}>.`,
-      });
-    }
-
     if (link || photo) {
       await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
       const isImageUpload = Boolean(photo?.contentType?.startsWith('image/'));

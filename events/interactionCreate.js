@@ -8,10 +8,9 @@ const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('.
 const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
 const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
 const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
-const { createApprovedSetChannel, handleApprovedChannelGuide } = require('../utils/approvedSetChannels');
+const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
-const { getApprovedSetChannelRecord } = require('../utils/approvedSetChannels');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -51,6 +50,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
         return hasAbsenceAccess(interaction.member)
             || Boolean(getUserProfile(interaction.guildId, interaction.user.id))
             || Boolean(approvedSetChannelRecord?.userId === interaction.user.id)
+            || Boolean(getApprovedSetChannelRecordByUser(interaction.guildId, interaction.user.id))
             || hasStaffPermission(interaction.member);
     }
     if (commandName === 'ausencia') return hasAbsenceAccess(interaction.member);

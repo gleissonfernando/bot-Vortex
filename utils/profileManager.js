@@ -159,7 +159,40 @@ function getGuildProfiles(guildId) {
 }
 
 function getUserProfile(guildId, userId) {
-  return getGuildProfiles(guildId)[userId] || null;
+  const normalizedGuildId = String(guildId || '');
+  const normalizedUserId = String(userId || '');
+  const data = readProfiles();
+  const guildProfiles = data[normalizedGuildId] || {};
+
+  if (guildProfiles[normalizedUserId]) return guildProfiles[normalizedUserId];
+
+  const nestedMatch = Object.values(guildProfiles).find((profile) => String(profile?.userId || '') === normalizedUserId);
+  if (nestedMatch) return nestedMatch;
+
+  const directProfile = data[normalizedUserId];
+  if (directProfile?.userId || directProfile?.discordTag || directProfile?.registeredManually || directProfile?.approvedAt) {
+    if (!directProfile.guildId || String(directProfile.guildId) === normalizedGuildId) return directProfile;
+  }
+
+  for (const [currentGuildId, profiles] of Object.entries(data)) {
+    if (!profiles || typeof profiles !== 'object' || currentGuildId === normalizedUserId) continue;
+    const profile = profiles[normalizedUserId]
+      || Object.values(profiles).find((item) => String(item?.userId || '') === normalizedUserId);
+    if (profile && (!profile.guildId || String(profile.guildId) === normalizedGuildId)) return profile;
+  }
+
+  return null;
+}
+
+function hasApprovedProfileData(profile) {
+  return Boolean(profile && (
+    profile.approvedAt
+    || profile.registeredManually
+    || profile.registeredBy
+    || profile.createdAt
+    || profile.nomeGame
+    || profile.idGame
+  ));
 }
 
 function normalizeProfileUrl(input) {
@@ -305,8 +338,8 @@ async function updateProfileLink(guild, user, link, updatedBy, mediaType = null)
   if (!data[guild.id]) data[guild.id] = {};
 
   const now = new Date();
-  const existing = data[guild.id][user.id] || {};
-  if (!existing.approvedAt) {
+  const existing = getUserProfile(guild.id, user.id) || data[guild.id][user.id] || {};
+  if (!hasApprovedProfileData(existing)) {
     return { ok: false, message: 'Este usuário ainda não possui perfil aprovado salvo pelo /set.' };
   }
 
@@ -345,8 +378,8 @@ async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
   if (!data[guild.id]) data[guild.id] = {};
 
   const now = new Date();
-  const existing = data[guild.id][user.id] || {};
-  if (!existing.approvedAt) {
+  const existing = getUserProfile(guild.id, user.id) || data[guild.id][user.id] || {};
+  if (!hasApprovedProfileData(existing)) {
     return { ok: false, message: 'Este usuário ainda não possui perfil aprovado salvo pelo /set.' };
   }
 
