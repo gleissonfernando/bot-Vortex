@@ -8,7 +8,7 @@ const { syncApprovedSetChannel } = require('./approvedSetChannels');
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
 const PANEL_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
-const PROFILE_UPDATE_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
+const PROFILE_UPDATE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const PROFILE_REMINDER_HOUR = 19;
 const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
@@ -475,8 +475,9 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
   const now = Date.now();
   const lastUpdateMs = profile.lastProfileUpdateAt ? new Date(profile.lastProfileUpdateAt).getTime() : 0;
   const lastReminderMs = profile.lastReminderAt ? new Date(profile.lastReminderAt).getTime() : 0;
+  const effectiveThresholdMs = Math.max(Number(thresholdMs) || 0, PROFILE_UPDATE_INTERVAL_MS);
   if (!lastUpdateMs) return { sent: false, reason: 'missing_update' };
-  if (!force && now - lastUpdateMs < thresholdMs) return { sent: false, reason: 'not_due' };
+  if (now - lastUpdateMs < effectiveThresholdMs) return { sent: false, reason: 'not_due' };
   if (!force && lastReminderMs && getSaoPauloDateKey(new Date(lastReminderMs)) === getSaoPauloDateKey(new Date())) {
     return { sent: false, reason: 'already_reminded_today' };
   }
@@ -495,7 +496,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Horário do aviso:** ${formatDate(new Date())}`,
       '',
       'Use `/perfil link:<link da mídia> nivel:<numero>` para atualizar.',
-      'O prazo para atualizar o nível após o /set é de 2 dias.',
+      'O prazo para atualizar o nível após o /set é de 1 semana.',
     ].join('\n'))
     .setTimestamp();
 

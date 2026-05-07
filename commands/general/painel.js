@@ -1996,7 +1996,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         'Este módulo acompanha os usuários aprovados no `/set`.',
         'Também permite cadastrar manualmente pessoas que já estão no Discord.',
-        'Cada perfil deve ser atualizado a cada 1 dia usando `/perfil link:<link da foto> nivel:<numero>`.',
+        'Cada perfil deve ser atualizado a cada 1 semana usando `/perfil link:<link da foto> nivel:<numero>`.',
         'Os links de mídia ficam salvos no JSON mesmo se o arquivo original for apagado.',
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
