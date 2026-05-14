@@ -176,15 +176,7 @@ function isUnknownInteractionError(error) {
 async function safeUpdate(interaction, options) {
     const { ephemeral, ...updateOptions } = options;
     if (interaction.replied || interaction.deferred) {
-        try {
-            return await safeEdit(interaction, options);
-        } catch (error) {
-            try {
-                return await interaction.followUp(options);
-            } catch {
-                throw error;
-            }
-        }
+        return safeEdit(interaction, options);
     }
     try {
         return await safeInteractionUpdate(interaction, updateOptions);

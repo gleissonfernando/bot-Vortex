@@ -12,6 +12,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
+const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -464,6 +465,28 @@ module.exports = {
             return runInteractionHandler(interaction, 'Botao DM: religar logs', () => handleReenableChannelLogsButton(interaction));
         }
 
+        if (interaction.isButton() && [
+            'call_create',
+            'call_private',
+            'call_public',
+            'call_limit',
+            'call_allow',
+            'call_disconnect',
+            'call_ban',
+            'call_delete',
+        ].includes(interaction.customId)) {
+            return runInteractionHandler(interaction, `Call botão: ${interaction.customId}`, () => handleCallInteraction(interaction));
+        }
+
+        if (interaction.isModalSubmit() && (
+            interaction.customId === 'modal_call_limit'
+            || interaction.customId === 'modal_allow'
+            || interaction.customId === 'modal_disconnect'
+            || interaction.customId === 'modal_ban'
+        )) {
+            return runInteractionHandler(interaction, `Call modal: ${interaction.customId}`, () => handleCallModal(interaction));
+        }
+
         if (interaction.isModalSubmit() && interaction.customId === 'modal_ausencia_request') {
             if (!hasAbsenceAccess(member)) {
                 return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
@@ -527,7 +550,7 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_selected_log_channel', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'clear_point_no_billing', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_panel_private_mode', 'toggle_vortex_role_remove_mode', 'toggle_selected_log_channel', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'clear_point_no_billing', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel botão: ${interaction.customId}`, () => painel.handleButton(interaction));
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
@@ -665,6 +688,7 @@ module.exports = {
         if (interaction.isButton()) {
             if (interaction.customId === 'Vortex_del') {
                 if (!hasStaffPermission(member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
+                await safeReply(interaction, { content: '🗑️ Apagando este canal...', ephemeral: true });
                 return interaction.channel.delete().catch(() => {});
             }
 
@@ -794,6 +818,13 @@ module.exports = {
 
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 60000);
             }
+        }
+
+        if (interaction.isButton()) {
+            return safeReply(interaction, {
+                content: `❌ Botão não reconhecido pelo sistema: \`${interaction.customId}\`. O evento foi registrado para correção.`,
+                ephemeral: true,
+            });
         }
     }
 };

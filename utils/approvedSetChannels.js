@@ -307,7 +307,7 @@ async function handleApprovedChannelGuide(interaction) {
       data[interaction.guildId][record.userId].guideCompletedAt = new Date().toISOString();
       writeChannels(data);
     }
-    return safeUpdate({
+    return safeUpdate(interaction, {
       components: [],
       embeds: [
         new EmbedBuilder()

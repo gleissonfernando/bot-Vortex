@@ -111,10 +111,12 @@ async function safeUpdate(interaction, options = {}) {
   // Em botões/select menus, use update() para alterar a mensagem original.
   // Se já houve defer/reply, use editReply()/followUp() em vez de reply().
   try {
+    if (!interaction?.isRepliable?.()) return null;
+    const { ephemeral, ...updateOptions } = options || {};
     if (interaction.replied || interaction.deferred) {
       return await interaction.editReply(options);
     }
-    return await interaction.update(options);
+    return await interaction.update(updateOptions);
   } catch (error) {
     if (isAlreadyAcknowledgedError(error)) {
       return safeEdit(interaction, options);
