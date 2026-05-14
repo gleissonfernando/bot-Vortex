@@ -451,9 +451,12 @@ module.exports = {
             }
 
             await interaction.message.edit({ components: [] }).catch(() => null);
+            const scheduled = approved && result.absence?.status === 'scheduled';
             await interaction.channel.send({
                 content: approved
-                    ? `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`
+                    ? (scheduled
+                        ? `✅ Ausência aceita para <@${userId}>. Cargo será aplicado em ${formatAbsenceDate(result.absence.startsAt)}.`
+                        : `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`)
                     : `❌ Ausência recusada para <@${userId}>. O usuário foi avisado por DM.`,
                 allowedMentions: { parse: [] },
             }).catch(() => null);
@@ -461,7 +464,9 @@ module.exports = {
 
             return interaction.editReply({
                 content: approved
-                    ? `✅ Ausência aceita para <@${userId}>.`
+                    ? (scheduled
+                        ? `✅ Ausência aceita para <@${userId}> e agendada para ${formatAbsenceDate(result.absence.startsAt)}.`
+                        : `✅ Ausência aceita para <@${userId}>.`)
                     : `❌ Ausência recusada para <@${userId}>.`,
             });
         }
@@ -482,7 +487,8 @@ module.exports = {
                 name: interaction.fields.getTextInputValue('name'),
                 discordId: interaction.fields.getTextInputValue('discord_id'),
                 reason: interaction.fields.getTextInputValue('reason'),
-                periodInput: interaction.fields.getTextInputValue('period'),
+                startDateInput: interaction.fields.getTextInputValue('start_date'),
+                returnDateInput: interaction.fields.getTextInputValue('return_date'),
             });
 
             if (!result.ok) {
@@ -493,6 +499,7 @@ module.exports = {
                 content: [
                     '✅ Solicitação de ausência enviada para aprovação.',
                     `Canal: <#${result.channel.id}>`,
+                    `Início solicitado: ${formatAbsenceDate(result.absence.startsAt)}`,
                     `Retorno solicitado: ${formatAbsenceDate(result.absence.endsAt)}`,
                 ].join('\n'),
             });

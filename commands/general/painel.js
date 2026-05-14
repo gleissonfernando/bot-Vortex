@@ -904,7 +904,7 @@ module.exports = {
                 new TextInputBuilder()
                     .setCustomId('return_period')
                     .setLabel('NOVO RETORNO')
-                    .setPlaceholder('Data: 30/04 ou 30/04/2026 | Dias: 3 | Horas: 12:00')
+                    .setPlaceholder('Exemplo: 30/04 ou 30/04/2026')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
             )
@@ -1963,11 +1963,13 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         '**Como funciona**',
         'Use esta aba para configurar o cargo aplicado pelo `/ausencia`, controlar a mensagem de fim e alterar o retorno de quem está ausente.',
+        'No `/ausencia`, o usuário informa o dia que vai para ausência e o dia que volta. A ausência vale por dias completos, sem opção por hora.',
+        'Se a administração aprovar uma ausência com início futuro, o cargo será aplicado automaticamente quando chegar o dia informado.',
         '',
         '**Ausências ativas**',
         activeList,
         '',
-        'Para horas, informe o retorno como `12:00` ou `12h`. Para dia/data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use uma quantidade como `3`.',
+        'Para alterar retorno, use apenas data: `DD/MM` ou `DD/MM/AAAA`.',
       ].join('\n'))
       .addFields(
         { name: 'Cargo de ausência', value: `<@&${absenceConfig.roleId}>`, inline: true },

@@ -89,50 +89,29 @@ function formatDuration(ms = 0) {
   return parts.join(' ');
 }
 
-function parsePeriod(input, now = new Date()) {
+function parseAbsenceDate(input, now = new Date(), endOfDay = false) {
   const raw = String(input || '').trim().toLowerCase();
-  const hoursTimeMatch = raw.match(/^(\d{1,3}):(\d{2})$/);
-  if (hoursTimeMatch) {
-    const hours = Number(hoursTimeMatch[1]);
-    const minutes = Number(hoursTimeMatch[2]);
-    if (hours < 0 || minutes < 0 || minutes > 59) return null;
-    const totalMs = (hours * 60 + minutes) * 60 * 1000;
-    if (totalMs <= 0) return null;
-    return new Date(now.getTime() + totalMs);
-  }
-
-  const hoursMatch = raw.match(/^(\d{1,4})\s*h$/i);
-  if (hoursMatch) {
-    const hours = Number(hoursMatch[1]);
-    if (hours <= 0) return null;
-    return new Date(now.getTime() + hours * 60 * 60 * 1000);
-  }
-
-  const daysMatch = raw.match(/^(\d{1,3})(?:\s*(?:d|dia|dias))?$/i);
-  if (daysMatch) {
-    const days = Number(daysMatch[1]);
-    if (days <= 0) return null;
-    return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  }
-
   const dateMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?$/);
   if (dateMatch) {
     const day = Number(dateMatch[1]);
     const month = Number(dateMatch[2]) - 1;
     let year = dateMatch[3] ? Number(dateMatch[3]) : now.getFullYear();
-    let end = new Date(year, month, day, 23, 59, 59, 999);
-    if (Number.isNaN(end.getTime())) return null;
-    if (end.getDate() !== day || end.getMonth() !== month || end.getFullYear() !== year) return null;
-    if (!dateMatch[3] && end.getTime() <= now.getTime()) {
+    let date = new Date(year, month, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+    if (Number.isNaN(date.getTime())) return null;
+    if (date.getDate() !== day || date.getMonth() !== month || date.getFullYear() !== year) return null;
+    if (!dateMatch[3] && date.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) {
       year += 1;
-      end = new Date(year, month, day, 23, 59, 59, 999);
-      if (end.getDate() !== day || end.getMonth() !== month || end.getFullYear() !== year) return null;
+      date = new Date(year, month, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+      if (date.getDate() !== day || date.getMonth() !== month || date.getFullYear() !== year) return null;
     }
-    if (end.getTime() <= now.getTime()) return null;
-    return end;
+    return date;
   }
 
   return null;
+}
+
+function parsePeriod(input, now = new Date()) {
+  return parseAbsenceDate(input, now, true);
 }
 
 function readAbsences() {
@@ -161,7 +140,7 @@ function getActiveGuildAbsences(guildId) {
 }
 
 function getOpenGuildAbsences(guildId) {
-  return getGuildAbsences(guildId).filter((absence) => ['pending', 'active'].includes(absence.status));
+  return getGuildAbsences(guildId).filter((absence) => ['pending', 'scheduled', 'active'].includes(absence.status));
 }
 
 function sanitizeChannelName(value) {
@@ -183,7 +162,7 @@ function buildAbsenceRequestEmbed(absence) {
       { name: 'Nome', value: absence.name || 'N/A', inline: true },
       { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
       { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
-      { name: 'Período informado', value: absence.periodInput || 'N/A', inline: true },
+      { name: 'Início informado', value: absence.startDateInput || formatDate(absence.startsAt), inline: true },
       { name: 'Retorno previsto', value: formatDate(absence.endsAt), inline: true }
     )
     .setFooter({ text: 'Vortex - Aprovação de Ausência' })
@@ -246,26 +225,28 @@ async function sendAbsenceLog(client, guildId, absence, action = 'created') {
   if (!channel?.isTextBased?.()) return false;
 
   const isCreated = action === 'created';
+  const isScheduled = action === 'scheduled';
   const isUpdated = action === 'updated';
   const isRemoved = action === 'removed';
   const embed = new EmbedBuilder()
-    .setColor(isCreated ? '#7000FF' : isUpdated ? '#FEE75C' : isRemoved ? '#ED4245' : '#57F287')
-    .setTitle(isCreated ? 'Ausência Registrada' : isUpdated ? 'Retorno de Ausência Alterado' : isRemoved ? 'Ausência Retirada' : 'Ausência Finalizada')
+    .setColor(isCreated ? '#7000FF' : isScheduled ? '#5865F2' : isUpdated ? '#FEE75C' : isRemoved ? '#ED4245' : '#57F287')
+    .setTitle(isCreated ? 'Ausência Registrada' : isScheduled ? 'Ausência Agendada' : isUpdated ? 'Retorno de Ausência Alterado' : isRemoved ? 'Ausência Retirada' : 'Ausência Finalizada')
     .setDescription(isCreated
       ? `O usuário <@${absence.userId}> entrou em modo ausência e recebeu o cargo <@&${absence.roleId}>.`
-      : isUpdated
-        ? `A data de retorno de <@${absence.userId}> foi alterada por <@${absence.updatedBy}>.`
-        : isRemoved
-          ? `O usuário <@${absence.userId}> retirou a própria ausência e o cargo <@&${absence.roleId}> foi removido.`
-          : `A ausência de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
+      : isScheduled
+        ? `A ausência de <@${absence.userId}> foi aprovada e será ativada em ${formatDate(absence.startsAt)}.`
+        : isUpdated
+          ? `A data de retorno de <@${absence.userId}> foi alterada por <@${absence.updatedBy}>.`
+          : isRemoved
+            ? `O usuário <@${absence.userId}> retirou a própria ausência e o cargo <@&${absence.roleId}> foi removido.`
+            : `A ausência de <@${absence.userId}> terminou e o cargo <@&${absence.roleId}> foi removido.`)
     .addFields(
       { name: 'Nome', value: absence.name || 'N/A', inline: true },
       { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
       { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
-      { name: 'Período informado', value: absence.periodInput || 'N/A', inline: true },
-      { name: 'Início', value: formatDate(absence.startedAt), inline: true },
+      { name: 'Início informado', value: absence.startDateInput || formatDate(absence.startsAt || absence.startedAt), inline: true },
+      { name: 'Início', value: formatDate(absence.startsAt || absence.startedAt), inline: true },
       { name: 'Fim', value: formatDate(absence.endsAt), inline: true },
-      { name: 'Tempo', value: formatDuration(new Date(absence.endsAt).getTime() - new Date(absence.startedAt).getTime()), inline: true },
       { name: 'Cargo de ausência', value: `<@&${absence.roleId}>`, inline: true }
     )
     .setFooter({ text: `Vortex - Sistema de Ausência • ${guildId}` })
@@ -275,14 +256,24 @@ async function sendAbsenceLog(client, guildId, absence, action = 'created') {
   return true;
 }
 
-async function createAbsence(interaction, { name, discordId, reason, periodInput }) {
+async function createAbsence(interaction, { name, discordId, reason, startDateInput, returnDateInput, periodInput }) {
   const config = getAbsenceConfig();
-  const endsAt = parsePeriod(periodInput);
-  if (!endsAt) {
+  const now = new Date();
+  const rawStartInput = startDateInput || periodInput;
+  const rawReturnInput = returnDateInput || periodInput;
+  const startsAt = parseAbsenceDate(rawStartInput, now, false);
+  const endsAt = parseAbsenceDate(rawReturnInput, now, true);
+  if (!startsAt || !endsAt) {
     return {
       ok: false,
-      message: 'Período inválido. Para horas, use `12:00`, `2h`, `12h` ou similar. Para data, use `DD/MM` ou `DD/MM/AAAA`. Para dias, use quantidade como `3`.',
+      message: 'Datas inválidas. Use `DD/MM` ou `DD/MM/AAAA` no dia que vai para ausência e no dia que volta. Ausência por hora não é aceita.',
     };
+  }
+  if (endsAt.getTime() <= now.getTime()) {
+    return { ok: false, message: 'A data de retorno precisa ser futura.' };
+  }
+  if (endsAt.getTime() < startsAt.getTime()) {
+    return { ok: false, message: 'A data de retorno precisa ser igual ou depois da data de início da ausência.' };
   }
 
   const targetId = discordId.trim();
@@ -313,14 +304,16 @@ async function createAbsence(interaction, { name, discordId, reason, periodInput
     };
   }
 
-  const now = new Date();
   let absence = saveAbsence({
     guildId: interaction.guild.id,
     userId: interaction.user.id,
     name: name.trim(),
     discordId: targetId,
     reason: reason.trim(),
-    periodInput: periodInput.trim(),
+    startDateInput: String(rawStartInput || '').trim(),
+    returnDateInput: String(rawReturnInput || '').trim(),
+    periodInput: String(rawReturnInput || '').trim(),
+    startsAt: startsAt.toISOString(),
     startedAt: null,
     endsAt: endsAt.toISOString(),
     status: 'pending',
@@ -357,10 +350,13 @@ async function notifyAbsenceDecision(client, guild, absence, approved) {
     .setColor(approved ? '#57F287' : '#ED4245')
     .setTitle(approved ? 'Ausência aceita' : 'Ausência recusada')
     .setDescription(approved
-      ? 'Sua ausência foi aceita pela administração. O cargo de ausência foi aplicado.'
+      ? (absence.status === 'scheduled'
+        ? 'Sua ausência foi aceita pela administração. O cargo será aplicado automaticamente no dia de início.'
+        : 'Sua ausência foi aceita pela administração. O cargo de ausência foi aplicado.')
       : 'Sua ausência foi recusada. Tente da próxima.')
     .addFields(
       { name: 'Servidor', value: guild?.name || 'Vortex', inline: true },
+      { name: 'Início solicitado', value: formatDate(absence.startsAt || absence.startedAt), inline: true },
       { name: 'Retorno solicitado', value: formatDate(absence.endsAt), inline: true },
       { name: 'Motivo informado', value: absence.reason || 'N/A', inline: false }
     )
@@ -385,14 +381,19 @@ async function approveAbsenceRequest(interaction, userId) {
   const role = await interaction.guild.roles.fetch(absence.roleId || config.roleId).catch(() => null);
   if (!role) return { ok: false, message: `Cargo de ausência <@&${absence.roleId || config.roleId}> não encontrado.` };
 
-  await member.roles.add(role.id, `Ausência aprovada por ${interaction.user.id}`);
-
   const now = new Date();
+  const startsAt = absence.startsAt ? new Date(absence.startsAt) : now;
+  const startsNow = startsAt.getTime() <= now.getTime();
+  if (startsNow) {
+    await member.roles.add(role.id, `Ausência aprovada por ${interaction.user.id}`);
+  }
+
   const next = {
     ...absence,
-    status: 'active',
+    status: startsNow ? 'active' : 'scheduled',
     roleId: role.id,
-    startedAt: now.toISOString(),
+    startsAt: startsAt.toISOString(),
+    startedAt: startsNow ? now.toISOString() : null,
     approvedBy: interaction.user.id,
     approvedAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -401,7 +402,7 @@ async function approveAbsenceRequest(interaction, userId) {
   writeAbsences(data);
 
   await notifyAbsenceDecision(interaction.client, interaction.guild, next, true).catch(() => null);
-  await sendAbsenceLog(interaction.client, interaction.guild.id, next, 'created');
+  await sendAbsenceLog(interaction.client, interaction.guild.id, next, startsNow ? 'created' : 'scheduled');
 
   return { ok: true, absence: next };
 }
@@ -487,17 +488,25 @@ async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) 
     return { ok: false, message: 'Não existe ausência ativa para este usuário.' };
   }
 
-  const nextEndsAt = parsePeriod(returnInput);
+  const nextEndsAt = parseAbsenceDate(returnInput, new Date(), true);
   if (!nextEndsAt) {
     return {
       ok: false,
-      message: 'Retorno inválido. Use data `DD/MM` ou `DD/MM/AAAA`, quantidade de dias como `3`, ou horas como `12:00`/`12h`.',
+      message: 'Retorno inválido. Use data `DD/MM` ou `DD/MM/AAAA`. Ausência por hora não é aceita.',
     };
+  }
+  if (nextEndsAt.getTime() <= Date.now()) {
+    return { ok: false, message: 'O novo retorno precisa ser uma data futura.' };
+  }
+  const startsAt = absence.startsAt || absence.startedAt;
+  if (startsAt && nextEndsAt.getTime() < new Date(startsAt).getTime()) {
+    return { ok: false, message: 'O novo retorno precisa ser igual ou depois da data de início da ausência.' };
   }
 
   const oldEndsAt = absence.endsAt;
   const next = {
     ...absence,
+    returnDateInput: returnInput.trim(),
     periodInput: returnInput.trim(),
     previousEndsAt: oldEndsAt,
     endsAt: nextEndsAt.toISOString(),
@@ -516,6 +525,26 @@ async function updateAbsenceReturn(client, guild, userId, returnInput, staffId) 
   await sendAbsenceLog(client, guild.id, next, 'updated');
 
   return { ok: true, absence: next, oldEndsAt, dmSent };
+}
+
+async function startScheduledAbsence(client, guild, absence, data) {
+  const member = await guild.members.fetch(absence.userId).catch(() => null);
+  if (member && absence.roleId) {
+    await member.roles.add(absence.roleId, 'Ausência iniciada automaticamente pelo sistema Vortex').catch(() => null);
+  }
+
+  const now = new Date();
+  const next = {
+    ...absence,
+    status: 'active',
+    startedAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  if (!data[guild.id]) data[guild.id] = {};
+  data[guild.id][absence.userId] = next;
+  await sendAbsenceLog(client, guild.id, next, 'created');
+  return next;
 }
 
 async function finishAbsence(client, guild, absence, data) {
@@ -558,6 +587,12 @@ async function checkExpiredAbsences(client) {
     if (!guild) continue;
 
     for (const absence of Object.values(guildAbsences || {})) {
+      if (absence.status === 'scheduled' && absence.startsAt && new Date(absence.startsAt).getTime() <= now) {
+        await startScheduledAbsence(client, guild, absence, data).catch((error) => {
+          logger.error('Erro ao iniciar ausência agendada:', error);
+        });
+        continue;
+      }
       if (absence.status !== 'active') continue;
       if (!absence.endsAt || new Date(absence.endsAt).getTime() > now) continue;
 
@@ -592,6 +627,7 @@ module.exports = {
   removeOwnAbsence,
   initAbsenceManager,
   parsePeriod,
+  parseAbsenceDate,
   formatDate,
   formatDuration,
 };

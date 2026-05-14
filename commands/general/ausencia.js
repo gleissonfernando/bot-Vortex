@@ -50,9 +50,17 @@ function buildAbsenceModal(interaction) {
     ),
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
-        .setCustomId('period')
-        .setLabel('PERIODO')
-        .setPlaceholder('Horas: 12:00 ou 12h | Data: 12/01 ou 12/01/2026')
+        .setCustomId('start_date')
+        .setLabel('DIA QUE VAI PARA AUSENCIA')
+        .setPlaceholder('Exemplo: 12/01 ou 12/01/2026')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('return_date')
+        .setLabel('DIA QUE VOLTA')
+        .setPlaceholder('Exemplo: 15/01 ou 15/01/2026')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
     )
@@ -73,22 +81,21 @@ function buildAbsencePanel(interaction = null) {
     .setDescription([
       'Use este painel para solicitar afastamento temporário ou retirar uma ausência ativa.',
       '',
-      'Ao solicitar, o sistema registra o motivo, calcula o retorno e abre um canal para a administração aprovar ou recusar.',
+      'Ao solicitar, o sistema registra o motivo, o dia de início e o dia de retorno, depois abre um canal para a administração aprovar ou recusar.',
     ].join('\n'))
     .addFields(
       {
         name: 'Como solicitar',
         value: [
           '`1.` Clique em **Solicitar ausência**.',
-          '`2.` Informe nome, ID, motivo e período.',
+          '`2.` Informe nome, ID, motivo, dia que vai para ausência e dia que volta.',
           '`3.` Aguarde a aprovação da administração para receber o cargo de ausência.',
         ].join('\n'),
         inline: false,
       },
       {
-        name: 'Formatos aceitos',
+        name: 'Datas aceitas',
         value: [
-          '`12:00` ou `12h` para horas',
           '`12/01` para dia e mês',
           '`12/01/2026` para data completa',
         ].join('\n'),
@@ -97,6 +104,8 @@ function buildAbsencePanel(interaction = null) {
       {
         name: 'Retorno',
         value: [
+          'A ausência vale do início do dia informado até o fim do dia de retorno.',
+          'Não existe mais ausência por hora.',
           'Use **Retirar ausência** quando voltar antes do prazo.',
           'A gerência pode alterar o retorno pelo `/painel`.',
         ].join('\n'),
