@@ -27,7 +27,13 @@ function pad(value, size) {
   return text.length > size ? `${text.slice(0, size - 3)}...` : text.padEnd(size, ' ');
 }
 
-function getLocalParts(date = new Date()) {
+function toValidDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getLocalParts(value = new Date()) {
+  const date = toValidDate(value) || new Date();
   const parts = new Intl.DateTimeFormat('pt-BR', {
     timeZone: TIME_ZONE,
     year: 'numeric',
@@ -44,10 +50,11 @@ function getLocalDateKey(date = new Date()) {
 }
 
 function getWeekdayIndexFromDate(date = new Date()) {
+  const safeDate = toValidDate(date) || new Date();
   const weekday = new Intl.DateTimeFormat('pt-BR', {
     timeZone: TIME_ZONE,
     weekday: 'long',
-  }).format(date).toLowerCase();
+  }).format(safeDate).toLowerCase();
 
   const normalized = weekday.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (normalized === 'domingo') return 6;

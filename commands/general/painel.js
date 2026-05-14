@@ -400,10 +400,18 @@ module.exports = {
       }
 
       const member = await interaction.guild.members.fetch(userId).catch(() => null);
-      const files = [
-        createPointTranscriptAttachment({ guild: interaction.guild, target, member, data }),
-        createPointTranscriptTextAttachment({ guild: interaction.guild, target, member, data }),
-      ];
+      let files = [];
+      try {
+        files = [
+          createPointTranscriptAttachment({ guild: interaction.guild, target, member, data }),
+          createPointTranscriptTextAttachment({ guild: interaction.guild, target, member, data }),
+        ];
+      } catch (error) {
+        await reportPanelError(interaction.client, error, 'Gerar folha/transcript de ponto');
+        return safeEdit(interaction, {
+          content: '❌ Não consegui gerar a folha deste usuário. O erro foi enviado para os logs.',
+        });
+      }
 
       sendVortexLog(interaction.client, {
         title: 'Folha de Ponto Gerada',
