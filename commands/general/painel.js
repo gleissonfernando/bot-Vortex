@@ -169,6 +169,24 @@ async function safeReply(interaction, options) {
     return interaction.reply(options).catch(() => null);
 }
 
+async function safeShowModal(interaction, modal) {
+    if (interaction.replied || interaction.deferred) {
+        return safeReply(interaction, {
+            content: '❌ Essa interação já foi processada. Clique no botão novamente para abrir o formulário.',
+            ephemeral: true,
+        });
+    }
+    return interaction.showModal(modal).catch((error) => {
+        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+            return safeReply(interaction, {
+                content: '❌ Essa interação já foi processada. Clique no botão novamente para abrir o formulário.',
+                ephemeral: true,
+            });
+        }
+        throw error;
+    });
+}
+
 function isUnknownInteractionError(error) {
     return error?.code === 10062 || error?.rawError?.code === 10062;
 }
@@ -791,7 +809,7 @@ module.exports = {
                 .setMaxLength(300)
         ));
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'live_stream_check_now') {
@@ -882,7 +900,7 @@ module.exports = {
             );
         }
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'set_absence_role') {
@@ -901,7 +919,7 @@ module.exports = {
                 .setRequired(true)
         ));
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'change_absence_return') {
@@ -928,7 +946,7 @@ module.exports = {
             )
         );
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'profile_test') {
@@ -963,7 +981,7 @@ module.exports = {
             )
         );
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'profile_register') {
@@ -1017,7 +1035,7 @@ module.exports = {
             )
         );
 
-        return interaction.showModal(modal);
+        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'profile_delete_no_billing') {
