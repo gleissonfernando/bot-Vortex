@@ -13,6 +13,10 @@ const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 let statusPanelInterval = null;
+const transientPanelFailures = new Map();
+const lastVisibilitySyncByGuild = new Map();
+const TRANSIENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
+const VISIBILITY_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 function pad(value, size) {
   const text = String(value || '');
@@ -107,6 +111,47 @@ function createControlRow() {
   );
 }
 
+function isDiscordNetworkError(error) {
+  const text = `${error?.name || ''} ${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return text.includes('timeout')
+    || text.includes('enotfound')
+    || text.includes('econnreset')
+    || text.includes('etimedout')
+    || text.includes('fetch failed')
+    || text.includes('discord.com');
+}
+
+function logStatusPanelError(guildId, error) {
+  if (!isDiscordNetworkError(error)) {
+    logger.error('Erro ao atualizar painel de ponto:', error, { guildId });
+    return;
+  }
+
+  const now = Date.now();
+  const state = transientPanelFailures.get(guildId) || { count: 0, lastLoggedAt: 0 };
+  state.count += 1;
+
+  if (now - state.lastLoggedAt >= TRANSIENT_LOG_INTERVAL_MS) {
+    state.lastLoggedAt = now;
+    logger.warn('Falha temporária ao atualizar painel de ponto. Discord/rede indisponível.', {
+      guildId,
+      count: state.count,
+      error: error?.message || String(error),
+    });
+    state.count = 0;
+  }
+
+  transientPanelFailures.set(guildId, state);
+}
+
+function shouldSyncVisibility(guildId) {
+  const now = Date.now();
+  const last = lastVisibilitySyncByGuild.get(guildId) || 0;
+  if (now - last < VISIBILITY_SYNC_INTERVAL_MS) return false;
+  lastVisibilitySyncByGuild.set(guildId, now);
+  return true;
+}
+
 function hasAnyRole(member, roleIds) {
   return Boolean(member?.roles?.cache && roleIds.some((roleId) => member.roles.cache.has(roleId)));
 }
@@ -187,21 +232,25 @@ async function updateStatusPanel(client, guildId) {
   const panel = getPanel(guildId);
 
   try {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return false;
 
     const pointConfig = getPointConfig();
     const configuredStatusChannelId = pointConfig.statusChannelId;
-    const channel = await client.channels.fetch(configuredStatusChannelId).catch(() => null);
+    const channel = client.channels.cache.get(configuredStatusChannelId)
+      || await client.channels.fetch(configuredStatusChannelId).catch(() => null);
     if (!channel?.isTextBased?.()) return false;
 
-    await syncOnlineChannelVisibility(guild, channel).catch((error) => {
-      logger.error('Erro ao sincronizar visibilidade do canal online:', error);
-    });
+    if (shouldSyncVisibility(guild.id)) {
+      await syncOnlineChannelVisibility(guild, channel).catch((error) => {
+        logStatusPanelError(guild.id, error);
+      });
+    }
 
     const embed = await createStatusEmbed(guild);
     const message = panel?.statusMessageId && panel?.statusChannelId === configuredStatusChannelId
-      ? await channel.messages.fetch(panel.statusMessageId).catch(() => null)
+      ? channel.messages.cache.get(panel.statusMessageId)
+        || await channel.messages.fetch(panel.statusMessageId).catch(() => null)
       : null;
 
     if (!message) {
@@ -216,20 +265,22 @@ async function updateStatusPanel(client, guildId) {
     }
 
     await message.edit({ embeds: [embed] });
+    transientPanelFailures.delete(guildId);
     return true;
   } catch (error) {
-    logger.error('Erro ao atualizar painel de ponto:', error);
+    logStatusPanelError(guildId, error);
     return false;
   }
 }
 
 async function setOnlineChannelAccess(client, guildId, userId, allowed) {
   try {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return false;
 
     const pointConfig = getPointConfig();
-    const channel = await client.channels.fetch(pointConfig.statusChannelId).catch(() => null);
+    const channel = client.channels.cache.get(pointConfig.statusChannelId)
+      || await client.channels.fetch(pointConfig.statusChannelId).catch(() => null);
     if (!channel?.permissionOverwrites?.edit) return false;
 
     if (allowed) {
@@ -245,7 +296,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 
     return true;
   } catch (error) {
-    logger.error('Erro ao atualizar permissão do canal online:', error);
+    logStatusPanelError(guildId, error);
     return false;
   }
 }
