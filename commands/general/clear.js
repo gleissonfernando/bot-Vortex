@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { safeReply, safeEdit, safeDeferReply } = require('../../utils/safeReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,17 +15,17 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.guild || !interaction.channel?.bulkDelete) {
-      return interaction.reply({ content: '❌ Este comando só pode ser usado em canal de texto do servidor.', ephemeral: true });
+      return safeReply(interaction, { content: '❌ Este comando só pode ser usado em canal de texto do servidor.', ephemeral: true });
     }
 
     const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
     const botPermissions = botMember ? interaction.channel.permissionsFor(botMember) : null;
     if (!botPermissions?.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({ content: '❌ Eu preciso da permissão Gerenciar Mensagens neste canal.', ephemeral: true });
+      return safeReply(interaction, { content: '❌ Eu preciso da permissão Gerenciar Mensagens neste canal.', ephemeral: true });
     }
 
     const amount = interaction.options.getInteger('quantidade', true);
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const messages = await interaction.channel.messages.fetch({ limit: amount }).catch((error) => {
       console.error('[VORTEX] Erro ao buscar mensagens para limpar:', error);
@@ -32,7 +33,7 @@ module.exports = {
     });
 
     if (!messages || messages.size === 0) {
-      return interaction.editReply('❌ Não encontrei mensagens para apagar.');
+      return safeEdit(interaction, { content: '❌ Não encontrei mensagens para apagar.' });
     }
 
     let deleted = 0;
@@ -47,9 +48,9 @@ module.exports = {
     }
 
     if (deleted === 0) {
-      return interaction.editReply('❌ Não consegui apagar as mensagens deste canal.');
+      return safeEdit(interaction, { content: '❌ Não consegui apagar as mensagens deste canal.' });
     }
 
-    return interaction.editReply(`✅ ${deleted} mensagens apagadas.`);
+    return safeEdit(interaction, { content: `✅ ${deleted} mensagens apagadas.` });
   },
 };

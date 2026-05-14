@@ -15,6 +15,7 @@ const { logger } = require('./logger');
 const { sendVortexLog } = require('./notifications');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
+const { safeReply, safeEdit, safeUpdate } = require('./safeReply');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -506,10 +507,6 @@ async function runPointAutomationCheck(client, { force = false } = {}) {
 }
 
 async function confirmPointPresence(interaction) {
-  const safeReply = (options) => {
-    if (interaction.replied || interaction.deferred) return interaction.followUp(options).catch(() => null);
-    return interaction.reply(options).catch(() => null);
-  };
   const guildId = interaction.customId.replace('point_presence_confirm_', '');
   const state = readJSON(STATE_PATH, {});
   const key = getStateKey(guildId, interaction.user.id);
@@ -523,7 +520,7 @@ async function confirmPointPresence(interaction) {
     lastPromptAt: null,
   };
   writeJSON(STATE_PATH, state);
-  return safeReply({ content: '✅ Confirmado. A contagem foi zerada e uma nova verificação começará daqui a 4 horas.', ephemeral: true });
+  return safeReply(interaction, { content: '✅ Confirmado. A contagem foi zerada e uma nova verificação começará daqui a 4 horas.', ephemeral: true });
 }
 
 async function deletePointCorrectionChannels(client, guild, userId, deletedBy = null) {
@@ -566,10 +563,10 @@ async function handlePenaltyButton(interaction) {
     ].join('\n'))
     .setTimestamp();
   if (interaction.replied || interaction.deferred) {
-    await interaction.editReply({ embeds: [embed], components: [] }).catch(() => interaction.followUp({ embeds: [embed], ephemeral: true }).catch(() => null));
+    await safeEdit(interaction, { embeds: [embed], components: [] });
     return;
   }
-  await interaction.update({ embeds: [embed], components: [] }).catch(() => null);
+  await safeUpdate(interaction, { embeds: [embed], components: [] });
 }
 
 function initPointAutomation(client) {

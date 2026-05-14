@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { buildUserRegistroEmbed } = require('../../utils/pontoReport');
 const { sendVortexLog } = require('../../utils/notifications');
+const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -13,7 +14,7 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const embed = await buildUserRegistroEmbed(interaction.guild, target);
@@ -32,6 +33,6 @@ module.exports = {
       channelId: interaction.channelId,
     }).catch(() => {});
 
-    return interaction.editReply({ embeds: [embed] });
+    return safeEdit(interaction, { embeds: [embed] });
   },
 };

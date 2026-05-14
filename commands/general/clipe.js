@@ -5,6 +5,7 @@ const {
 } = require('discord.js');
 const path = require('path');
 const { sendVortexLog } = require('../../utils/notifications');
+const { safeReply, safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 const VORTEX_BANNER = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_BANNER_NAME = 'IMG_4234.png';
@@ -122,13 +123,6 @@ async function resolveClipSource(interaction, rawLink) {
   };
 }
 
-async function safeReply(interaction, options) {
-  if (interaction.replied || interaction.deferred) {
-    return interaction.followUp(options).catch(() => null);
-  }
-  return interaction.reply(options).catch(() => null);
-}
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('clipe')
@@ -156,13 +150,13 @@ module.exports = {
     const link = interaction.options.getString('link', true);
     const caption = interaction.options.getString('legenda', false)?.trim();
 
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     let clip;
     try {
       clip = await resolveClipSource(interaction, link);
     } catch (error) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: `❌ ${error.message || 'Nao consegui processar o link informado.'}`,
       });
     }
@@ -196,7 +190,7 @@ module.exports = {
         replyPayload.content = caption;
       }
 
-      await interaction.editReply(replyPayload);
+      await safeEdit(interaction, replyPayload);
 
       sendVortexLog(interaction.client, {
         title: 'Clipe Enviado',
@@ -214,7 +208,7 @@ module.exports = {
       }).catch(() => {});
     } catch (error) {
       console.error('[VORTEX] Erro ao enviar clipe:', error);
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Baixei o link, mas não consegui enviar como vídeo. Verifique o tamanho do arquivo ou a permissão de anexar arquivos.',
       });
     }

@@ -2,6 +2,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, Embed
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { isGerencia } = require('../../utils/permissions');
 const { buildPointSiteUrl } = require('../../utils/pointSite');
+const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,11 +15,11 @@ module.exports = {
         .setRequired(true)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const target = interaction.options.getUser('usuario');
     if (target.id !== interaction.user.id && !isGerencia(interaction)) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Você não tem permissão para consultar a folha de ponto de outro usuário.',
       });
     }
@@ -55,7 +56,7 @@ module.exports = {
         .setURL(pointSiteUrl)
     );
 
-    return interaction.editReply({
+    return safeEdit(interaction, {
       content: `🔗 Link da folha de ponto: ${pointSiteUrl}`,
       embeds: [embed],
       components: [row],

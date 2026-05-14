@@ -5,6 +5,7 @@ const {
 const { createLimitModal, createUserIdModal } = require('./callHelpers');
 const { sendStaffLog, notifyError } = require('../utils/notifications');
 const { allowVoiceChannelAccess } = require('../utils/voiceChannelAccess');
+const { safeReply, safeShowModal } = require('../utils/safeReply');
 
 // In-memory storage for active calls
 // { channelId: { ownerId: string, roleId: string, bannedUsers: string[] } }
@@ -21,7 +22,7 @@ module.exports = {
 
         // Logic for creating a call is the only one that doesn't require being in a call
         if (customId === 'call_create') {
-            if (voiceChannel) return interaction.reply({ content: '❌ Você já está em uma call!', ephemeral: true });
+            if (voiceChannel) return safeReply(interaction, { content: '❌ Você já está em uma call!', ephemeral: true });
 
             try {
                 // Create temporary Role for the owner
@@ -65,58 +66,58 @@ module.exports = {
                 });
 
                 await member.roles.add(ownerRole);
-                await interaction.reply({ content: `✅ Call criada com sucesso! ${channel}`, ephemeral: true });
+                await safeReply(interaction, { content: `✅ Call criada com sucesso! ${channel}`, ephemeral: true });
                 
                 await sendStaffLog(client, '🔊 Call Criada', `O usuário <@${user.id}> criou uma call temporária: ${channel.name}`, '#57F287');
             } catch (e) {
                 console.error(e);
                 await notifyError(client, e, 'Criação de Call Temporária');
-                await interaction.reply({ content: '❌ Erro ao criar call.', ephemeral: true });
+                await safeReply(interaction, { content: '❌ Erro ao criar call.', ephemeral: true });
             }
             return;
         }
 
         // For all other commands, user must be in a temporary call and be the owner
-        if (!voiceChannel) return interaction.reply({ content: '❌ Você precisa estar em uma call temporária!', ephemeral: true });
+        if (!voiceChannel) return safeReply(interaction, { content: '❌ Você precisa estar em uma call temporária!', ephemeral: true });
 
         const callData = activeCalls.get(voiceChannel.id);
-        if (!callData) return interaction.reply({ content: '❌ Esta não é uma call temporária gerenciável.', ephemeral: true });
+        if (!callData) return safeReply(interaction, { content: '❌ Esta não é uma call temporária gerenciável.', ephemeral: true });
 
         // VERIFICAÇÃO DE DESENVOLVEDOR MESTRE (Permissão Global)
         const DEVELOPER_ID = process.env.DEVELOPER_ID || '';
         const isDeveloper = user.id === DEVELOPER_ID;
 
         if (callData.ownerId !== user.id && !isDeveloper) {
-            return interaction.reply({ content: '❌ Apenas o dono da call pode gerenciar estas configurações!', ephemeral: true });
+            return safeReply(interaction, { content: '❌ Apenas o dono da call pode gerenciar estas configurações!', ephemeral: true });
         }
 
         switch (customId) {
             case 'call_private':
                 await voiceChannel.permissionOverwrites.edit(guild.id, { Connect: false });
-                await interaction.reply({ content: '🔒 Call agora está Privada!', ephemeral: true });
+                await safeReply(interaction, { content: '🔒 Call agora está Privada!', ephemeral: true });
                 await sendStaffLog(client, '🔒 Call Privada', `A call <#${voiceChannel.id}> foi definida como **Privada** por <@${user.id}>.`, '#ED4245');
                 break;
 
             case 'call_public':
                 await voiceChannel.permissionOverwrites.edit(guild.id, { Connect: true });
-                await interaction.reply({ content: '🔓 Call agora está Pública!', ephemeral: true });
+                await safeReply(interaction, { content: '🔓 Call agora está Pública!', ephemeral: true });
                 await sendStaffLog(client, '🔓 Call Pública', `A call <#${voiceChannel.id}> foi definida como **Pública** por <@${user.id}>.`, '#57F287');
                 break;
 
             case 'call_limit':
-                await interaction.showModal(createLimitModal());
+                await safeShowModal(interaction, createLimitModal());
                 break;
 
             case 'call_allow':
-                await interaction.showModal(createUserIdModal('allow'));
+                await safeShowModal(interaction, createUserIdModal('allow'));
                 break;
 
             case 'call_disconnect':
-                await interaction.showModal(createUserIdModal('disconnect'));
+                await safeShowModal(interaction, createUserIdModal('disconnect'));
                 break;
 
             case 'call_ban':
-                await interaction.showModal(createUserIdModal('ban'));
+                await safeShowModal(interaction, createUserIdModal('ban'));
                 break;
 
             case 'call_delete':
@@ -125,7 +126,7 @@ module.exports = {
                 const role = guild.roles.cache.get(callData.roleId);
                 if (role) await role.delete();
                 activeCalls.delete(voiceChannel.id);
-                await interaction.reply({ content: '🗑️ Call deletada com sucesso!', ephemeral: true });
+                await safeReply(interaction, { content: '🗑️ Call deletada com sucesso!', ephemeral: true });
                 await sendStaffLog(client, '🗑️ Call Deletada', `A call **${channelName}** foi deletada manualmente por <@${user.id}>.`, '#ED4245');
                 break;
         }
@@ -142,10 +143,10 @@ module.exports = {
 
         if (customId === 'modal_call_limit') {
             const limit = parseInt(interaction.fields.getTextInputValue('limit_value'));
-            if (isNaN(limit) || limit < 0 || limit > 99) return interaction.reply({ content: '❌ Valor inválido!', ephemeral: true });
+            if (isNaN(limit) || limit < 0 || limit > 99) return safeReply(interaction, { content: '❌ Valor inválido!', ephemeral: true });
 
             await voiceChannel.setUserLimit(limit);
-            await interaction.reply({ content: `🔢 Limite alterado para ${limit} usuários!`, ephemeral: true });
+            await safeReply(interaction, { content: `🔢 Limite alterado para ${limit} usuários!`, ephemeral: true });
             await sendStaffLog(client, '🔢 Limite de Call Alterado', `O limite da call <#${voiceChannel.id}> foi alterado para **${limit}** por <@${user.id}>.`, '#3498DB');
         }
         else if (customId.startsWith('modal_')) {
@@ -153,7 +154,7 @@ module.exports = {
             const targetId = interaction.fields.getTextInputValue('user_id');
             const targetMember = await guild.members.fetch(targetId).catch(() => null);
 
-            if (!targetMember) return interaction.reply({ content: '❌ Usuário não encontrado no servidor!', ephemeral: true });
+            if (!targetMember) return safeReply(interaction, { content: '❌ Usuário não encontrado no servidor!', ephemeral: true });
 
             if (action === 'allow') {
                 await voiceChannel.permissionOverwrites.create({
@@ -169,15 +170,15 @@ module.exports = {
                     }
                 }
 
-                await interaction.reply({ content: `✅ ${targetMember.user.tag} agora pode entrar e recebeu o cargo da call!`, ephemeral: true });
+                await safeReply(interaction, { content: `✅ ${targetMember.user.tag} agora pode entrar e recebeu o cargo da call!`, ephemeral: true });
                 await sendStaffLog(client, '✅ Usuário Permitido na Call', `O usuário <@${targetMember.id}> foi permitido na call <#${voiceChannel.id}> por <@${user.id}>.`, '#57F287');
             } else if (action === 'disconnect') {
                 try {
                     await targetMember.voice.setChannel(null);
-                    await interaction.reply({ content: `🚫 ${targetMember.user.tag} foi desconectado!`, ephemeral: true });
+                    await safeReply(interaction, { content: `🚫 ${targetMember.user.tag} foi desconectado!`, ephemeral: true });
                     await sendStaffLog(client, '🚫 Usuário Desconectado', `O usuário <@${targetMember.id}> foi desconectado da call <#${voiceChannel.id}> por <@${user.id}>.`, '#E67E22');
                 } catch (e) {
-                    await interaction.reply({ content: '❌ Não consegui desconectar o usuário.', ephemeral: true });
+                    await safeReply(interaction, { content: '❌ Não consegui desconectar o usuário.', ephemeral: true });
                 }
             } else if (action === 'ban') {
                 await voiceChannel.permissionOverwrites.create({
@@ -185,7 +186,7 @@ module.exports = {
                     deny: [PermissionFlagsBits.Connect],
                 });
                 callData.bannedUsers.push(targetMember.id);
-                await interaction.reply({ content: `🔨 ${targetMember.user.tag} foi banido da call!`, ephemeral: true });
+                await safeReply(interaction, { content: `🔨 ${targetMember.user.tag} foi banido da call!`, ephemeral: true });
                 await sendStaffLog(client, '🔨 Usuário Banido da Call', `O usuário <@${targetMember.id}> foi banido da call <#${voiceChannel.id}> por <@${user.id}>.`, '#ED4245');
             }
         }

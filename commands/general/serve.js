@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, formatDuration, formatDate } = require('../../utils/pontoManager');
+const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,7 +13,7 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
@@ -32,6 +33,6 @@ module.exports = {
       .setTimestamp()
       .setFooter({ text: 'Vortex - Dados do Servidor' });
 
-    return interaction.editReply({ embeds: [embed] });
+    return safeEdit(interaction, { embeds: [embed] });
   },
 };

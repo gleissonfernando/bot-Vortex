@@ -12,6 +12,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
+const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -64,53 +65,6 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     }
     if (commandName === 'painel') return hasPanelAccess(interaction.member);
     return hasAnyVortexRole(interaction.member);
-}
-
-async function safeReply(interaction, options) {
-    if (interaction.replied || interaction.deferred) {
-        return interaction.followUp(options).catch(() => null);
-    }
-    return interaction.reply(options).catch(() => null);
-}
-
-async function safeEdit(interaction, options) {
-    if (interaction.deferred || interaction.replied) {
-        return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
-    }
-    return interaction.reply(options).catch(() => null);
-}
-
-async function safeDeferReply(interaction, options) {
-    if (interaction.deferred || interaction.replied) return true;
-    try {
-        await interaction.deferReply(options);
-        return true;
-    } catch (error) {
-        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-            return true;
-        }
-        throw error;
-    }
-}
-
-async function safeShowModal(interaction, modal) {
-    if (interaction.deferred || interaction.replied) {
-        return safeReply(interaction, {
-            content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-            ephemeral: true,
-        });
-    }
-    try {
-        return await interaction.showModal(modal);
-    } catch (error) {
-        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-            return safeReply(interaction, {
-                content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-                ephemeral: true,
-            });
-        }
-        throw error;
-    }
 }
 
 async function reportInteractionError(client, error, context = 'Interação') {

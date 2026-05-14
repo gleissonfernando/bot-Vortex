@@ -4,6 +4,7 @@
  */
 
 const { EmbedBuilder } = require('discord.js');
+const { safeReply } = require('./safeReply');
 
 /**
  * Cores padrão para embeds do Vortex
@@ -195,11 +196,7 @@ async function sendMessage(interaction, messageData, ephemeral = false) {
 
         const options = { ...messageData, ephemeral };
 
-        if (interaction.replied || interaction.deferred) {
-            return await interaction.followUp(options);
-        } else {
-            return await interaction.reply(options);
-        }
+        return await safeReply(interaction, options);
     } catch (error) {
         console.error('❌ Erro ao enviar mensagem:', error);
         return null;

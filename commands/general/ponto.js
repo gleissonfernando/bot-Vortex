@@ -7,6 +7,7 @@ const {
   formatDate,
 } = require('../../utils/pontoManager');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
+const { safeReply, safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 function pad(value, size) {
   const text = String(value || '');
@@ -58,17 +59,17 @@ module.exports = {
 
   async execute(interaction) {
     if (!isGerencia(interaction) && !hasCommandRole(interaction.member, 'ponto')) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Você não tem permissão para ver o relatório de ponto.',
         ephemeral: true,
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const points = await listGuildPoints(interaction.guild.id);
     if (points.length === 0) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: 'Nenhum ponto registrado neste servidor ainda.',
       });
     }
@@ -134,6 +135,6 @@ module.exports = {
       name: `relatorio-ponto-${date}.txt`,
     });
 
-    return interaction.editReply({ embeds: [embed], files: [attachment] });
+    return safeEdit(interaction, { embeds: [embed], files: [attachment] });
   },
 };

@@ -2,6 +2,7 @@ const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBu
 const fs = require('fs');
 const path = require('path');
 const { formatDate } = require('./pontoManager');
+const { safeReply, safeEdit, safeDeferReply } = require('./safeReply');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const QUEUED_CHANNEL_LOGS_PATH = path.join(__dirname, '..', 'commands', 'queuedChannelLogs.json');
@@ -307,34 +308,16 @@ async function setChannelLogsEnabled(client, enabled, actorId = null, reason = '
 async function handleReenableChannelLogsButton(interaction) {
     const conf = readConfig();
     const replyOptions = (content) => interaction.guild ? { content, ephemeral: true } : { content };
-    const safeReply = (options) => {
-        if (interaction.replied || interaction.deferred) return interaction.followUp(options).catch(() => null);
-        return interaction.reply(options).catch(() => null);
-    };
-    const safeEdit = (options) => {
-        if (interaction.replied || interaction.deferred) return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
-        return safeReply(options);
-    };
-    const safeDefer = async (options) => {
-        if (interaction.replied || interaction.deferred) return true;
-        try {
-            await interaction.deferReply(options);
-            return true;
-        } catch (error) {
-            if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
-            throw error;
-        }
-    };
     if (conf.DISABLE_CHANNEL_LOGS !== true) {
-        return safeReply(replyOptions('✅ O canal de logs já está ligado.'));
+        return safeReply(interaction, replyOptions('✅ O canal de logs já está ligado.'));
     }
     if (String(conf.CHANNEL_LOGS_DISABLED_BY || '') !== String(interaction.user.id)) {
-        return safeReply(replyOptions('❌ Apenas quem desativou os logs pode usar este botão.'));
+        return safeReply(interaction, replyOptions('❌ Apenas quem desativou os logs pode usar este botão.'));
     }
 
-    await safeDefer(interaction.guild ? { ephemeral: true } : {});
+    await safeDeferReply(interaction, interaction.guild ? { ephemeral: true } : {});
     const result = await setChannelLogsEnabled(interaction.client, true, interaction.user.id, 'botao_dm');
-    return safeEdit({ content: `✅ Canal de logs religado. Logs reenviados: ${result.replayed}.` });
+    return safeEdit(interaction, { content: `✅ Canal de logs religado. Logs reenviados: ${result.replayed}.` });
 }
 
 async function runChannelLogRecoveryTick(client) {

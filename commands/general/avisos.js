@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const { hasAnyVortexRole, hasVortexLevel, hasCommandRole } = require('../../utils/permissions');
 const { sendVortexLog } = require('../../utils/notifications');
+const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const NOTICE_FIXED_ROLE_IDS = [
@@ -280,49 +281,6 @@ async function sendDmBatch(users, payloads) {
   }
 
   return { sent, failed, total: users.length };
-}
-
-async function safeReply(interaction, options) {
-  if (interaction.replied || interaction.deferred) {
-    return interaction.followUp(options).catch(() => null);
-  }
-  return interaction.reply(options).catch(() => null);
-}
-
-async function safeDeferReply(interaction, options) {
-  if (interaction.replied || interaction.deferred) return true;
-  try {
-    await interaction.deferReply(options);
-    return true;
-  } catch (error) {
-    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
-    throw error;
-  }
-}
-
-async function safeEdit(interaction, options) {
-  if (interaction.replied || interaction.deferred) {
-    return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
-  }
-  return safeReply(interaction, options);
-}
-
-async function safeShowModal(interaction, modal) {
-  if (interaction.replied || interaction.deferred) {
-    return safeReply(interaction, {
-      content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-      ephemeral: true,
-    });
-  }
-  return interaction.showModal(modal).catch((error) => {
-    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-      return safeReply(interaction, {
-        content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-        ephemeral: true,
-      });
-    }
-    throw error;
-  });
 }
 
 module.exports = {

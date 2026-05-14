@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { safeReply } = require('../../utils/safeReply');
 
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
@@ -145,7 +146,7 @@ module.exports = {
     .setDescription('Abre o painel para solicitar ou retirar ausência.'),
 
   async execute(interaction) {
-    return interaction.reply(buildAbsencePanel(interaction));
+    return safeReply(interaction, buildAbsencePanel(interaction));
   },
 
   buildAbsenceModal,

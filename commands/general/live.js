@@ -19,6 +19,7 @@ const {
   setLiveLink,
 } = require('../../utils/liveAlertManager');
 const { hasCommandRole } = require('../../utils/permissions');
+const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
 
 const CUSTOM_IDS = {
   set: 'live_alert_set_link',
@@ -84,49 +85,6 @@ function buildLinkModal() {
     .setCustomId(CUSTOM_IDS.modal)
     .setTitle('Adicionar link de live')
     .addComponents(new ActionRowBuilder().addComponents(input));
-}
-
-async function safeReply(interaction, options) {
-  if (interaction.replied || interaction.deferred) {
-    return interaction.followUp(options).catch(() => null);
-  }
-  return interaction.reply(options).catch(() => null);
-}
-
-async function safeDeferReply(interaction, options) {
-  if (interaction.replied || interaction.deferred) return true;
-  try {
-    await interaction.deferReply(options);
-    return true;
-  } catch (error) {
-    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
-    throw error;
-  }
-}
-
-async function safeEdit(interaction, options) {
-  if (interaction.replied || interaction.deferred) {
-    return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
-  }
-  return safeReply(interaction, options);
-}
-
-async function safeShowModal(interaction, modal) {
-  if (interaction.replied || interaction.deferred) {
-    return safeReply(interaction, {
-      content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-      ephemeral: true,
-    });
-  }
-  return interaction.showModal(modal).catch((error) => {
-    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-      return safeReply(interaction, {
-        content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
-        ephemeral: true,
-      });
-    }
-    throw error;
-  });
 }
 
 module.exports = {

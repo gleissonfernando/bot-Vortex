@@ -8,6 +8,7 @@ const {
 } = require('../../utils/profileManager');
 const { getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../../utils/approvedSetChannels');
 const { hasVortexLevel } = require('../../utils/permissions');
+const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 async function sendMissingProfileDm(user, guild) {
   const embed = new EmbedBuilder()
@@ -72,7 +73,7 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const link = interaction.options.getString('link');
@@ -90,13 +91,13 @@ module.exports = {
     const isApprovedSetChannelOwner = approvedSetChannelRecord?.userId === interaction.user.id;
 
     if (!requesterProfile && !isApprovedSetChannelOwner && !canManageProfiles) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Você precisa ter cadastro no /perfil ou estar no seu canal criado pelo /set para usar este comando.',
       });
     }
 
     if (target.id !== interaction.user.id && !canManageProfiles) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Você só pode consultar ou atualizar o seu próprio perfil.',
       });
     }
@@ -106,7 +107,7 @@ module.exports = {
       const isImageUpload = Boolean(photo?.contentType?.startsWith('image/'));
       const isVideoUpload = Boolean(photo?.contentType?.startsWith('video/'));
       if (photo && !isImageUpload && !isVideoUpload) {
-        return interaction.editReply({ content: '❌ O upload precisa ser uma imagem ou vídeo.' });
+        return safeEdit(interaction, { content: '❌ O upload precisa ser uma imagem ou vídeo.' });
       }
       const imageUrl = photo?.url || link;
       const result = await updateProfileLink(
@@ -119,9 +120,9 @@ module.exports = {
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
           await sendMissingProfileDm(target, interaction.guild);
-          return interaction.editReply({ content: '❌ Usuário não possui cadastro.' });
+          return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });
         }
-        return interaction.editReply({ content: `❌ ${result.message}` });
+        return safeEdit(interaction, { content: `❌ ${result.message}` });
       }
     }
 
@@ -131,9 +132,9 @@ module.exports = {
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
           await sendMissingProfileDm(target, interaction.guild);
-          return interaction.editReply({ content: '❌ Usuário não possui cadastro.' });
+          return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });
         }
-        return interaction.editReply({ content: `❌ ${result.message}` });
+        return safeEdit(interaction, { content: `❌ ${result.message}` });
       }
     }
 
@@ -142,7 +143,7 @@ module.exports = {
       || await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
     if (!profile) {
       await sendMissingProfileDm(target, interaction.guild);
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Usuário não possui cadastro.',
       });
     }
@@ -154,6 +155,6 @@ module.exports = {
       profile,
     });
 
-    return interaction.editReply({ embeds: [embed] });
+    return safeEdit(interaction, { embeds: [embed] });
   },
 };

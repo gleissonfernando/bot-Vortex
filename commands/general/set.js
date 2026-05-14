@@ -9,6 +9,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const { isRegisteredUser, hasCommandRole, denyNotRegistered } = require('../../utils/permissions');
+const { safeReply } = require('../../utils/safeReply');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -72,6 +73,6 @@ module.exports = {
             options.files = [new AttachmentBuilder(bannerPath)];
         }
 
-        await interaction.reply(options);
+        await safeReply(interaction, options);
     }
 };

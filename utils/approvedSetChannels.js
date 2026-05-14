@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { logger } = require('./logger');
+const { safeReply, safeUpdate } = require('./safeReply');
 
 const APPROVED_SET_CATEGORY_ID = '1460410814744887531';
 const APPROVED_SET_CHANNELS_PATH = path.join(__dirname, '..', 'commands', 'approvedSetChannels.json');
@@ -286,23 +287,6 @@ function buildGuideRow(step = 1) {
 }
 
 async function handleApprovedChannelGuide(interaction) {
-  const safeReply = (options) => {
-    if (interaction.replied || interaction.deferred) {
-      return interaction.followUp(options).catch(() => null);
-    }
-    return interaction.reply(options).catch(() => null);
-  };
-  const safeUpdate = (options) => {
-    if (interaction.replied || interaction.deferred) {
-      return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
-    }
-    return interaction.update(options).catch((error) => {
-      if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-        return safeReply({ content: '❌ Essa interação já foi processada.', ephemeral: true });
-      }
-      throw error;
-    });
-  };
   const data = readChannels();
   const guildRecords = data[interaction.guildId] || {};
   const record = Object.values(guildRecords).find((item) => item.channelId === interaction.channelId);
@@ -311,7 +295,7 @@ async function handleApprovedChannelGuide(interaction) {
       content: `Esse tutorial pertence a <@${record.userId}>. Peça para ele olhar o canal de meta dele: <#${record.channelId}>.`,
       allowedMentions: { users: [record.userId] },
     }).catch(() => null);
-    return safeReply({
+    return safeReply(interaction, {
       content: '❌ Apenas o dono deste canal pode usar os botões do tutorial.',
       ephemeral: true,
     });
@@ -336,7 +320,7 @@ async function handleApprovedChannelGuide(interaction) {
   }
 
   const step = Number(interaction.customId.replace('approved_channel_guide_', ''));
-  return safeUpdate({
+  return safeUpdate(interaction, {
     embeds: [buildGuideEmbed(interaction.user.id, step)],
     components: [buildGuideRow(step)],
   });

@@ -10,6 +10,7 @@ const config = require('./config/config');
 const { logger } = require('./utils/logger');
 const { setDiscordClient } = require('./utils/dashboardClient');
 const { notifyError, notifyBotDown, sendVortexLog, initChannelLogRecovery } = require('./utils/notifications');
+const { setupErrorHandlers } = require('./src/events/errorHandler');
 const { initStatusPanel } = require('./utils/pontoPanel');
 const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
@@ -42,6 +43,7 @@ const client = new Client({
 
 client.commands = new Collection();
 setDiscordClient(client);
+setupErrorHandlers(client, { notifyError, notifyBotDown });
 
 app.get('/health', (req, res) => {
     res.json({ ok: true, service: 'vortex-bot' });
@@ -263,19 +265,6 @@ client.once(Events.ClientReady, async () => {
         color: '#57F287',
         type: 'SISTEMA'
     });
-});
-
-// Blindagem contra Crashes
-process.on('unhandledRejection', (reason) => {
-    console.error('[VORTEX CRITICAL] Rejeição não tratada:', reason);
-    notifyError(client, reason, 'Unhandled Rejection');
-    notifyBotDown(client, reason, 'Unhandled Rejection');
-});
-
-process.on('uncaughtException', (error) => {
-    console.error('[VORTEX CRITICAL] Exceção não capturada:', error.message);
-    notifyError(client, error, 'Uncaught Exception');
-    notifyBotDown(client, error, 'Uncaught Exception');
 });
 
 process.on('SIGINT', () => {

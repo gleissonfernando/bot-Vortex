@@ -19,6 +19,13 @@ const path = require('path');
 const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
 const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { setOnlineChannelAccess, updateStatusPanel } = require('../../utils/pontoPanel');
+const {
+  safeReply,
+  safeEdit,
+  safeDeferReply,
+  safeShowModal,
+  safeUpdate: safeInteractionUpdate,
+} = require('../../utils/safeReply');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const {
@@ -162,31 +169,6 @@ function formatChannelList(channelIds, emptyText = '`Nenhum canal desativado`') 
     return ids.length ? ids.map(id => `<#${id}>`).join('\n').slice(0, 1024) : emptyText;
 }
 
-async function safeReply(interaction, options) {
-    if (interaction.replied || interaction.deferred) {
-        return interaction.followUp(options).catch(() => null);
-    }
-    return interaction.reply(options).catch(() => null);
-}
-
-async function safeShowModal(interaction, modal) {
-    if (interaction.replied || interaction.deferred) {
-        return safeReply(interaction, {
-            content: '❌ Essa interação já foi processada. Clique no botão novamente para abrir o formulário.',
-            ephemeral: true,
-        });
-    }
-    return interaction.showModal(modal).catch((error) => {
-        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
-            return safeReply(interaction, {
-                content: '❌ Essa interação já foi processada. Clique no botão novamente para abrir o formulário.',
-                ephemeral: true,
-            });
-        }
-        throw error;
-    });
-}
-
 function isUnknownInteractionError(error) {
     return error?.code === 10062 || error?.rawError?.code === 10062;
 }
@@ -195,7 +177,7 @@ async function safeUpdate(interaction, options) {
     const { ephemeral, ...updateOptions } = options;
     if (interaction.replied || interaction.deferred) {
         try {
-            return await interaction.editReply(options);
+            return await safeEdit(interaction, options);
         } catch (error) {
             try {
                 return await interaction.followUp(options);
@@ -205,11 +187,11 @@ async function safeUpdate(interaction, options) {
         }
     }
     try {
-        return await interaction.update(updateOptions);
+        return await safeInteractionUpdate(interaction, updateOptions);
     } catch (error) {
         if (isUnknownInteractionError(error)) return null;
         try {
-            return await interaction.reply(options);
+            return await safeReply(interaction, options);
         } catch (replyError) {
             if (isUnknownInteractionError(replyError)) return null;
             throw error;
@@ -398,7 +380,7 @@ module.exports = {
     }
 
     if (customId === 'show_all_points') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const payload = await buildAllPointsReportPayload(interaction.guild);
 
       sendVortexLog(interaction.client, {
@@ -409,20 +391,20 @@ module.exports = {
           userId: interaction.user.id
       }).catch(() => {});
 
-      return interaction.editReply(payload);
+      return safeEdit(interaction, payload);
     }
 
     if (customId === 'show_user_point_sheet') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
 
       const target = await interaction.client.users.fetch(userId).catch(() => null);
-      if (!target) return interaction.editReply({ content: '❌ Não consegui encontrar esse usuário.' });
+      if (!target) return safeEdit(interaction, { content: '❌ Não consegui encontrar esse usuário.' });
 
       const data = await getUserPoint(interaction.guild.id, userId).catch(() => null);
       if (!data || (!data.activePointStartedAt && !Array.isArray(data.sessions))) {
-        return interaction.editReply({ content: `❌ <@${userId}> ainda não possui ponto registrado.` });
+        return safeEdit(interaction, { content: `❌ <@${userId}> ainda não possui ponto registrado.` });
       }
 
       const member = await interaction.guild.members.fetch(userId).catch(() => null);
@@ -439,7 +421,7 @@ module.exports = {
         userId: interaction.user.id,
       }).catch(() => {});
 
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: `✅ Folha/transcript de <@${userId}> gerada em arquivo.`,
         files,
         allowedMentions: { users: [userId] },
@@ -459,18 +441,18 @@ module.exports = {
     }
 
     if (customId === 'run_point_automation') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       await runPointAutomationCheck(interaction.client, { force: true });
-      return interaction.editReply({ content: '✅ Verificação de ponto, perfil e cobranças executada agora.' });
+      return safeEdit(interaction, { content: '✅ Verificação de ponto, perfil e cobranças executada agora.' });
     }
 
     if (customId === 'close_selected_point') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
       const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId];
       if (!pointData?.activePointStartedAt) {
-        return interaction.editReply({ content: `❌ <@${userId}> não está com ponto aberto.` });
+        return safeEdit(interaction, { content: `❌ <@${userId}> não está com ponto aberto.` });
       }
       const confirmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -482,7 +464,7 @@ module.exports = {
           .setLabel('Cancelar')
           .setStyle(ButtonStyle.Secondary)
       );
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: [
           '⚠️ Confirme o fechamento manual do ponto.',
           `Usuário: <@${userId}>`,
@@ -495,9 +477,9 @@ module.exports = {
     }
 
     if (customId === 'delete_point_correction_channel') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
       const deleted = await deletePointCorrectionChannels(interaction.client, interaction.guild, userId, interaction.user.id);
 
       sendVortexLog(interaction.client, {
@@ -512,7 +494,7 @@ module.exports = {
         userId: interaction.user.id,
       }).catch(() => {});
 
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: deleted.length
           ? `✅ Call/canal de ajuste de <@${userId}> deletado. Total: ${deleted.length}.`
           : `⚠️ Nenhuma call/canal de ajuste encontrada para <@${userId}>.`,
@@ -520,13 +502,13 @@ module.exports = {
     }
 
     if (customId === 'clear_point_no_billing') {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
 
       const existed = await deleteUserPoint(interaction.guild.id, userId);
       const exempt = addBillingExemptUserId(userId, interaction.user.id);
-      if (!exempt.ok) return interaction.editReply({ content: `❌ ${exempt.message}` });
+      if (!exempt.ok) return safeEdit(interaction, { content: `❌ ${exempt.message}` });
 
       await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
       await updateStatusPanel(interaction.client, interaction.guild.id);
@@ -543,7 +525,7 @@ module.exports = {
         userId: interaction.user.id,
       }).catch(() => {});
 
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: [
           existed
             ? `✅ Dados de ponto de <@${userId}> deletados.`
@@ -558,13 +540,13 @@ module.exports = {
     }
 
     if (customId.startsWith('confirm_close_point_')) {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const userId = customId.replace('confirm_close_point_', '');
       const pointBeforeClose = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId] || {};
       const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
       const result = await closePoint(interaction.guild.id, userId);
       if (result.action === 'already_closed') {
-        return interaction.editReply({ content: `❌ <@${userId}> não está com ponto aberto.` });
+        return safeEdit(interaction, { content: `❌ <@${userId}> não está com ponto aberto.` });
       }
       await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
       await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
@@ -602,7 +584,7 @@ module.exports = {
         type: 'PONTO',
         userId: interaction.user.id,
       }).catch(() => {});
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: [
           `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.`,
           correctionChannel ? `Canal de correção: <#${correctionChannel.id}>` : 'Canal de correção: não criado.',
@@ -813,7 +795,7 @@ module.exports = {
     }
 
     if (customId === 'live_stream_check_now') {
-        await interaction.deferReply({ ephemeral: true });
+        await safeDeferReply(interaction, { ephemeral: true });
         const result = await checkUserTwitchLinks(interaction.client, interaction.guild.id, null, {
             sendIfOnline: true,
         }).catch((error) => ({
@@ -828,7 +810,7 @@ module.exports = {
             sent: 0,
         }));
 
-        return interaction.editReply({
+        return safeEdit(interaction, {
             content: [
                 result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
                 `Resultado: ${result.message}`,
@@ -1039,10 +1021,10 @@ module.exports = {
     }
 
     if (customId === 'profile_delete_no_billing') {
-        await interaction.deferReply({ ephemeral: true });
+        await safeDeferReply(interaction, { ephemeral: true });
         const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
         const userId = selected.userId;
-        if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
+        if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
 
         const result = await deleteUserProfile(
             interaction.guild,
@@ -1065,7 +1047,7 @@ module.exports = {
             userId: interaction.user.id
         }).catch(() => {});
 
-        return interaction.editReply({
+        return safeEdit(interaction, {
             content: [
                 result.deleted
                     ? `✅ Cadastro de <@${userId}> apagado.`
@@ -1092,13 +1074,13 @@ module.exports = {
     }
 
     if (customId === 'profile_list_registered') {
-        await interaction.deferReply({ ephemeral: true });
+        await safeDeferReply(interaction, { ephemeral: true });
         const profiles = getGuildProfiles(interaction.guild.id);
         const report = buildRegisteredProfilesReport(interaction.guild, profiles);
         const file = new AttachmentBuilder(Buffer.from(report, 'utf8'), {
             name: `usuarios-cadastrados-${interaction.guild.id}.txt`,
         });
-        return interaction.editReply({
+        return safeEdit(interaction, {
             content: `✅ Relatório gerado com **${Object.keys(profiles).length}** usuários cadastrados.`,
             files: [file],
         });
@@ -1297,11 +1279,11 @@ module.exports = {
     
     const data = loadJSON(CONFIG_PATH);
     if (interaction.customId === 'modal_live_stream_add') {
-        await interaction.deferReply({ ephemeral: true });
+        await safeDeferReply(interaction, { ephemeral: true });
         const url = interaction.fields.getTextInputValue('live_url').trim();
 
         if (!isValidLiveUrl(url)) {
-            return interaction.editReply({ content: '❌ Envie um link válido começando com `http://` ou `https://`.' });
+            return safeEdit(interaction, { content: '❌ Envie um link válido começando com `http://` ou `https://`.' });
         }
 
         const twitchLogin = parseTwitchLogin(url);
@@ -1317,7 +1299,7 @@ module.exports = {
             userId: interaction.user.id
         }).catch(() => {});
 
-        return interaction.editReply({
+        return safeEdit(interaction, {
             content: termsAccepted
                 ? `✅ Live Stream cadastrada. Quando o canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`
                 : `✅ Live Stream cadastrada, mas o monitor só libera alertas depois do aceite dos termos: ${buildLiveTermsUrl(interaction.guild.id, interaction.user.id)}`,

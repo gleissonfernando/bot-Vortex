@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { safeReply } = require('./safeReply');
 const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 
 function normalizeIds(list) {
@@ -83,7 +84,7 @@ function isGerencia(interaction) {
 }
 
 async function denyNotRegistered(interaction) {
-    return interaction.reply({
+    return safeReply(interaction, {
         content: '❌ Você não está cadastrado no sistema.',
         ephemeral: true
     });
