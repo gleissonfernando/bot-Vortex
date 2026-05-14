@@ -14,6 +14,7 @@ const { getActiveGuildAbsences } = require('./ausenciaManager');
 const { logger } = require('./logger');
 const { sendVortexLog } = require('./notifications');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
+const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -268,6 +269,10 @@ function getPointCycleStartMs(point, item) {
 async function closeUnconfirmedPoint(client, guild, point, item, state, key, reason) {
   const { closePoint } = require('./pontoManager');
   const result = await closePoint(guild.id, point.userId).catch(() => null);
+  if (result?.action === 'closed') {
+    await setOnlineChannelAccess(client, guild.id, point.userId, false).catch(() => null);
+    await updateStatusPanel(client, guild.id).catch(() => null);
+  }
   const embed = new EmbedBuilder()
     .setColor('#ED4245')
     .setTitle('Ponto fechado automaticamente')

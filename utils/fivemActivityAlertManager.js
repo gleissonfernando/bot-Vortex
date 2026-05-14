@@ -23,6 +23,12 @@ const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
 
+async function syncPointOnlineChannel(client, guildId, userId, allowed) {
+  const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
+  await setOnlineChannelAccess(client, guildId, userId, allowed).catch(() => null);
+  await updateStatusPanel(client, guildId).catch(() => null);
+}
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -170,6 +176,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
     const cityName = extractCityName(newTargetActivity);
     const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, member, newTargetActivity, cityName));
     if (result.action !== 'opened') return;
+    await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
 
     await user.send({
       embeds: [
@@ -199,6 +206,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
     activityState: oldTargetActivity?.state || point.activePointActivityState || null,
   });
   if (result.action !== 'closed') return;
+  await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
 
   await user.send({
     embeds: [
@@ -331,6 +339,7 @@ async function scanCurrentFiveMActivities(client) {
       const result = await openPoint(guild.id, presence.user.id, buildAutoPointProfile(presence.user, member, activity, cityName)).catch(() => null);
       if (result?.action === 'opened') {
         results.push({ guildId: guild.id, userId: presence.user.id });
+        await syncPointOnlineChannel(client, guild.id, presence.user.id, true);
         await presence.user.send({
           embeds: [
             new EmbedBuilder()
@@ -360,6 +369,7 @@ async function scanCurrentFiveMActivities(client) {
 
       if (result?.action !== 'closed') continue;
       results.push({ guildId: guild.id, userId: point.userId, action: 'closed_not_detected' });
+      await syncPointOnlineChannel(client, guild.id, point.userId, false);
 
       const user = await client.users.fetch(point.userId).catch(() => null);
       await user?.send({

@@ -17,6 +17,42 @@ const ALERT_DM_USER_IDS = [
     '289227932432334869',
     '761011766440230932',
 ];
+const MAX_LOG_DESCRIPTION_LENGTH = 3500;
+
+function trimText(value, maxLength = MAX_LOG_DESCRIPTION_LENGTH) {
+    const text = String(value || '').trim();
+    if (text.length <= maxLength) return text || 'Evento registrado.';
+    return `${text.slice(0, Math.max(0, maxLength - 30))}\n\n...conteudo cortado por tamanho.`;
+}
+
+function buildAllowedMentions(allowUserIds = []) {
+    return {
+        parse: [],
+        users: Array.isArray(allowUserIds) ? allowUserIds.map(String).filter(Boolean) : [],
+        roles: [],
+    };
+}
+
+async function sendEmbedToTextChannel(channel, embed, files = []) {
+    if (!channel?.isTextBased?.()) return false;
+    const payload = {
+        embeds: [embed],
+        allowedMentions: buildAllowedMentions(),
+    };
+    if (files.length) payload.files = files;
+    const sent = await channel.send(payload).then(() => true).catch(async () => {
+        return channel.send({ embeds: [embed], allowedMentions: buildAllowedMentions() }).then(() => true).catch(() => false);
+    });
+    return sent;
+}
+
+async function sendEmbedToUser(user, embed, allowUserIds = []) {
+    if (!user) return false;
+    return user.send({
+        embeds: [embed],
+        allowedMentions: buildAllowedMentions(allowUserIds),
+    }).then(() => true).catch(() => false);
+}
 
 function getLogChannelId() {
     return readConfig().LOG_CHANNEL || FIXED_LOG_CHANNEL;
@@ -118,23 +154,27 @@ function syncStoredLogChannel() {
 
 function buildLogEmbed(client, { title, description, color = '#7000FF', type = 'LOG', timestamp = null }) {
     const iconURL = client.user?.displayAvatarURL?.() || null;
-    const author = { name: `VORTEX | ${type}` };
+    const normalizedType = String(type || 'LOG').toUpperCase();
+    const eventTime = timestamp ? new Date(timestamp) : new Date();
+    const author = { name: `VORTEX | ${normalizedType}` };
     if (iconURL) author.iconURL = iconURL;
 
     return new EmbedBuilder()
         .setAuthor(author)
-        .setTitle(`LOG | ${String(title).toUpperCase()}`)
+        .setTitle(String(title || 'Evento registrado').slice(0, 256))
         .setColor(color)
-        .setDescription(String(description || 'Evento registrado.'))
-        .setTimestamp(timestamp ? new Date(timestamp) : new Date())
-        .setFooter({ text: 'Vortex Management System - Monitoramento' });
+        .setDescription(trimText(description))
+        .addFields(
+            { name: 'Tipo', value: `\`${normalizedType}\``, inline: true },
+            { name: 'Horário real', value: formatDate(eventTime), inline: true }
+        )
+        .setTimestamp(eventTime)
+        .setFooter({ text: 'Vortex Management System - Logs e Monitoramento' });
 }
 
 async function sendFixedChannelEmbed(client, embed) {
     const channel = await client.channels.fetch(FIXED_LOG_CHANNEL).catch(() => null);
-    if (!channel?.isTextBased?.()) return false;
-    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => null);
-    return true;
+    return sendEmbedToTextChannel(channel, embed);
 }
 
 async function queueDisabledChannelLog(client, payload) {
@@ -153,7 +193,7 @@ async function queueDisabledChannelLog(client, payload) {
             ].join('\n'),
             timestamp: queuedAt,
         });
-        await user.send({ embeds: [embed] }).catch(() => null);
+        await sendEmbedToUser(user, embed);
     }
 }
 
@@ -172,7 +212,7 @@ async function flushQueuedChannelLogs(client) {
                 .setDescription(`Reenviando **${queued.length}** log(s) acumulado(s) enquanto o canal de logs estava desligado.`)
                 .setTimestamp(),
         ],
-        allowedMentions: { parse: [] },
+        allowedMentions: buildAllowedMentions(),
     }).catch(() => null);
 
     let sent = 0;
@@ -186,7 +226,7 @@ async function flushQueuedChannelLogs(client) {
             ].join('\n'),
             timestamp: item.queuedAt,
         });
-        const ok = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).then(() => true).catch(() => false);
+        const ok = await sendEmbedToTextChannel(channel, embed);
         if (ok) sent += 1;
     }
 
@@ -215,6 +255,7 @@ async function notifyChannelLogsDisabled(client, disabledBy) {
         await user.send({
             embeds: [embed],
             components: [buildReenableLogButtonRow()],
+            allowedMentions: buildAllowedMentions([disabledBy]),
         }).catch(() => null);
     }
 }
@@ -290,8 +331,14 @@ async function runChannelLogRecoveryTick(client) {
         writeConfig(conf);
         if (user) {
             await user.send({
-                content: '⚠️ Você desativou o canal de logs. Reative assim que possível.',
+                content: [
+                    '⚠️ O canal de logs continua desativado.',
+                    '',
+                    'Enquanto isso, os registros ficam guardados em fila e alguns alertas são enviados por DM.',
+                    'Use o botão abaixo para religar e reenviar os logs acumulados.',
+                ].join('\n'),
                 components: [buildReenableLogButtonRow()],
+                allowedMentions: buildAllowedMentions(),
             }).catch(() => null);
         }
         return true;
@@ -335,10 +382,7 @@ async function sendVortexLog(client, { title, description, color = '#7000FF', ty
         try {
             const channel = await client.channels.fetch(logChannelId).catch(() => null);
             if (channel?.isTextBased?.()) {
-                await channel.send({
-                    embeds: [embed],
-                    files: files.length ? files : undefined,
-                }).catch(() => channel.send({ embeds: [embed] }).catch(() => {}));
+                await sendEmbedToTextChannel(channel, embed, files);
             }
         } catch (error) {}
     } else {
@@ -348,14 +392,14 @@ async function sendVortexLog(client, { title, description, color = '#7000FF', ty
     if (userId && !dmLogsDisabled) {
         try {
             const user = await client.users.fetch(userId).catch(() => null);
-            if (user) await user.send({ embeds: [embed] }).catch(() => {});
+            if (user) await sendEmbedToUser(user, embed, [userId]);
         } catch (error) {}
     }
 
     if (!dmLogsDisabled && (type === 'ALERTA' || type === 'MANUTENCAO' || type === 'MANUTENÇÃO')) {
         try {
             const superior = await client.users.fetch(SUPERIOR_ID).catch(() => null);
-            if (superior) await superior.send({ embeds: [embed] }).catch(() => {});
+            if (superior) await sendEmbedToUser(superior, embed, [SUPERIOR_ID]);
         } catch (error) {}
     }
 
@@ -372,16 +416,20 @@ async function sendAlertDm(client, { title, description, color = '#FF0055', type
 
     const embed = new EmbedBuilder()
         .setAuthor(author)
-        .setTitle(String(title || 'Alerta do Bot'))
+        .setTitle(String(title || 'Alerta do Bot').slice(0, 256))
         .setColor(color)
-        .setDescription(String(description || 'Evento critico detectado.'))
+        .setDescription(trimText(description || 'Evento crítico detectado. Verifique os logs do servidor.'))
+        .addFields(
+            { name: 'Prioridade', value: '`ALTA`', inline: true },
+            { name: 'Horário real', value: formatDate(new Date()), inline: true }
+        )
         .setTimestamp()
         .setFooter({ text: 'Vortex Management System - Alerta DM' });
 
     await Promise.allSettled(
         ALERT_DM_USER_IDS.map(async (userId) => {
             const user = await client.users.fetch(userId).catch(() => null);
-            if (user) await user.send({ embeds: [embed] }).catch(() => {});
+            if (user) await sendEmbedToUser(user, embed, [userId]);
         })
     );
 
@@ -394,9 +442,12 @@ async function notifyBotDown(client, reason, context = 'Bot caiu') {
         : String(reason || 'Motivo não informado');
 
     const description = [
-        '**Status:** alerta de queda/erro critico',
+        '**Status:** alerta de queda/erro crítico',
         `**Contexto:** ${context}`,
-        `**Horario real:** ${formatDate(new Date())}`,
+        `**Horário real:** ${formatDate(new Date())}`,
+        '',
+        '**Ação recomendada:**',
+        'Verifique o stack trace abaixo, reinicie o processo se ele não voltar sozinho e confira o canal de logs.',
         '',
         '**Detalhes:**',
         `\`\`\`js\n${reasonText.slice(0, 1500)}\n\`\`\``,
@@ -426,10 +477,16 @@ async function sendUpdateLog(client, title, description, color = '#00D9FF') {
 }
 
 async function notifyError(client, error, context = '') {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? (error.stack || error.message) : String(error);
     return sendVortexLog(client, {
         title: 'ERRO NO SISTEMA',
-        description: `**Contexto:** ${context || 'N/A'}\n**Erro:** \`\`\`js\n${errorMessage}\n\`\`\``,
+        description: [
+            `**Contexto:** ${context || 'N/A'}`,
+            `**Horário real:** ${formatDate(new Date())}`,
+            '',
+            '**Erro:**',
+            `\`\`\`js\n${String(errorMessage).slice(0, 2500)}\n\`\`\``,
+        ].join('\n'),
         color: '#FF0055',
         type: 'ALERTA',
     });
@@ -438,7 +495,14 @@ async function notifyError(client, error, context = '') {
 async function notifyDmFailure(client, targetLabel, targetId, errorMessage, context = '') {
     return sendVortexLog(client, {
         title: 'Falha ao enviar DM',
-        description: `**Destino:** ${targetLabel} (${targetId})\n**Contexto:** ${context || 'N/A'}\n**Erro:** ${errorMessage}`,
+        description: [
+            `**Destino:** ${targetLabel} (${targetId})`,
+            `**Contexto:** ${context || 'N/A'}`,
+            `**Horário real:** ${formatDate(new Date())}`,
+            '',
+            '**Possível causa:** usuário com DM fechada, bloqueio de privacidade ou ausência de servidor em comum.',
+            `**Erro retornado:** ${errorMessage || 'N/A'}`,
+        ].join('\n'),
         color: '#FFA500',
         type: 'ALERTA',
     });

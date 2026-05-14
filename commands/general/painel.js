@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
 const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
-const { updateStatusPanel } = require('../../utils/pontoPanel');
+const { setOnlineChannelAccess, updateStatusPanel } = require('../../utils/pontoPanel');
 const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const {
@@ -510,6 +510,7 @@ module.exports = {
       const exempt = addBillingExemptUserId(userId, interaction.user.id);
       if (!exempt.ok) return interaction.editReply({ content: `❌ ${exempt.message}` });
 
+      await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
       await updateStatusPanel(interaction.client, interaction.guild.id);
       sendVortexLog(interaction.client, {
         title: 'Ponto deletado e cobrança bloqueada',
@@ -547,6 +548,7 @@ module.exports = {
       if (result.action === 'already_closed') {
         return interaction.editReply({ content: `❌ <@${userId}> não está com ponto aberto.` });
       }
+      await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
       await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
       if (targetUser) {
         await targetUser.send({
