@@ -11,6 +11,8 @@ const PANEL_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const PROFILE_UPDATE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const PROFILE_REMINDER_HOUR = 19;
+const MISSING_PROFILE_ALERT_HOUR = 22;
+const MISSING_PROFILE_ALERT_CHANNEL_ID = '1504613042351116288';
 const PROFILE_TIME_ZONE = 'America/Sao_Paulo';
 const PROFILE_ALERT_ROLE_IDS = [
   '1201235607549124639',
@@ -274,6 +276,11 @@ function canSendScheduledProfileReminder(date = new Date()) {
   return Number.isFinite(hour) && hour >= PROFILE_REMINDER_HOUR;
 }
 
+function canSendMissingProfileAlert(date = new Date()) {
+  const hour = Number(getSaoPauloDateParts(date).hour);
+  return Number.isFinite(hour) && hour >= MISSING_PROFILE_ALERT_HOUR;
+}
+
 async function getUserImages(user) {
   const fetched = await user.fetch?.(true).catch(() => user) || user;
   return {
@@ -365,6 +372,14 @@ async function updateProfileLink(guild, user, link, updatedBy, mediaType = null)
   writeProfiles(data);
   await ensureProfileChannelAccess(guild, profile.callChannelId, user.id).catch(() => null);
   await syncApprovedSetChannel(guild, profile, { reason: 'updateProfileLink' }).catch(() => null);
+  await sendProfileUpdateNotice(guild, profile, {
+    userId: user.id,
+    updatedBy,
+    changes: [
+      `Mídia do perfil atualizada: ${profileUrl}`,
+      `Tipo de mídia: ${profile.profileMediaType || 'link'}`,
+    ],
+  }).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -402,6 +417,13 @@ async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
   data[guild.id][user.id] = profile;
   writeProfiles(data);
   await syncApprovedSetChannel(guild, profile, { reason: 'updateProfileLevel' }).catch(() => null);
+  await sendProfileUpdateNotice(guild, profile, {
+    userId: user.id,
+    updatedBy,
+    changes: [
+      `Nível em game atualizado para: ${normalizedLevel}`,
+    ],
+  }).catch(() => null);
   return { ok: true, profile };
 }
 
@@ -455,7 +477,45 @@ async function registerManualProfile(guild, user, {
   data[guild.id][user.id] = profile;
   writeProfiles(data);
   await syncApprovedSetChannel(guild, profile, { reason: 'registerManualProfile' }).catch(() => null);
+  await sendProfileUpdateNotice(guild, profile, {
+    userId: user.id,
+    updatedBy: registeredBy,
+    changes: [
+      `Perfil cadastrado/atualizado por: ${registeredBy ? `<@${registeredBy}>` : 'sistema'}`,
+      `Nome salvo: ${profile.nomeGame || profile.displayName || 'N/A'}`,
+      `Nível em game: ${profile.nivelGame || 'N/A'}`,
+      `Call/Canal vinculado: ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'}`,
+      profileUrl ? `Mídia salva: ${profileUrl}` : null,
+    ].filter(Boolean),
+  }).catch(() => null);
   return { ok: true, profile };
+}
+
+async function sendProfileUpdateNotice(guild, profile, { userId, updatedBy = null, changes = [] } = {}) {
+  if (!profile?.callChannelId) return false;
+  const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  const targetUserId = String(userId || profile.userId);
+  const embed = new EmbedBuilder()
+    .setColor('#00D9FF')
+    .setTitle('Perfil atualizado')
+    .setDescription([
+      `Perfil de <@${targetUserId}> atualizado no sistema Vortex.`,
+      updatedBy ? `Atualizado por: <@${updatedBy}>` : null,
+      '',
+      changes.length ? changes.map((item) => `• ${item}`).join('\n') : 'Dados do perfil foram atualizados.',
+      '',
+      `Data/hora real: ${formatDate(new Date())}`,
+    ].filter(Boolean).join('\n'))
+    .setTimestamp();
+
+  await channel.send({
+    content: `<@${targetUserId}>`,
+    embeds: [embed],
+    allowedMentions: { users: [targetUserId, updatedBy ? String(updatedBy) : null].filter(Boolean) },
+  });
+  return true;
 }
 
 function buildProfileEmbed({ guild, user, member, profile }) {
@@ -636,6 +696,95 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
   return results;
 }
 
+async function sendMissingProfileDailyAlert(client, { force = false } = {}) {
+  if (!force && !canSendMissingProfileAlert(new Date())) return { sent: false, reason: 'before_22h' };
+
+  const config = readProfileConfig();
+  const todayKey = getSaoPauloDateKey(new Date());
+  const sentByGuild = config.missingProfileAlertSentByGuild || {};
+  const results = [];
+
+  for (const guild of client.guilds.cache.values()) {
+    if (!force && sentByGuild[guild.id] === todayKey) {
+      results.push({ guildId: guild.id, sent: false, reason: 'already_sent_today' });
+      continue;
+    }
+
+    const channel = await client.channels.fetch(MISSING_PROFILE_ALERT_CHANNEL_ID).catch(() => null);
+    if (!channel?.isTextBased?.() || channel.guildId !== guild.id) {
+      results.push({ guildId: guild.id, sent: false, reason: 'missing_channel' });
+      continue;
+    }
+
+    const members = await guild.members.fetch().catch(() => null);
+    if (!members) {
+      results.push({ guildId: guild.id, sent: false, reason: 'missing_members' });
+      continue;
+    }
+
+    const missingMembers = members
+      .filter((member) => !member.user.bot && !getUserProfile(guild.id, member.id))
+      .map((member) => member.user);
+
+    if (!missingMembers.length) {
+      await channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#57F287')
+            .setTitle('Cadastro no sistema')
+            .setDescription([
+              'Todos os membros humanos do servidor possuem cadastro no sistema Vortex.',
+              '',
+              `Verificação diária: ${formatDate(new Date())}`,
+            ].join('\n'))
+            .setTimestamp(),
+        ],
+        allowedMentions: { parse: [] },
+      }).catch(() => null);
+      sentByGuild[guild.id] = todayKey;
+      results.push({ guildId: guild.id, sent: true, missing: 0 });
+      continue;
+    }
+
+    const chunks = chunkArray(missingMembers, 40);
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      const lines = chunk.map((user, index) => `${chunkIndex * 40 + index + 1}. <@${user.id}> - \`${user.id}\``);
+      await channel.send({
+        content: chunk.map((user) => `<@${user.id}>`).join(' '),
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#FEE75C')
+            .setTitle('Usuários sem cadastro no sistema')
+            .setDescription([
+              'Os usuários abaixo ainda não possuem cadastro no sistema Vortex.',
+              '',
+              lines.join('\n'),
+              '',
+              `Total sem cadastro: **${missingMembers.length}**`,
+              `Verificação diária: ${formatDate(new Date())}`,
+            ].join('\n'))
+            .setTimestamp(),
+        ],
+        allowedMentions: {
+          users: chunk.map((user) => String(user.id)),
+          roles: [],
+        },
+      }).catch(() => null);
+    }
+
+    sentByGuild[guild.id] = todayKey;
+    results.push({ guildId: guild.id, sent: true, missing: missingMembers.length });
+  }
+
+  writeProfileConfig({
+    ...config,
+    missingProfileAlertSentByGuild: sentByGuild,
+    missingProfileAlertLastRunAt: new Date().toISOString(),
+  });
+
+  return { sent: results.some((result) => result.sent), results };
+}
+
 async function ensureAllProfileChannelAccess(client) {
   const data = readProfiles();
   for (const [guildId, guildProfiles] of Object.entries(data)) {
@@ -704,8 +853,10 @@ function initProfileManager(client) {
   if (interval) clearInterval(interval);
   ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
   checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no início:', error));
+  sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   interval = setInterval(() => {
     checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis:', error));
+    sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   }, PROFILE_CHECK_INTERVAL_MS);
 }
 
@@ -727,6 +878,7 @@ module.exports = {
   updateProfileLevel,
   buildProfileEmbed,
   checkProfileUpdates,
+  sendMissingProfileDailyAlert,
   parseTestPeriod,
   ensureProfileChannelAccess,
   ensureAllProfileChannelAccess,

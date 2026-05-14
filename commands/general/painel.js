@@ -29,7 +29,7 @@ const {
   readProfileConfig,
   toggleProfileBilling,
   addBillingExemptUserId,
-  removeUserProfileData,
+  deleteUserProfile,
 } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
@@ -139,6 +139,22 @@ function getVortexRoleMode(interaction) {
 function formatRoleList(roleIds, emptyText = '`Nenhum`') {
     const ids = Array.isArray(roleIds) ? roleIds.filter(Boolean).map(String) : [];
     return ids.length ? ids.map(id => `<@&${id}>`).join(' ') : emptyText;
+}
+
+function buildCommandAccessPreview(permissions, limit = 8) {
+    return COMMAND_PERMISSION_OPTIONS.slice(0, limit).map((option) => {
+        const roles = permissions[option.value] || [];
+        return `${option.label}: ${formatRoleList(roles, '`Todos os Cargos Vortex`')}`;
+    }).join('\n');
+}
+
+function buildRegisteredProfilesPreview(profiles, limit = 8) {
+    const list = Object.values(profiles || {});
+    if (!list.length) return 'Nenhum usuário cadastrado no sistema.';
+    return list.slice(0, limit).map((profile, index) => {
+        const name = profile.nomeGame || profile.displayName || 'Sem nome';
+        return `${index + 1}. <@${profile.userId}> - ${name}`;
+    }).join('\n') + (list.length > limit ? `\n... mais ${list.length - limit} cadastro(s).` : '');
 }
 
 function formatChannelList(channelIds, emptyText = '`Nenhum canal desativado`') {
@@ -1008,17 +1024,19 @@ module.exports = {
         const userId = selected.userId;
         if (!userId) return interaction.editReply({ content: '❌ Selecione um usuário primeiro.' });
 
-        const removed = removeUserProfileData(interaction.guild.id, userId);
-        const exempt = addBillingExemptUserId(userId, interaction.user.id);
-        if (!exempt.ok) return interaction.editReply({ content: `❌ ${exempt.message}` });
+        const result = await deleteUserProfile(
+            interaction.guild,
+            userId,
+            `Perfil deletado no /painel por ${interaction.user.tag || interaction.user.id}`
+        );
 
         sendVortexLog(interaction.client, {
-            title: 'Perfil deletado e cobrança bloqueada',
+            title: 'Perfil deletado',
             description: [
                 `Usuário: <@${userId}> (${userId})`,
                 `Gerente: <@${interaction.user.id}>`,
-                `Perfil existia: ${removed.deleted ? 'sim' : 'não'}`,
-                'O usuário foi colocado na lista de isenção de cobranças automáticas.',
+                `Perfil existia: ${result.deleted ? 'sim' : 'não'}`,
+                `Canal deletado: ${result.channelDeleted ? 'sim' : 'não'}`,
             ].join('\n'),
             color: '#FF0055',
             type: 'PERFIL',
@@ -1027,10 +1045,12 @@ module.exports = {
 
         return interaction.editReply({
             content: [
-                removed.deleted
-                    ? `✅ Dados de perfil de <@${userId}> apagados.`
+                result.deleted
+                    ? `✅ Cadastro de <@${userId}> apagado.`
                     : `⚠️ Nenhum perfil salvo encontrado para <@${userId}>.`,
-                '✅ Cobranças automáticas bloqueadas para esse usuário.',
+                result.channelDeleted
+                    ? '✅ Canal/call vinculado deletado.'
+                    : 'ℹ️ Nenhum canal/call vinculado foi deletado.',
             ].join('\n'),
         });
     }
@@ -1553,6 +1573,11 @@ async function renderDashboard(interaction, tab, edit = false) {
 
   if (tab === 'tab_stats') {
     const realtime = await getRealtimeGuildStats(guild);
+    const permissions = ensureCommandPermissions(conf);
+    const profiles = getGuildProfiles(guild.id);
+    const profileList = Object.values(profiles);
+    const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
+    const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
     embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
       .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*\n\n**Como funciona**\nEsta aba mostra os principais números do servidor e o status atual do sistema. Use os botões do painel para navegar entre as áreas administrativas.')
       .addFields(
@@ -1561,7 +1586,9 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Canais / Cargos', value: `${realtime.channelCount} / ${realtime.roleCount}`, inline: true },
         { name: '📋 Fichas', value: String((stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)), inline: true },
         { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true },
-        { name: 'Fonte dos dados', value: realtime.source, inline: true }
+        { name: 'Fonte dos dados', value: realtime.source, inline: true },
+        { name: 'Quem pode usar comandos /', value: buildCommandAccessPreview(permissions, 6).slice(0, 1024), inline: false },
+        { name: 'Cadastrados no sistema', value: `Total: **${profileList.length}** | /set: **${setProfileCount}** | manual: **${manualProfileCount}**\n${buildRegisteredProfilesPreview(profiles, 6).slice(0, 900)}`, inline: false }
       );
   } else if (tab === 'tab_roles') {
     const levels = ensureRoleLevels(conf);
@@ -1922,6 +1949,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Configurar comandos e ações',
         '',
+        '**Quem pode usar os comandos /**',
         'Selecione um comando e depois escolha os cargos que podem usar esse comando.',
         'Se nenhum cargo for selecionado, o comando fica liberado para todos que passarem nas regras internas dele.',
         '',
@@ -1987,7 +2015,10 @@ async function renderDashboard(interaction, tab, edit = false) {
     const profiles = getGuildProfiles(guild.id);
     const profileConfig = readProfileConfig();
     const selectedProfile = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
-    const profileRows = Object.values(profiles).slice(0, 10).map((profile, index) => {
+    const profileList = Object.values(profiles);
+    const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
+    const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
+    const profileRows = profileList.slice(0, 10).map((profile, index) => {
       return `${index + 1}. <@${profile.userId}> - ${profile.nomeGame || profile.displayName || 'Sem nome'} - call ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'} - ultima atualização ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`;
     });
 
@@ -2000,6 +2031,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Também permite cadastrar manualmente pessoas que já estão no Discord.',
         'Cada perfil deve ser atualizado a cada 1 semana usando `/perfil link:<link da foto> nivel:<numero>`.',
         'Os links de mídia ficam salvos no JSON mesmo se o arquivo original for apagado.',
+        `Cadastrados: **${profileList.length}** | aprovados no /set: **${setProfileCount}** | manuais: **${manualProfileCount}**`,
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
@@ -2015,7 +2047,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Ver cadastrados').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('profile_test').setLabel('Testar perfil').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar dados').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar cadastro').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
     extraRows = [

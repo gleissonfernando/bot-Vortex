@@ -80,6 +80,19 @@ async function safeEdit(interaction, options) {
     return interaction.reply(options).catch(() => null);
 }
 
+async function safeDeferReply(interaction, options) {
+    if (interaction.deferred || interaction.replied) return true;
+    try {
+        await interaction.deferReply(options);
+        return true;
+    } catch (error) {
+        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+            return true;
+        }
+        throw error;
+    }
+}
+
 async function reportInteractionError(client, error, context = 'Interação') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
@@ -233,9 +246,9 @@ module.exports = {
 
                     if (interaction.commandName === 'perfil') {
                         const target = interaction.options.getUser('usuario') || interaction.user;
-                        if (target.id !== interaction.user.id && !hasStaffPermission(interaction.member)) {
+                        if (target.id !== interaction.user.id && !hasVortexLevel(interaction.member, ['admin'])) {
                             return safeReply(interaction, {
-                                content: '❌ Você só pode consultar e atualizar o seu próprio perfil.',
+                                content: '❌ Você só pode consultar ou atualizar o seu próprio perfil.',
                                 ephemeral: true,
                             });
                         }
@@ -436,38 +449,40 @@ module.exports = {
 
         if (interaction.isButton() && (interaction.customId.startsWith('ausencia_accept_') || interaction.customId.startsWith('ausencia_reject_'))) {
             if (!hasStaffPermission(member)) {
-                return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+                return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
             }
 
-            await interaction.deferReply({ ephemeral: true });
-            const approved = interaction.customId.startsWith('ausencia_accept_');
-            const userId = interaction.customId.replace(approved ? 'ausencia_accept_' : 'ausencia_reject_', '');
-            const result = approved
-                ? await approveAbsenceRequest(interaction, userId)
-                : await rejectAbsenceRequest(interaction, userId);
+            return runInteractionHandler(interaction, `Ausência botão: ${interaction.customId}`, async () => {
+                await safeDeferReply(interaction, { ephemeral: true });
+                const approved = interaction.customId.startsWith('ausencia_accept_');
+                const userId = interaction.customId.replace(approved ? 'ausencia_accept_' : 'ausencia_reject_', '');
+                const result = approved
+                    ? await approveAbsenceRequest(interaction, userId)
+                    : await rejectAbsenceRequest(interaction, userId);
 
-            if (!result.ok) {
-                return interaction.editReply({ content: `❌ ${result.message}` });
-            }
+                if (!result.ok) {
+                    return safeEdit(interaction, { content: `❌ ${result.message}` });
+                }
 
-            await interaction.message.edit({ components: [] }).catch(() => null);
-            const scheduled = approved && result.absence?.status === 'scheduled';
-            await interaction.channel.send({
-                content: approved
-                    ? (scheduled
-                        ? `✅ Ausência aceita para <@${userId}>. Cargo será aplicado em ${formatAbsenceDate(result.absence.startsAt)}.`
-                        : `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`)
-                    : `❌ Ausência recusada para <@${userId}>. O usuário foi avisado por DM.`,
-                allowedMentions: { parse: [] },
-            }).catch(() => null);
-            setTimeout(() => interaction.channel.delete('Solicitação de ausência concluída.').catch(() => null), 30000);
+                await interaction.message.edit({ components: [] }).catch(() => null);
+                const scheduled = approved && result.absence?.status === 'scheduled';
+                await interaction.channel.send({
+                    content: approved
+                        ? (scheduled
+                            ? `✅ Ausência aceita para <@${userId}>. Cargo será aplicado em ${formatAbsenceDate(result.absence.startsAt)}.`
+                            : `✅ Ausência aceita para <@${userId}>. Cargo aplicado.`)
+                        : `❌ Ausência recusada para <@${userId}>. O usuário foi avisado por DM.`,
+                    allowedMentions: { parse: [] },
+                }).catch(() => null);
+                setTimeout(() => interaction.channel.delete('Solicitação de ausência concluída.').catch(() => null), 30000);
 
-            return interaction.editReply({
-                content: approved
-                    ? (scheduled
-                        ? `✅ Ausência aceita para <@${userId}> e agendada para ${formatAbsenceDate(result.absence.startsAt)}.`
-                        : `✅ Ausência aceita para <@${userId}>.`)
-                    : `❌ Ausência recusada para <@${userId}>.`,
+                return safeEdit(interaction, {
+                    content: approved
+                        ? (scheduled
+                            ? `✅ Ausência aceita para <@${userId}> e agendada para ${formatAbsenceDate(result.absence.startsAt)}.`
+                            : `✅ Ausência aceita para <@${userId}>.`)
+                        : `❌ Ausência recusada para <@${userId}>.`,
+                });
             });
         }
 
@@ -564,6 +579,13 @@ module.exports = {
         // Sistema de Recrutamento (/set)
         if (interaction.isButton() && interaction.customId === 'Vortex_set_start') {
             // Limitação de pedidos simultâneos removida conforme solicitado pelo usuário.
+            const existingProfile = getUserProfile(guild.id, user.id);
+            if (existingProfile) {
+                return safeReply(interaction, {
+                    content: '❌ Você já está cadastrado no sistema Vortex e não pode abrir outro /set.',
+                    ephemeral: true,
+                });
+            }
 
             const select = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
@@ -587,6 +609,12 @@ module.exports = {
 
         if (interaction.isModalSubmit() && interaction.customId.startsWith('Vortex_modal_')) {
             await interaction.deferReply({ ephemeral: true });
+            const existingProfile = getUserProfile(guild.id, user.id);
+            if (existingProfile) {
+                return interaction.editReply({
+                    content: '❌ Você já está cadastrado no sistema Vortex e não pode abrir outro /set.',
+                });
+            }
             const tipo = interaction.customId.split('_')[2];
             const idGame = interaction.fields.getTextInputValue('id_game').trim();
             const nomeGame = interaction.fields.getTextInputValue('nome_game').trim();

@@ -86,7 +86,7 @@ module.exports = {
       interaction.user,
       requesterApprovedRecord || (approvedSetChannelRecord?.userId === interaction.user.id ? approvedSetChannelRecord : null)
     );
-    const canManageProfiles = hasVortexLevel(interaction.member, ['admin', 'medio']);
+    const canManageProfiles = hasVortexLevel(interaction.member, ['admin']);
     const isApprovedSetChannelOwner = approvedSetChannelRecord?.userId === interaction.user.id;
 
     if (!requesterProfile && !isApprovedSetChannelOwner && !canManageProfiles) {
@@ -95,9 +95,9 @@ module.exports = {
       });
     }
 
-    if ((link || photo || nivel) && target.id !== interaction.user.id && !canManageProfiles) {
+    if (target.id !== interaction.user.id && !canManageProfiles) {
       return interaction.editReply({
-        content: '❌ Você só pode atualizar o seu próprio perfil.',
+        content: '❌ Você só pode consultar ou atualizar o seu próprio perfil.',
       });
     }
 
