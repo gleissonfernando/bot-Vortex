@@ -19,6 +19,8 @@ const PROFILE_ALERT_ROLE_IDS = [
 ];
 const MASTER_ROLE_ID = '1497703127074345040';
 const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
+const PROFILE_APPROVED_ROLE_ID = '1201235607549124639';
+const PROFILE_PENDING_ROLE_ID = '1449514118292967578';
 
 let interval = null;
 
@@ -821,6 +823,26 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   const profile = data[guild.id]?.[userId] || null;
   if (!profile) return { ok: false, deleted: false, channelDeleted: false, message: 'Perfil não encontrado.' };
 
+  const member = await guild.members.fetch(userId).catch(() => null);
+  let approvedRoleRemoved = false;
+  let pendingRoleAdded = false;
+  if (member?.roles?.cache) {
+    if (member.roles.cache.has(PROFILE_APPROVED_ROLE_ID)) {
+      await member.roles.remove(PROFILE_APPROVED_ROLE_ID, reason).then(() => {
+        approvedRoleRemoved = true;
+      }).catch((error) => {
+        logger.error('Erro ao remover cargo de aprovado do perfil:', error);
+      });
+    }
+    if (!member.roles.cache.has(PROFILE_PENDING_ROLE_ID)) {
+      await member.roles.add(PROFILE_PENDING_ROLE_ID, reason).then(() => {
+        pendingRoleAdded = true;
+      }).catch((error) => {
+        logger.error('Erro ao adicionar cargo pendente do perfil:', error);
+      });
+    }
+  }
+
   let channelDeleted = false;
   if (profile.callChannelId) {
     const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
@@ -836,7 +858,7 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   if (Object.keys(data[guild.id]).length === 0) delete data[guild.id];
   writeProfiles(data);
 
-  return { ok: true, deleted: true, channelDeleted };
+  return { ok: true, deleted: true, channelDeleted, approvedRoleRemoved, pendingRoleAdded };
 }
 
 function parseTestPeriod(amountInput, unitInput) {

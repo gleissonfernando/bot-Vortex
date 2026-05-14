@@ -1037,6 +1037,8 @@ module.exports = {
                 `Gerente: <@${interaction.user.id}>`,
                 `Perfil existia: ${result.deleted ? 'sim' : 'não'}`,
                 `Canal deletado: ${result.channelDeleted ? 'sim' : 'não'}`,
+                `Cargo aprovado removido: ${result.approvedRoleRemoved ? 'sim' : 'não'}`,
+                `Cargo pendente adicionado: ${result.pendingRoleAdded ? 'sim' : 'não'}`,
             ].join('\n'),
             color: '#FF0055',
             type: 'PERFIL',
@@ -1051,6 +1053,8 @@ module.exports = {
                 result.channelDeleted
                     ? '✅ Canal/call vinculado deletado.'
                     : 'ℹ️ Nenhum canal/call vinculado foi deletado.',
+                result.approvedRoleRemoved ? '✅ Cargo de aprovado removido.' : 'ℹ️ Cargo de aprovado não foi removido.',
+                result.pendingRoleAdded ? '✅ Cargo pendente adicionado.' : 'ℹ️ Cargo pendente não foi adicionado.',
             ].join('\n'),
         });
     }
