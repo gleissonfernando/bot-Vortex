@@ -289,6 +289,42 @@ async function safeReply(interaction, options) {
   return interaction.reply(options).catch(() => null);
 }
 
+async function safeDeferReply(interaction, options) {
+  if (interaction.replied || interaction.deferred) return true;
+  try {
+    await interaction.deferReply(options);
+    return true;
+  } catch (error) {
+    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
+    throw error;
+  }
+}
+
+async function safeEdit(interaction, options) {
+  if (interaction.replied || interaction.deferred) {
+    return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
+  }
+  return safeReply(interaction, options);
+}
+
+async function safeShowModal(interaction, modal) {
+  if (interaction.replied || interaction.deferred) {
+    return safeReply(interaction, {
+      content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+      ephemeral: true,
+    });
+  }
+  return interaction.showModal(modal).catch((error) => {
+    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+      return safeReply(interaction, {
+        content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+        ephemeral: true,
+      });
+    }
+    throw error;
+  });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('avisos')
@@ -354,7 +390,7 @@ module.exports = {
       if (!selectedChannel) {
         return safeReply(interaction, { content: '❌ Selecione um canal de texto antes de enviar o aviso local.', ephemeral: true });
       }
-      return interaction.showModal(buildMessageModal('guild'));
+      return safeShowModal(interaction, buildMessageModal('guild'));
     }
 
     if (interaction.customId === CUSTOM_IDS.direct) {
@@ -362,11 +398,11 @@ module.exports = {
       if (!selectedUser) {
         return safeReply(interaction, { content: '❌ Selecione um usuário antes de enviar o aviso individual.', ephemeral: true });
       }
-      return interaction.showModal(buildMessageModal('direct'));
+      return safeShowModal(interaction, buildMessageModal('direct'));
     }
 
     if (interaction.customId === CUSTOM_IDS.global) {
-      return interaction.showModal(buildMessageModal('global'));
+      return safeShowModal(interaction, buildMessageModal('global'));
     }
 
     return null;
@@ -386,10 +422,10 @@ module.exports = {
     const message = interaction.fields.getTextInputValue('message').trim();
     const scopeLabel = scope === 'global' ? 'Global Vortex' : scope === 'direct' ? 'Individual' : 'Local';
 
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     if (scope === 'global' && loadConfig().DISABLE_NOTICE_DMS === true) {
-      return interaction.editReply({ content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.' });
+      return safeEdit(interaction, { content: '❌ O modo de avisos por DM está desativado. Somente Henri | Duke pode reativar no /painel.' });
     }
 
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
@@ -400,7 +436,7 @@ module.exports = {
     if (scope === 'guild') {
       const selectedChannel = await getSelectedChannel(interaction);
       if (!selectedChannel) {
-        return interaction.editReply({ content: '❌ Selecione um canal de texto antes de enviar o aviso local.' });
+        return safeEdit(interaction, { content: '❌ Selecione um canal de texto antes de enviar o aviso local.' });
       }
       channelSent = await sendChannelNotice(interaction, selectedChannel, noticePayloads, {
         includeUser: Boolean(getSelection(interaction).userId),
@@ -410,7 +446,7 @@ module.exports = {
     if (scope === 'direct') {
       const selectedUser = await getSelectedUser(interaction);
       if (!selectedUser) {
-        return interaction.editReply({ content: '❌ Selecione um usuário antes de enviar o aviso individual.' });
+        return safeEdit(interaction, { content: '❌ Selecione um usuário antes de enviar o aviso individual.' });
       }
       result = await sendDmBatch([selectedUser], noticePayloads);
     }
@@ -418,7 +454,7 @@ module.exports = {
     if (scope === 'global') {
       const recipients = await getGuildRecipients(interaction.guild);
       if (recipients.length === 0) {
-        return interaction.editReply({ content: '❌ Nenhum membro encontrado para receber o aviso por DM.' });
+        return safeEdit(interaction, { content: '❌ Nenhum membro encontrado para receber o aviso por DM.' });
       }
       result = await sendDmBatch(recipients, noticePayloads);
     }
@@ -470,7 +506,7 @@ module.exports = {
       );
     }
 
-    return interaction.editReply({
+    return safeEdit(interaction, {
       content: summary.join('\n'),
     });
   },

@@ -93,6 +93,26 @@ async function safeDeferReply(interaction, options) {
     }
 }
 
+async function safeShowModal(interaction, modal) {
+    if (interaction.deferred || interaction.replied) {
+        return safeReply(interaction, {
+            content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+            ephemeral: true,
+        });
+    }
+    try {
+        return await interaction.showModal(modal);
+    } catch (error) {
+        if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+            return safeReply(interaction, {
+                content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+                ephemeral: true,
+            });
+        }
+        throw error;
+    }
+}
+
 async function reportInteractionError(client, error, context = 'Interação') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
@@ -303,29 +323,29 @@ module.exports = {
                 )
             );
 
-            return interaction.showModal(modal);
+            return safeShowModal(interaction, modal);
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'modal_ponto_adjust_request') {
-            await interaction.deferReply({ ephemeral: true });
+            await safeDeferReply(interaction, { ephemeral: true });
             const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
             const reason = interaction.fields.getTextInputValue('reason').trim();
             const result = await createAdjustmentRequest(interaction, closedAtInput, reason);
             if (!result.ok) {
-                return interaction.editReply({ content: `❌ ${result.message}` });
+                return safeEdit(interaction, { content: `❌ ${result.message}` });
             }
-            return interaction.editReply({
+            return safeEdit(interaction, {
                 content: `✅ Solicitação aberta em <#${result.channel.id}>. Aguarde a análise da administração.`,
             });
         }
 
         if (interaction.isButton() && (interaction.customId.startsWith('ponto_adjust_accept_') || interaction.customId.startsWith('ponto_adjust_reject_'))) {
-            await interaction.deferReply({ ephemeral: true });
+            await safeDeferReply(interaction, { ephemeral: true });
             const approved = interaction.customId.startsWith('ponto_adjust_accept_');
             const requestId = interaction.customId.replace(approved ? 'ponto_adjust_accept_' : 'ponto_adjust_reject_', '');
             const result = await decideAdjustment(interaction, requestId, approved);
             if (!result.ok) {
-                return interaction.editReply({ content: `❌ ${result.message}` });
+                return safeEdit(interaction, { content: `❌ ${result.message}` });
             }
 
             await updateStatusPanel(client, guild.id);
@@ -338,13 +358,13 @@ module.exports = {
                 ].join('\n'),
             }).catch(() => {});
 
-            return interaction.editReply({ content: result.message });
+            return safeEdit(interaction, { content: result.message });
         }
 
         if (interaction.isButton() && (interaction.customId === 'ponto_open' || interaction.customId === 'ponto_close')) {
             const pointConfig = getPointConfig();
             if (interaction.channel.id !== pointConfig.actionChannelId) {
-                return interaction.reply({
+                return safeReply(interaction, {
                     content: `Você só pode bater ponto em <#${pointConfig.actionChannelId}>.`,
                     ephemeral: true
                 });
@@ -352,14 +372,14 @@ module.exports = {
 
             if (!hasPointRole(member)) {
                 const roleIds = getPointAllowedRoleIds();
-                return interaction.reply({
+                return safeReply(interaction, {
                     content: `❌ Você não tem cargo liberado para bater ponto. Cargos permitidos: ${roleIds.map(roleId => `<@&${roleId}>`).join(' ')}`,
                     ephemeral: true,
                     allowedMentions: { roles: [] },
                 });
             }
 
-            await interaction.deferReply({ ephemeral: true });
+            await safeDeferReply(interaction, { ephemeral: true });
 
             const opening = interaction.customId === 'ponto_open';
             const result = opening
@@ -380,13 +400,13 @@ module.exports = {
             await updateStatusPanel(client, guild.id);
 
             if (result.action === 'already_open') {
-                return interaction.editReply({
+                return safeEdit(interaction, {
                     content: '❌ Você já está online',
                 });
             }
 
             if (result.action === 'already_closed') {
-                return interaction.editReply({
+                return safeEdit(interaction, {
                     content: '❌ Você não está em serviço.',
                 });
             }
@@ -402,7 +422,7 @@ module.exports = {
                 channelId: interaction.channelId,
             }).catch(() => {});
 
-            return interaction.editReply({
+            return safeEdit(interaction, {
                 content: opening
                     ? `✅ Você entrou em serviço em ${formatDate(result.data.activePointStartedAt)}.`
                     : `Ponto fechado em ${formatDate(result.data.lastPointCloseAt)}. Tempo deste ponto: ${formatDuration(result.durationMs)}.`,
@@ -414,7 +434,7 @@ module.exports = {
         }
 
         if (interaction.isButton() && (interaction.customId.startsWith('point_penalty_accept_') || interaction.customId.startsWith('point_penalty_reject_'))) {
-            if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+            if (!hasStaffPermission(member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
             return handlePenaltyButton(interaction);
         }
 
@@ -430,19 +450,19 @@ module.exports = {
             if (!ausencia?.buildAbsenceModal) {
                 return safeReply(interaction, { content: '❌ Sistema de ausência indisponível no momento.', ephemeral: true });
             }
-            return interaction.showModal(ausencia.buildAbsenceModal(interaction));
+            return safeShowModal(interaction, ausencia.buildAbsenceModal(interaction));
         }
 
         if (interaction.isButton() && interaction.customId === 'ausencia_remove') {
             if (!hasAbsenceAccess(member)) {
                 return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
             }
-            await interaction.deferReply({ ephemeral: true });
+            await safeDeferReply(interaction, { ephemeral: true });
             const result = await removeOwnAbsence(interaction);
             if (!result.ok) {
-                return interaction.editReply({ content: `❌ ${result.message}` });
+                return safeEdit(interaction, { content: `❌ ${result.message}` });
             }
-            return interaction.editReply({
+            return safeEdit(interaction, {
                 content: `✅ Sua ausência foi retirada. Retorno registrado em ${formatAbsenceDate(result.absence.removedAt)}.`,
             });
         }
@@ -495,7 +515,7 @@ module.exports = {
                 return safeReply(interaction, { content: '❌ Você não tem cargo liberado para usar ausência.', ephemeral: true });
             }
             if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply({ ephemeral: true });
+                await safeDeferReply(interaction, { ephemeral: true });
             }
 
             const result = await createAbsence(interaction, {
@@ -593,7 +613,7 @@ module.exports = {
                     { label: 'Membro', value: 'Membro', emoji: '👤' }
                 ])
             );
-            return interaction.reply({ content: 'Selecione o tipo de set:', components: [select], ephemeral: true });
+            return safeReply(interaction, { content: 'Selecione o tipo de set:', components: [select], ephemeral: true });
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'Vortex_select_tipo') {
@@ -604,14 +624,14 @@ module.exports = {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('NÍVEL EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
             );
-            return interaction.showModal(modal);
+            return safeShowModal(interaction, modal);
         }
 
         if (interaction.isModalSubmit() && interaction.customId.startsWith('Vortex_modal_')) {
-            await interaction.deferReply({ ephemeral: true });
+            await safeDeferReply(interaction, { ephemeral: true });
             const existingProfile = getUserProfile(guild.id, user.id);
             if (existingProfile) {
-                return interaction.editReply({
+                return safeEdit(interaction, {
                     content: '❌ Você já está cadastrado no sistema Vortex e não pode abrir outro /set.',
                 });
             }
@@ -657,7 +677,7 @@ module.exports = {
             );
 
             await canal.send({ content: `<@${user.id}> aguarde a análise da staff.`, embeds: [embed], components: [buttons] });
-            await interaction.editReply({ embeds: [new EmbedBuilder().setColor('#57F287').setTitle('✅ Solicitação enviada com sucesso').setDescription(`Canal criado: <#${canal.id}>`)] });
+            await safeEdit(interaction, { embeds: [new EmbedBuilder().setColor('#57F287').setTitle('✅ Solicitação enviada com sucesso').setDescription(`Canal criado: <#${canal.id}>`)] });
 
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             pedidosAtivos[user.id] = {
@@ -690,13 +710,13 @@ module.exports = {
         // Botões de Recrutamento (Aprovar/Reprovar/Apagar)
         if (interaction.isButton()) {
             if (interaction.customId === 'Vortex_del') {
-                if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
+                if (!hasStaffPermission(member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
                 return interaction.channel.delete().catch(() => {});
             }
 
             if (interaction.customId.startsWith('Vortex_app_') || interaction.customId.startsWith('Vortex_rej_')) {
-                if (!hasStaffPermission(member)) return interaction.reply({ content: '❌ Sem permissão.', ephemeral: true });
-                await interaction.deferReply();
+                if (!hasStaffPermission(member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
+                await safeDeferReply(interaction);
                 
                 const isApp = interaction.customId.startsWith('Vortex_app_');
                 const targetId = interaction.customId.split('_')[2];
@@ -790,7 +810,7 @@ module.exports = {
                     ].filter((line) => line !== null).join('\n'))
                     .setTimestamp();
 
-                await interaction.editReply({ embeds: [resultEmbed] });
+                await safeEdit(interaction, { embeds: [resultEmbed] });
 
                 const finalActionRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()

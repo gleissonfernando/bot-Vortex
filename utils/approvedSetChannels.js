@@ -286,6 +286,23 @@ function buildGuideRow(step = 1) {
 }
 
 async function handleApprovedChannelGuide(interaction) {
+  const safeReply = (options) => {
+    if (interaction.replied || interaction.deferred) {
+      return interaction.followUp(options).catch(() => null);
+    }
+    return interaction.reply(options).catch(() => null);
+  };
+  const safeUpdate = (options) => {
+    if (interaction.replied || interaction.deferred) {
+      return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
+    }
+    return interaction.update(options).catch((error) => {
+      if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+        return safeReply({ content: '❌ Essa interação já foi processada.', ephemeral: true });
+      }
+      throw error;
+    });
+  };
   const data = readChannels();
   const guildRecords = data[interaction.guildId] || {};
   const record = Object.values(guildRecords).find((item) => item.channelId === interaction.channelId);
@@ -294,7 +311,7 @@ async function handleApprovedChannelGuide(interaction) {
       content: `Esse tutorial pertence a <@${record.userId}>. Peça para ele olhar o canal de meta dele: <#${record.channelId}>.`,
       allowedMentions: { users: [record.userId] },
     }).catch(() => null);
-    return interaction.reply({
+    return safeReply({
       content: '❌ Apenas o dono deste canal pode usar os botões do tutorial.',
       ephemeral: true,
     });
@@ -306,7 +323,7 @@ async function handleApprovedChannelGuide(interaction) {
       data[interaction.guildId][record.userId].guideCompletedAt = new Date().toISOString();
       writeChannels(data);
     }
-    return interaction.update({
+    return safeUpdate({
       components: [],
       embeds: [
         new EmbedBuilder()
@@ -319,7 +336,7 @@ async function handleApprovedChannelGuide(interaction) {
   }
 
   const step = Number(interaction.customId.replace('approved_channel_guide_', ''));
-  return interaction.update({
+  return safeUpdate({
     embeds: [buildGuideEmbed(interaction.user.id, step)],
     components: [buildGuideRow(step)],
   });

@@ -307,16 +307,34 @@ async function setChannelLogsEnabled(client, enabled, actorId = null, reason = '
 async function handleReenableChannelLogsButton(interaction) {
     const conf = readConfig();
     const replyOptions = (content) => interaction.guild ? { content, ephemeral: true } : { content };
+    const safeReply = (options) => {
+        if (interaction.replied || interaction.deferred) return interaction.followUp(options).catch(() => null);
+        return interaction.reply(options).catch(() => null);
+    };
+    const safeEdit = (options) => {
+        if (interaction.replied || interaction.deferred) return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
+        return safeReply(options);
+    };
+    const safeDefer = async (options) => {
+        if (interaction.replied || interaction.deferred) return true;
+        try {
+            await interaction.deferReply(options);
+            return true;
+        } catch (error) {
+            if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
+            throw error;
+        }
+    };
     if (conf.DISABLE_CHANNEL_LOGS !== true) {
-        return interaction.reply(replyOptions('✅ O canal de logs já está ligado.'));
+        return safeReply(replyOptions('✅ O canal de logs já está ligado.'));
     }
     if (String(conf.CHANNEL_LOGS_DISABLED_BY || '') !== String(interaction.user.id)) {
-        return interaction.reply(replyOptions('❌ Apenas quem desativou os logs pode usar este botão.'));
+        return safeReply(replyOptions('❌ Apenas quem desativou os logs pode usar este botão.'));
     }
 
-    await interaction.deferReply(interaction.guild ? { ephemeral: true } : {});
+    await safeDefer(interaction.guild ? { ephemeral: true } : {});
     const result = await setChannelLogsEnabled(interaction.client, true, interaction.user.id, 'botao_dm');
-    return interaction.editReply({ content: `✅ Canal de logs religado. Logs reenviados: ${result.replayed}.` });
+    return safeEdit({ content: `✅ Canal de logs religado. Logs reenviados: ${result.replayed}.` });
 }
 
 async function runChannelLogRecoveryTick(client) {

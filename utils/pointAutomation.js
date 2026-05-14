@@ -506,6 +506,10 @@ async function runPointAutomationCheck(client, { force = false } = {}) {
 }
 
 async function confirmPointPresence(interaction) {
+  const safeReply = (options) => {
+    if (interaction.replied || interaction.deferred) return interaction.followUp(options).catch(() => null);
+    return interaction.reply(options).catch(() => null);
+  };
   const guildId = interaction.customId.replace('point_presence_confirm_', '');
   const state = readJSON(STATE_PATH, {});
   const key = getStateKey(guildId, interaction.user.id);
@@ -519,7 +523,7 @@ async function confirmPointPresence(interaction) {
     lastPromptAt: null,
   };
   writeJSON(STATE_PATH, state);
-  return interaction.reply({ content: '✅ Confirmado. A contagem foi zerada e uma nova verificação começará daqui a 4 horas.', ephemeral: true });
+  return safeReply({ content: '✅ Confirmado. A contagem foi zerada e uma nova verificação começará daqui a 4 horas.', ephemeral: true });
 }
 
 async function deletePointCorrectionChannels(client, guild, userId, deletedBy = null) {
@@ -561,6 +565,10 @@ async function handlePenaltyButton(interaction) {
         : 'A ocorrência foi recusada pela gerência.',
     ].join('\n'))
     .setTimestamp();
+  if (interaction.replied || interaction.deferred) {
+    await interaction.editReply({ embeds: [embed], components: [] }).catch(() => interaction.followUp({ embeds: [embed], ephemeral: true }).catch(() => null));
+    return;
+  }
   await interaction.update({ embeds: [embed], components: [] }).catch(() => null);
 }
 

@@ -93,6 +93,42 @@ async function safeReply(interaction, options) {
   return interaction.reply(options).catch(() => null);
 }
 
+async function safeDeferReply(interaction, options) {
+  if (interaction.replied || interaction.deferred) return true;
+  try {
+    await interaction.deferReply(options);
+    return true;
+  } catch (error) {
+    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) return true;
+    throw error;
+  }
+}
+
+async function safeEdit(interaction, options) {
+  if (interaction.replied || interaction.deferred) {
+    return interaction.editReply(options).catch(() => interaction.followUp(options).catch(() => null));
+  }
+  return safeReply(interaction, options);
+}
+
+async function safeShowModal(interaction, modal) {
+  if (interaction.replied || interaction.deferred) {
+    return safeReply(interaction, {
+      content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+      ephemeral: true,
+    });
+  }
+  return interaction.showModal(modal).catch((error) => {
+    if (error?.code === 40060 || String(error?.message || '').includes('already been acknowledged')) {
+      return safeReply(interaction, {
+        content: '❌ Essa interação já foi processada. Clique novamente para abrir o formulário.',
+        ephemeral: true,
+      });
+    }
+    throw error;
+  });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('live')
@@ -118,7 +154,7 @@ module.exports = {
           ephemeral: true,
         });
       }
-      return interaction.showModal(buildLinkModal());
+      return safeShowModal(interaction, buildLinkModal());
     }
 
     if (interaction.customId === CUSTOM_IDS.remove) {
@@ -144,7 +180,7 @@ module.exports = {
     }
 
     if (interaction.customId === CUSTOM_IDS.test) {
-      await interaction.deferReply({ ephemeral: true });
+      await safeDeferReply(interaction, { ephemeral: true });
       const result = await checkUserTwitchLinks(interaction.client, interaction.guildId, interaction.user.id, {
         sendIfOnline: true,
       }).catch((error) => ({
@@ -166,7 +202,7 @@ module.exports = {
         ? result.offline.map((link) => `⚫ ${link.url}`).join('\n')
         : 'Nenhum';
 
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: [
           result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
           `**Resultado:** ${result.message}`,
@@ -189,17 +225,17 @@ module.exports = {
   },
 
   async handleModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
 
     if (!hasAcceptedLiveTerms(interaction.guildId, interaction.user.id)) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: `❌ Aceite os termos antes de cadastrar links: ${buildLiveTermsUrl(interaction.guildId, interaction.user.id)}`,
       });
     }
 
     const url = interaction.fields.getTextInputValue('url').trim();
     if (!isValidLiveUrl(url)) {
-      return interaction.editReply({
+      return safeEdit(interaction, {
         content: '❌ Envie um link válido começando com `http://` ou `https://`.',
       });
     }
@@ -208,7 +244,7 @@ module.exports = {
     const links = getLiveLinks(interaction.guildId, interaction.user.id);
     const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
 
-    return interaction.editReply({
+    return safeEdit(interaction, {
       content: `✅ Link de live adicionado. Quando esse canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`,
       embeds: [buildLivePanelEmbed(interaction, links, true)],
       components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted: true, termsUrl }),
