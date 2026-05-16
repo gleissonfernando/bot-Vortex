@@ -63,20 +63,19 @@ function buildRequestEmbed(interaction, closedAtInput, reason) {
   return new EmbedBuilder()
     .setColor('#FEE75C')
     .setAuthor({ name: 'VORTEX | Ajuste de Ponto', iconURL: interaction.client.user.displayAvatarURL() })
-    .setTitle('Solicitação de ajuste de ponto')
+    .setTitle('🛠️ Pedido de ajuste de ponto')
     .setDescription([
-      'Um usuário solicitou fechamento manual do ponto.',
+      '<@' + interaction.user.id + '> solicitou correção no fechamento do ponto.',
       '',
       '**Dados informados**',
-      `Usuário: <@${interaction.user.id}>`,
-      `Horario correto de saida: \`${closedAtInput}\``,
+      `Horário correto de saída: \`${closedAtInput}\``,
       `Motivo: ${reason}`,
       '',
-      '**Analise**',
-      'Ao aceitar, o ponto aberto do usuário será fechado automaticamente no horário informado.',
+      '**Para a staff**',
+      'Ao aceitar, o ponto aberto será fechado automaticamente no horário informado.',
     ].join('\n'))
     .setTimestamp()
-    .setFooter({ text: 'Vortex - Sistema de Ponto' });
+    .setFooter({ text: 'Vortex • Sistema de Ponto' });
 }
 
 function buildDecisionRow(requestId) {
@@ -220,18 +219,18 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
   const embed = new EmbedBuilder()
     .setColor(approved ? '#57F287' : '#ED4245')
     .setAuthor({ name: 'VORTEX | Ajuste de Ponto', iconURL: interaction.client.user.displayAvatarURL() })
-    .setTitle(approved ? 'Ajuste de ponto aprovado' : 'Ajuste de ponto recusado')
+    .setTitle(approved ? '✅ Ajuste de ponto aprovado' : '❌ Ajuste de ponto recusado')
     .setDescription([
       `Usuário: <@${request.userId}>`,
-      `Horario solicitado: \`${request.closedAtInput}\``,
+      `Horário solicitado: \`${request.closedAtInput}\``,
       `Motivo informado: ${request.reason}`,
-      approved ? `Aceito por: <@${interaction.user.id}>` : `Negado por: <@${interaction.user.id}>`,
+      approved ? `Aprovado por: <@${interaction.user.id}>` : `Recusado por: <@${interaction.user.id}>`,
       approved && result ? `Fechamento aplicado: ${formatDate(result.closedAt)}` : null,
       approved && result ? `Tempo contabilizado: ${formatDuration(result.durationMs)}` : null,
     ].filter(Boolean).join('\n'))
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setTimestamp()
-    .setFooter({ text: 'Vortex - Sistema de Ponto' });
+    .setFooter({ text: 'Vortex • Sistema de Ponto' });
 
   await user.send({
     embeds: [embed],

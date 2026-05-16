@@ -87,21 +87,21 @@ function buildPanelEmbed(interaction) {
   return new EmbedBuilder()
     .setColor('#7000FF')
     .setAuthor({
-      name: 'VORTEX | Aviso Oficial',
+      name: 'VORTEX | Avisos',
       iconURL: interaction.guild?.iconURL() || interaction.client.user.displayAvatarURL(),
     })
-    .setTitle('Vortex informa')
+    .setTitle('📢 Painel de Avisos')
     .setDescription([
-      'Use este painel para enviar avisos oficiais de forma simples.',
+      '**Envie comunicados oficiais para usuários, canais ou todo o servidor.**',
       '',
-      `Todo aviso publicado em canal marca apenas <@&${NOTICE_FIXED_ROLE_IDS[0]}>.`,
+      `Avisos enviados em canal mencionam apenas <@&${NOTICE_FIXED_ROLE_IDS[0]}>.`,
       '',
-      'Selecione o canal para aviso local ou selecione um usuário para aviso individual.',
+      'Selecione um canal para aviso local ou um usuário para aviso individual.',
     ].join('\n'))
     .addFields(
-      { name: 'Individual', value: 'Envia direto no privado do usuário selecionado.', inline: true },
-      { name: 'Local', value: 'Envia somente no canal selecionado.', inline: true },
-      { name: 'Global Vortex', value: 'Envia DM para todos deste Discord.', inline: true }
+      { name: '👤 Individual', value: 'Envia DM para o usuário selecionado.', inline: true },
+      { name: '📍 Local', value: 'Publica no canal selecionado.', inline: true },
+      { name: '🌐 Global', value: 'Envia DM para todos do servidor.', inline: true }
     )
     .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
     .setTimestamp();
@@ -111,7 +111,7 @@ function buildPanelComponents() {
   const selectRow = new ActionRowBuilder().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId(CUSTOM_IDS.selectChannel)
-      .setPlaceholder('Selecione o canal de texto que vai receber o aviso')
+      .setPlaceholder('Selecionar canal do aviso local')
       .addChannelTypes(ChannelType.GuildText)
       .setMinValues(1)
       .setMaxValues(1)
@@ -120,7 +120,7 @@ function buildPanelComponents() {
   const userRow = new ActionRowBuilder().addComponents(
     new UserSelectMenuBuilder()
       .setCustomId(CUSTOM_IDS.selectUser)
-      .setPlaceholder('Pesquise e selecione o usuário para aviso individual')
+      .setPlaceholder('Selecionar usuário do aviso individual')
       .setMinValues(1)
       .setMaxValues(1)
   );
@@ -128,15 +128,15 @@ function buildPanelComponents() {
   const buttonRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.direct)
-      .setLabel('Enviar Individual')
+      .setLabel('Enviar individual')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.guild)
-      .setLabel('Enviar Local')
+      .setLabel('Enviar local')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.global)
-      .setLabel('Enviar Global Vortex')
+      .setLabel('Enviar global')
       .setStyle(ButtonStyle.Danger)
   );
 
@@ -148,14 +148,14 @@ function buildMessageModal(scope) {
   const isDirect = scope === 'direct';
   const modal = new ModalBuilder()
     .setCustomId(`avisos_modal_${scope}`)
-    .setTitle(isGlobal ? 'Aviso Global Vortex' : isDirect ? 'Aviso Individual' : 'Aviso para este Discord');
+    .setTitle(isGlobal ? 'Aviso global' : isDirect ? 'Aviso individual' : 'Aviso local');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('title')
-        .setLabel('TITULO DO AVISO')
-        .setPlaceholder('Ex: Reuniao geral hoje')
+        .setLabel('Título do aviso')
+        .setPlaceholder('Exemplo: Reunião geral hoje')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(120)
@@ -163,8 +163,8 @@ function buildMessageModal(scope) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('message')
-        .setLabel('MENSAGEM')
-        .setPlaceholder('Digite o aviso que sera enviado')
+        .setLabel('Mensagem')
+        .setPlaceholder('Digite o comunicado que será enviado.')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(1800)

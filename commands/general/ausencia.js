@@ -25,8 +25,8 @@ function buildAbsenceModal(interaction) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('name')
-        .setLabel('NOME')
-        .setPlaceholder('Seu nome')
+        .setLabel('Nome para identificação')
+        .setPlaceholder('Exemplo: Gleisson Fernando')
         .setValue(interaction.member?.displayName || interaction.user.username)
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
@@ -34,8 +34,8 @@ function buildAbsenceModal(interaction) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('discord_id')
-        .setLabel('ID DO DISCORD')
-        .setPlaceholder('Seu ID do Discord')
+        .setLabel('Seu ID do Discord')
+        .setPlaceholder('Cole seu ID do Discord')
         .setValue(interaction.user.id)
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
@@ -43,8 +43,8 @@ function buildAbsenceModal(interaction) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('reason')
-        .setLabel('MOTIVO')
-        .setPlaceholder('Explique o motivo da ausência')
+        .setLabel('Motivo da ausência')
+        .setPlaceholder('Explique o motivo de forma clara para a administração avaliar.')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(900)
@@ -52,7 +52,7 @@ function buildAbsenceModal(interaction) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('start_date')
-        .setLabel('DIA QUE VAI PARA AUSENCIA')
+        .setLabel('Dia que começa a ausência')
         .setPlaceholder('Exemplo: 12/01 ou 12/01/2026')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
@@ -60,7 +60,7 @@ function buildAbsenceModal(interaction) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('return_date')
-        .setLabel('DIA QUE VOLTA')
+        .setLabel('Dia que retorna')
         .setPlaceholder('Exemplo: 15/01 ou 15/01/2026')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
@@ -77,40 +77,35 @@ function buildAbsencePanel(interaction = null) {
 
   const embed = new EmbedBuilder()
     .setColor('#7000FF')
-    .setAuthor({ name: '🌪️ VORTEX • Sistema de Ausência', iconURL: iconURL || undefined })
-    .setTitle('Painel de Ausência')
+    .setAuthor({ name: 'VORTEX • Controle de Ausência', iconURL: iconURL || undefined })
+    .setTitle('🌪️ Painel de Ausência')
     .setDescription([
-      'Use este painel para solicitar afastamento temporário ou retirar uma ausência ativa.',
+      '**Solicite sua ausência ou retire uma ausência ativa.**',
       '',
-      'Ao solicitar, o sistema registra o motivo, o dia de início e o dia de retorno, depois abre um canal para a administração aprovar ou recusar.',
+      'A administração vai analisar sua solicitação antes de aprovar.',
     ].join('\n'))
     .addFields(
       {
-        name: 'Como solicitar',
+        name: '📝 Solicitar ausência',
         value: [
-          '`1.` Clique em **Solicitar ausência**.',
-          '`2.` Informe nome, ID, motivo, dia que vai para ausência e dia que volta.',
-          '`3.` Aguarde a aprovação da administração para receber o cargo de ausência.',
+          'Preencha o formulário com seu nome, ID, motivo, início e retorno.',
         ].join('\n'),
         inline: false,
       },
       {
-        name: 'Datas aceitas',
+        name: '📅 Formato da data',
         value: [
-          '`12/01` para dia e mês',
-          '`12/01/2026` para data completa',
+          'Use `12/01` ou `12/01/2026`.',
+          'Não informe horário.',
         ].join('\n'),
-        inline: true,
+        inline: false,
       },
       {
-        name: 'Retorno',
+        name: '↩️ Retirar ausência',
         value: [
-          'A ausência vale do início do dia informado até o fim do dia de retorno.',
-          'Não existe mais ausência por hora.',
-          'Use **Retirar ausência** quando voltar antes do prazo.',
-          'A gerência pode alterar o retorno pelo `/painel`.',
+          'Se voltou antes do prazo, use o botão abaixo para remover sua ausência.',
         ].join('\n'),
-        inline: true,
+        inline: false,
       }
     )
     .setFooter({ text: 'Vortex • Sistema de Ausência' })
@@ -132,7 +127,7 @@ function buildAbsencePanel(interaction = null) {
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('ausencia_remove')
-      .setLabel('Retirar ausência')
+      .setLabel('Retirar minha ausência')
       .setEmoji('↩️')
       .setStyle(ButtonStyle.Secondary)
   );

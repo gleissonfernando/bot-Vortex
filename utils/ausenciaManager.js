@@ -156,16 +156,22 @@ function sanitizeChannelName(value) {
 function buildAbsenceRequestEmbed(absence) {
   return new EmbedBuilder()
     .setColor('#FEE75C')
-    .setTitle('Solicitação de Ausência')
-    .setDescription(`O usuário <@${absence.userId}> solicitou ausência e aguarda aprovação da administração.`)
+    .setTitle('📋 Solicitação de Ausência')
+    .setDescription([
+      `<@${absence.userId}> enviou uma solicitação de ausência e aguarda análise da administração.`,
+      '',
+      'Confira motivo, início e retorno antes de aprovar. Se faltar informação, recuse e peça para o usuário enviar novamente com mais detalhes.',
+    ].join('\n'))
     .addFields(
-      { name: 'Nome', value: absence.name || 'N/A', inline: true },
-      { name: 'ID', value: `\`${absence.discordId || absence.userId}\``, inline: true },
-      { name: 'Motivo', value: absence.reason || 'N/A', inline: false },
-      { name: 'Início informado', value: absence.startDateInput || formatDate(absence.startsAt), inline: true },
-      { name: 'Retorno previsto', value: formatDate(absence.endsAt), inline: true }
+      { name: '👤 Solicitante', value: `<@${absence.userId}>`, inline: true },
+      { name: 'Nome informado', value: absence.name || 'N/A', inline: true },
+      { name: 'ID Discord', value: `\`${absence.discordId || absence.userId}\``, inline: true },
+      { name: '📝 Motivo informado', value: absence.reason || 'N/A', inline: false },
+      { name: '📅 Início', value: absence.startDateInput || formatDate(absence.startsAt), inline: true },
+      { name: '↩️ Retorno previsto', value: formatDate(absence.endsAt), inline: true },
+      { name: 'Próxima ação', value: 'Use os botões abaixo para **aceitar** ou **recusar** esta solicitação.', inline: false }
     )
-    .setFooter({ text: 'Vortex - Aprovação de Ausência' })
+    .setFooter({ text: 'Vortex • Aprovação de Ausência' })
     .setTimestamp();
 }
 

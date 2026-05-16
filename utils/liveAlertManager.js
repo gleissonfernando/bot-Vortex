@@ -499,20 +499,20 @@ function buildLivePanelEmbed(interaction, links = [], termsAccepted = false) {
   return new EmbedBuilder()
     .setColor('#9146FF')
     .setAuthor({
-      name: 'VORTEX | Alerta de Live',
+      name: 'VORTEX | Lives',
       iconURL: interaction.client.user.displayAvatarURL(),
     })
-    .setTitle('Painel de live')
+    .setTitle('🔴 Painel de Live')
     .setDescription(termsAccepted
-      ? 'Termos aceitos. Cadastre quantos links de live quiser para o bot avisar automaticamente quando um canal ficar online.'
-      : 'Aceite os termos para liberar o cadastro de links de live.')
+      ? 'Cadastre seus canais para o bot avisar automaticamente quando uma live começar.'
+      : 'Aceite os termos para liberar o cadastro de canais de live.')
     .addFields(
       { name: 'Servidor', value: interaction.guild?.name || 'Servidor', inline: true },
-      { name: 'Canal de alerta', value: `<#${ALERT_CHANNEL_ID}>`, inline: true },
+      { name: 'Alertas em', value: `<#${ALERT_CHANNEL_ID}>`, inline: true },
       { name: 'Termos', value: termsAccepted ? '`Aceitos`' : '`Pendente`', inline: true },
-      { name: 'Links cadastrados', value: formatLiveLinks(links), inline: false },
+      { name: 'Canais cadastrados', value: formatLiveLinks(links), inline: false },
     )
-    .setFooter({ text: 'Vortex Live Alerts' })
+    .setFooter({ text: 'Vortex • Alertas de Live' })
     .setTimestamp();
 }
 

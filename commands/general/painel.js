@@ -1585,7 +1585,12 @@ async function renderDashboard(interaction, tab, edit = false) {
     const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
     const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
     embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
-      .setDescription('### 📊 Resumo em Tempo Real\n*Painel geral de estatísticas do servidor*\n\n**Como funciona**\nEsta aba mostra os principais números do servidor e o status atual do sistema. Use os botões do painel para navegar entre as áreas administrativas.')
+      .setDescription([
+        '### 📊 Visão geral',
+        '',
+        'Resumo rápido do servidor, permissões e cadastros salvos no sistema.',
+        'Use os botões do painel para acessar cada área administrativa.',
+      ].join('\n'))
       .addFields(
         { name: '👤 Membros', value: String(realtime.totalMembers), inline: true },
         { name: 'Pessoas / Bots', value: `${realtime.humanCount} / ${realtime.botCount}`, inline: true },
@@ -1593,8 +1598,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: '📋 Fichas', value: String((stats.aprovados || 0) + (stats.recusados || 0) + (stats.pendentes || 0)), inline: true },
         { name: '🟢 Status', value: conf.MAINTENANCE_MODE ? '🔴 Em Manutenção' : '🟢 Online', inline: true },
         { name: 'Fonte dos dados', value: realtime.source, inline: true },
-        { name: 'Quem pode usar comandos /', value: buildCommandAccessPreview(permissions, 6).slice(0, 1024), inline: false },
-        { name: 'Cadastrados no sistema', value: `Total: **${profileList.length}** | /set: **${setProfileCount}** | manual: **${manualProfileCount}**\n${buildRegisteredProfilesPreview(profiles, 6).slice(0, 900)}`, inline: false }
+        { name: 'Permissões dos comandos', value: buildCommandAccessPreview(permissions, 6).slice(0, 1024), inline: false },
+        { name: 'Cadastros salvos', value: `Total: **${profileList.length}** | /set: **${setProfileCount}** | manual: **${manualProfileCount}**\n${buildRegisteredProfilesPreview(profiles, 6).slice(0, 900)}`, inline: false }
       );
   } else if (tab === 'tab_roles') {
     const levels = ensureRoleLevels(conf);
@@ -1602,15 +1607,19 @@ async function renderDashboard(interaction, tab, edit = false) {
     const vortexRoleMode = getVortexRoleMode(interaction);
     embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#5865F2')
-      .setDescription('### 🔐 Controle de Cargos Vortex\n\n' + 
-                      'Nesta aba você seleciona cargos pesquisando pelo nome e define o nível de acesso de cada grupo.\n\n' +
-                      `**Modo atual:** ${vortexRoleMode === 'remove' ? 'Remover cargos selecionados' : 'Definir cargos selecionados'}\n\n` +
-                      '**Como funciona**\n' +
-                      '**Admin:** mexe em avisos, set e todos os sistemas de ponto, mas não usa manutenção.\n' +
-                      '**Médio:** aceita set e envia avisos.\n' +
-                      '**Membro:** usa botões de bater ponto e registra ações básicas.\n\n' +
-                      `**👑 Administrador Master:** ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')}\n\n` +
-                      '*Manutenção continua liberada somente para o cargo master.*')
+      .setDescription([
+        '### 🔐 Cargos e acessos',
+        '',
+        'Defina quais cargos entram em cada nível de permissão.',
+        `**Modo atual:** ${vortexRoleMode === 'remove' ? 'remover cargos selecionados' : 'definir cargos selecionados'}`,
+        '',
+        '**Níveis**',
+        '**Admin:** gerencia avisos, set e sistemas de ponto.',
+        '**Médio:** analisa set e envia avisos.',
+        '**Membro:** usa ações básicas, como bater ponto.',
+        '',
+        `**Master:** ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')}`,
+      ].join('\n'))
       .addFields(
         { name: 'Acesso total', value: SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' '), inline: false },
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
@@ -1647,18 +1656,20 @@ async function renderDashboard(interaction, tab, edit = false) {
     
     embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
-      .setDescription('### 🔧 Controle de Manutenção\n' +
-                      'Quando o modo de manutenção está ativo, qualquer interação de usuários comuns com o bot retorna uma mensagem informando que o bot está em manutenção.\n\n' +
-                      `**🔴 Status Atual:** ${conf.MAINTENANCE_MODE ? '🔴 ATIVO' : '🟢 DESATIVADO'}\n` +
-                      `**👤 Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>\n` +
-                      `**🕒 Tempo:** ${since}\n\n` +
-                      '**📖 Como Funciona**\n' +
-                      'Ao ativar, usuários sem cargo de staff que tentarem usar o bot receberão uma mensagem automática informando manutenção, com botão para suporte.\n\n' +
-                      '**🔐 Permissões Master**\n' +
-                      `Apenas os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem gerenciar este estado.`)
+      .setDescription([
+        '### 🔧 Manutenção',
+        '',
+        'Use esta aba para pausar o uso normal do bot enquanto ajustes são feitos.',
+        '',
+        `**Status:** ${conf.MAINTENANCE_MODE ? '🔴 Ativo' : '🟢 Desativado'}`,
+        `**Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>`,
+        `**Tempo:** ${since}`,
+        '',
+        `Somente ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem alterar este modo.`,
+      ].join('\n'))
       .addFields(
-          { name: '✅ Liberados', value: '`/painel`, `/set` (Staff)', inline: true },
-          { name: '⛔ Restritos', value: '`/manutencao` (Geral)', inline: true },
+          { name: '✅ Continua liberado', value: '`/painel`, `/set` para staff', inline: true },
+          { name: '⛔ Usuários comuns', value: 'Recebem aviso de manutenção.', inline: true },
           { name: '📢 Logs no canal', value: conf.DISABLE_CHANNEL_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '📩 Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '🎮 Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
@@ -1669,11 +1680,11 @@ async function renderDashboard(interaction, tab, edit = false) {
       )
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? '🟢 Desativar Manutenção' : '🔴 Ativar Manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? '📢 Ligar Log' : '🔕 Desligar Log').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? '📩 Ligar Log DM' : '📵 Desligar Log DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? '🎮 Ligar Logs' : '🎮 Desligar Logs').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('test_notice').setLabel('🧪 Testar Aviso').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('toggle_maint').setLabel(conf.MAINTENANCE_MODE ? 'Desativar manutenção' : 'Ativar manutenção').setStyle(conf.MAINTENANCE_MODE ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar logs do canal' : 'Desligar logs do canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Ligar logs por DM' : 'Desligar logs por DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Ligar logs de atividade' : 'Desligar logs de atividade').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('test_notice').setLabel('Testar aviso').setStyle(ButtonStyle.Secondary)
     );
 
     extraRows = [
@@ -1697,13 +1708,18 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_config') {
     const privateMode = Boolean(conf.PANEL_PRIVATE_MODE);
     embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF')
-      .setDescription('### Configuração geral\n\nUse os botões abaixo para abrir a configuração específica de **Set**, **Avisos** ou **Logs**.')
+      .setDescription([
+        '### Configurações gerais',
+        '',
+        'Acesse as configurações de set, avisos e logs.',
+        'O modo privado limita o uso do `/painel` aos cargos configurados.',
+      ].join('\n'))
       .addFields(
         { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
         { name: '/painel privado', value: privateMode ? '`Ativado`' : '`Desativado`', inline: true },
-        { name: 'Set', value: 'Configure cargos e permissões do sistema de set.', inline: true },
-        { name: 'Avisos', value: 'Configure DMs e cargo mencionado nos avisos.', inline: true },
-        { name: 'Logs', value: 'Configure canal e modos de logs do bot.', inline: true }
+        { name: 'Set', value: 'Permissões do sistema de set.', inline: true },
+        { name: 'Avisos', value: 'DMs e menções dos avisos.', inline: true },
+        { name: 'Logs', value: 'Canal e modos de registro.', inline: true }
       );
 
     extraRows = [
@@ -1727,12 +1743,12 @@ async function renderDashboard(interaction, tab, edit = false) {
     const selectedLogChannelDisabled = selectedLogChannelId && disabledLogChannelIds.includes(selectedLogChannelId);
     embed.setTitle('⚙️ CONFIGURAÇÕES | LOGS').setColor('#00D9FF')
       .setDescription([
-        '### Data logs',
+        '### Logs do bot',
         '',
-        'Cada modo abaixo tem um botão próprio para ligar ou desligar.',
-        `Somente <@${LOGS_MANAGER_IDS[0]}> ou os cargos máximos ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem desativar, reativar ou trocar o canal de logs.`,
+        'Controle onde os logs são enviados e quais tipos ficam ativos.',
+        `Apenas <@${LOGS_MANAGER_IDS[0]}> ou ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem alterar esta área.`,
         '',
-        `Canal/call selecionado: ${selectedLogChannelId ? `<#${selectedLogChannelId}>` : '`Nenhum`'}`,
+        `Selecionado agora: ${selectedLogChannelId ? `<#${selectedLogChannelId}>` : '`Nenhum canal`'}`,
       ].join('\n'))
       .addFields(
         { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
@@ -1744,17 +1760,17 @@ async function renderDashboard(interaction, tab, edit = false) {
       );
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Reativar canal' : 'Desativar canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Reativar DM' : 'Desativar DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Reativar atividades' : 'Desativar atividades').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Reativar avisos' : 'Desativar avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar logs do canal' : 'Desligar logs do canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Ligar logs por DM' : 'Desligar logs por DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Ligar atividades' : 'Desligar atividades').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs de avisos' : 'Desligar DMs de avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
     );
 
     extraRows = [
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_log')
-          .setPlaceholder('Selecionar canal para logs')
+          .setPlaceholder('Selecionar canal principal de logs')
           .addChannelTypes(ChannelType.GuildText)
           .setMinValues(1)
           .setMaxValues(1)
@@ -1762,7 +1778,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_disabled_log_channel')
-          .setPlaceholder('Selecionar canal/call para alterar logs')
+          .setPlaceholder('Selecionar canal/call para ligar ou desligar logs')
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice)
           .setMinValues(1)
           .setMaxValues(1)
@@ -1777,19 +1793,23 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'config_avisos') {
     embed.setTitle('⚙️ CONFIGURAÇÕES | AVISOS').setColor('#7000FF')
-      .setDescription('### Configurar avisos\n\nControle o envio de DMs globais e escolha um cargo extra para ser mencionado nos avisos. Quando um aviso for publicado, trate como prioridade.')
+      .setDescription([
+        '### Avisos',
+        '',
+        'Controle o envio de avisos por DM e o cargo extra mencionado nos comunicados.',
+      ].join('\n'))
       .addFields(
         { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
         { name: 'Cargo extra mencionado', value: conf.NOTICE_MENTION_ROLE_ID ? `<@&${conf.NOTICE_MENTION_ROLE_ID}>` : '`Não configurado`', inline: true }
       );
 
     const noticeRoleRow = new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder().setCustomId('select_notice_mention_role').setPlaceholder('Selecione o cargo extra mencionado nos avisos').setMinValues(1).setMaxValues(1)
+      new RoleSelectMenuBuilder().setCustomId('select_notice_mention_role').setPlaceholder('Selecionar cargo mencionado nos avisos').setMinValues(1).setMaxValues(1)
     );
     const noticeButtonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('toggle_notice_dms')
-        .setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DM de Avisos' : 'Desligar DM de Avisos')
+        .setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs de avisos' : 'Desligar DMs de avisos')
         .setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
     );
     extraRows = [
@@ -1886,19 +1906,19 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setAuthor({ name: 'VORTEX | COBRANÇAS E PENALIDADES', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#FEE75C')
       .setDescription([
-        '### Controle de cobranças automáticas',
+        '### Cobranças automáticas',
         '',
         `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
-        `Cobrança de offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
-        `Ciclo de confirmação: **${automationConfig.pointMonitorDmIntervalHours}h**`,
-        `Tentativas por ciclo: **${automationConfig.pointMonitorMaxDmAttempts} DMs**`,
-        'Se o usuário confirmar, a contagem zera e começa outro ciclo de 4h. Se ignorar as 3 DMs, o ponto fecha automaticamente.',
+        `Cobrança por offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
+        `Confirmação: **a cada ${automationConfig.pointMonitorDmIntervalHours}h**, até **${automationConfig.pointMonitorMaxDmAttempts} DMs** por ciclo.`,
+        `Cobrança offline: **${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00**, a cada **${automationConfig.offlineChargeIntervalDays} dias**.`,
+        '',
         `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
         `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
-        `Cobrança offline: **DM às ${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00 a cada ${automationConfig.offlineChargeIntervalDays} dias**`,
-        'Usuários em ausência não recebem essa cobrança.',
         '',
-        'Use `Verificar agora` para rodar a cobrança sem esperar o agendador.',
+        'Usuários em ausência não recebem cobrança offline.',
+        '',
+        'Use **Verificar agora** para executar a checagem manualmente.',
       ].join('\n'));
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('toggle_point_monitor').setLabel(automationConfig.pointMonitorEnabled ? 'Desligar confirmação' : 'Ligar confirmação').setStyle(automationConfig.pointMonitorEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
@@ -1913,23 +1933,23 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setAuthor({ name: 'VORTEX | LIVE STREAM', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#9146FF')
       .setDescription([
-        '### Cadastro de canais de live',
+        '### Lives monitoradas',
         '',
-        'Use esta aba para cadastrar mais canais/usuários de live que devem disparar alerta automático.',
-        `Os alertas são enviados em <#${ALERT_CHANNEL_ID}> quando a Twitch informar que o canal ficou online.`,
+        'Cadastre canais que devem disparar alerta automático quando entrarem ao vivo.',
+        `Os alertas são enviados em <#${ALERT_CHANNEL_ID}>.`,
         '',
         `Termos aceitos: **${termsAccepted ? 'sim' : 'não'}**`,
         `Total cadastrado: **${links.length}**`,
         `Links Twitch monitorados: **${twitchCount}**`,
         '',
-        '**Cadastrados**',
+        '**Canais cadastrados**',
         formatLiveLinksList(links),
       ].join('\n'));
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('live_stream_add_link').setLabel('Adicionar usuário').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('live_stream_check_now').setLabel('Verificar agora').setStyle(ButtonStyle.Primary).setDisabled(links.length === 0),
-      new ButtonBuilder().setCustomId('live_stream_clear_links').setLabel('Limpar cadastros').setStyle(ButtonStyle.Danger).setDisabled(links.length === 0)
+      new ButtonBuilder().setCustomId('live_stream_add_link').setLabel('Adicionar live').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('live_stream_check_now').setLabel('Testar agora').setStyle(ButtonStyle.Primary).setDisabled(links.length === 0),
+      new ButtonBuilder().setCustomId('live_stream_clear_links').setLabel('Limpar lives').setStyle(ButtonStyle.Danger).setDisabled(links.length === 0)
     );
 
     if (!termsAccepted) {
@@ -1953,11 +1973,10 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setAuthor({ name: 'VORTEX | PERMISSÕES DE COMANDOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#00D9FF')
       .setDescription([
-        '### Configurar comandos e ações',
+        '### Permissões de comandos',
         '',
-        '**Quem pode usar os comandos /**',
-        'Selecione um comando e depois escolha os cargos que podem usar esse comando.',
-        'Se nenhum cargo for selecionado, o comando fica liberado para todos que passarem nas regras internas dele.',
+        'Escolha um comando e defina quais cargos podem usar.',
+        'Se nenhum cargo for selecionado, valem apenas as regras internas do próprio comando.',
         '',
         `Modo privado do /painel: **${conf.PANEL_PRIVATE_MODE ? 'ligado' : 'desligado'}**`,
         '',
@@ -1970,13 +1989,13 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('select_command_permission_target')
-          .setPlaceholder('Escolha o comando ou ação para configurar')
+          .setPlaceholder('Escolher comando ou ação')
           .addOptions(COMMAND_PERMISSION_OPTIONS)
       ),
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId('select_command_permission_roles')
-          .setPlaceholder(`Selecionar cargos permitidos para ${selected}`)
+          .setPlaceholder(`Selecionar cargos para ${selected}`)
           .setMinValues(0)
           .setMaxValues(10)
       ),
@@ -1986,36 +2005,61 @@ async function renderDashboard(interaction, tab, edit = false) {
     const activeAbsences = getActiveGuildAbsences(guild.id);
     const activeList = activeAbsences.length
       ? activeAbsences.slice(0, 10).map((absence, index) => {
-          return `${index + 1}. <@${absence.userId}> - volta ${formatAbsenceDate(absence.endsAt)} - ID \`${absence.userId}\``;
+          return [
+            `**${index + 1}.** <@${absence.userId}>`,
+            `Retorno: **${formatAbsenceDate(absence.endsAt)}** | ID: \`${absence.userId}\``,
+          ].join('\n');
         }).join('\n')
-      : 'Nenhuma ausência ativa no momento.';
+      : '`Nenhuma ausência ativa no momento.`';
+    const hiddenActiveCount = Math.max(0, activeAbsences.length - 10);
+    const activeListFooter = hiddenActiveCount ? `\n... mais ${hiddenActiveCount} ausência(s) ativa(s).` : '';
+    const endMessageStatus = absenceConfig.disableEndMessage ? '`Desativada`' : '`Ativada`';
+    const configuredRole = absenceConfig.roleId ? `<@&${absenceConfig.roleId}>` : '`Não configurado`';
+    const logChannel = absenceConfig.logChannelId || DEFAULT_ABSENCE_LOG_CHANNEL_ID;
 
     embed.setAuthor({ name: 'VORTEX | GESTÃO DE AUSÊNCIAS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#7000FF')
       .setDescription([
         '### Controle de ausências',
         '',
-        '**Como funciona**',
-        'Use esta aba para configurar o cargo aplicado pelo `/ausencia`, controlar a mensagem de fim e alterar o retorno de quem está ausente.',
-        'No `/ausencia`, o usuário informa o dia que vai para ausência e o dia que volta. A ausência vale por dias completos, sem opção por hora.',
-        'Se a administração aprovar uma ausência com início futuro, o cargo será aplicado automaticamente quando chegar o dia informado.',
+        '**Resumo**',
+        `Ativas agora: **${activeAbsences.length}**`,
+        `Cargo aplicado: ${configuredRole}`,
+        `Mensagem de fim: ${endMessageStatus}`,
+        `Logs enviados em: <#${logChannel}>`,
+        '',
+        '**Regras do sistema**',
+        'O usuário solicita pelo `/ausencia` informando motivo, dia de início e dia de retorno.',
+        'A ausência é sempre por dias completos. O sistema não aceita ausência por hora.',
+        'Quando uma ausência futura é aprovada, o cargo será aplicado automaticamente no dia de início.',
         '',
         '**Ausências ativas**',
-        activeList,
-        '',
-        'Para alterar retorno, use apenas data: `DD/MM` ou `DD/MM/AAAA`.',
+        `${activeList}${activeListFooter}`,
       ].join('\n'))
       .addFields(
-        { name: 'Cargo de ausência', value: `<@&${absenceConfig.roleId}>`, inline: true },
-        { name: 'Mensagem final', value: absenceConfig.disableEndMessage ? '`Desativada`' : '`Ativada`', inline: true },
-        { name: 'Canal de logs', value: `<#${absenceConfig.logChannelId || DEFAULT_ABSENCE_LOG_CHANNEL_ID}>`, inline: true },
-        { name: 'Ausências ativas', value: String(activeAbsences.length), inline: true }
+        {
+          name: '🛠️ Ações disponíveis',
+          value: [
+            '**Trocar cargo:** define qual cargo o usuário recebe quando a ausência é aprovada.',
+            '**Alterar retorno:** muda a data de volta de uma ausência ativa.',
+            '**Mensagem final:** liga ou desliga o aviso enviado quando a ausência termina.',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '📅 Formato para alterar retorno',
+          value: [
+            'Use `DD/MM` ou `DD/MM/AAAA`.',
+            'Exemplo: `15/01` ou `15/01/2026`.',
+          ].join('\n'),
+          inline: false,
+        }
       );
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('set_absence_role').setLabel('Trocar cargo').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('change_absence_return').setLabel('Alterar retorno').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('toggle_absence_end_message').setLabel(absenceConfig.disableEndMessage ? 'Ligar mensagem' : 'Desligar mensagem').setStyle(absenceConfig.disableEndMessage ? ButtonStyle.Success : ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('set_absence_role').setLabel('Trocar cargo').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('change_absence_return').setLabel('Alterar retorno').setEmoji('📅').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('toggle_absence_end_message').setLabel(absenceConfig.disableEndMessage ? 'Ligar mensagem final' : 'Desligar mensagem final').setEmoji('🔔').setStyle(absenceConfig.disableEndMessage ? ButtonStyle.Success : ButtonStyle.Danger)
     );
   } else if (tab === 'tab_perfil') {
     const profiles = getGuildProfiles(guild.id);
@@ -2031,17 +2075,15 @@ async function renderDashboard(interaction, tab, edit = false) {
     embed.setAuthor({ name: 'VORTEX | PERFIS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#00D9FF')
       .setDescription([
-        '### Controle de Perfil',
+        '### Perfis',
         '',
-        'Este módulo acompanha os usuários aprovados no `/set`.',
-        'Também permite cadastrar manualmente pessoas que já estão no Discord.',
-        'Cada perfil deve ser atualizado a cada 1 semana usando `/perfil link:<link da foto> nivel:<numero>`.',
-        'Os links de mídia ficam salvos no JSON mesmo se o arquivo original for apagado.',
+        'Acompanhe usuários aprovados no `/set` e cadastros manuais.',
+        'Perfis devem ser atualizados pelo `/perfil` com mídia e nível em game.',
         `Cadastrados: **${profileList.length}** | aprovados no /set: **${setProfileCount}** | manuais: **${manualProfileCount}**`,
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
-        `Selecionado no perfil: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
+        `Selecionado: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
         '',
         '**Perfis salvos**',
         profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
@@ -2051,8 +2093,8 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Ver cadastrados').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('profile_test').setLabel('Testar perfil').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Listar perfis').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('profile_test').setLabel('Testar cobrança').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar cadastro').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
@@ -2060,14 +2102,14 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_profile_register_user')
-          .setPlaceholder('Selecionar usuário para perfil')
+          .setPlaceholder('Selecionar usuário do perfil')
           .setMinValues(1)
           .setMaxValues(1)
       ),
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_profile_register_channel')
-          .setPlaceholder('Selecionar call/canal do usuário')
+          .setPlaceholder('Selecionar call/canal vinculado')
           .setMinValues(1)
           .setMaxValues(1)
       ),

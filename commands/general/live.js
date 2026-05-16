@@ -46,16 +46,16 @@ function buildLiveComponents({ hasLinks, termsAccepted, termsUrl }) {
   rows[0].addComponents(
       new ButtonBuilder()
         .setCustomId(CUSTOM_IDS.set)
-        .setLabel('Adicionar link')
+        .setLabel('Adicionar live')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(CUSTOM_IDS.remove)
-        .setLabel('Remover todos')
+        .setLabel('Remover links')
         .setStyle(ButtonStyle.Danger)
         .setDisabled(!hasLinks),
       new ButtonBuilder()
         .setCustomId(CUSTOM_IDS.test)
-        .setLabel('Verificar agora')
+        .setLabel('Testar alerta')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!hasLinks),
     );
@@ -75,22 +75,22 @@ function buildLiveComponents({ hasLinks, termsAccepted, termsUrl }) {
 function buildLinkModal() {
   const input = new TextInputBuilder()
     .setCustomId('url')
-    .setLabel('LINK DO CANAL DA LIVE')
-    .setPlaceholder('https://twitch.tv/seucanal ou https://youtube.com/@seucanal')
+    .setLabel('Link do canal da live')
+    .setPlaceholder('Exemplo: https://twitch.tv/seucanal')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(300);
 
   return new ModalBuilder()
     .setCustomId(CUSTOM_IDS.modal)
-    .setTitle('Adicionar link de live')
+    .setTitle('Adicionar live')
     .addComponents(new ActionRowBuilder().addComponents(input));
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('live')
-    .setDescription('Abre o painel para configurar seu alerta automático de live.')
+    .setDescription('Abre o painel de alertas automáticos de live.')
     .setDMPermission(false),
 
   async execute(interaction) {
@@ -129,7 +129,7 @@ module.exports = {
       const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
       return safeReply(interaction, {
         content: removed
-          ? `✅ Links de live removidos. Não vou mais avisar em <#${ALERT_CHANNEL_ID}> quando os canais cadastrados entrarem em live.`
+          ? `✅ Links removidos. O bot não enviará novos alertas em <#${ALERT_CHANNEL_ID}> para esses canais.`
           : '❌ Você não tinha links de live cadastrados.',
         embeds: [buildLivePanelEmbed(interaction, links, termsAccepted)],
         components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted, termsUrl }),
@@ -162,7 +162,7 @@ module.exports = {
 
       return safeEdit(interaction, {
         content: [
-          result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
+          result.ok ? '✅ Teste concluído.' : '❌ Teste não concluído.',
           `**Resultado:** ${result.message}`,
           `**Termos aceitos:** ${result.termsAccepted ? 'sim' : 'não'}`,
           `**Credenciais Twitch:** ${result.hasCredentials ? 'ok' : 'faltando'}`,
@@ -203,7 +203,7 @@ module.exports = {
     const termsUrl = buildLiveTermsUrl(interaction.guildId, interaction.user.id);
 
     return safeEdit(interaction, {
-      content: `✅ Link de live adicionado. Quando esse canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`,
+      content: `✅ Live cadastrada. Quando esse canal ficar online, o alerta será enviado em <#${ALERT_CHANNEL_ID}>.`,
       embeds: [buildLivePanelEmbed(interaction, links, true)],
       components: buildLiveComponents({ hasLinks: links.length > 0, termsAccepted: true, termsUrl }),
     });

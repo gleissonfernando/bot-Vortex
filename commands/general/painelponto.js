@@ -7,11 +7,11 @@ const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painelponto')
-    .setDescription('Consulta o ponto de um usuário.')
+    .setDescription('Gera a folha de ponto de um usuário.')
     .addUserOption(option =>
       option
         .setName('usuario')
-        .setDescription('Usuário mencionado para gerar a folha/transcript')
+        .setDescription('Usuário que terá a folha de ponto gerada')
         .setRequired(true)),
 
   async execute(interaction) {
@@ -31,23 +31,23 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor('#5865F2')
-      .setTitle('Painel de Ponto Vortex')
+      .setTitle('🕒 Folha de Ponto')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setDescription('Folha de ponto individual gerada em site. Clique no botão abaixo para abrir no navegador.')
+      .setDescription('A folha individual foi gerada. Use o botão abaixo para abrir o relatório no navegador.')
       .addFields(
         { name: 'Usuário Discord', value: `<@${target.id}>`, inline: true },
         { name: 'Discord ID', value: `\`${target.id}\``, inline: true },
         { name: 'Entrou no Discord', value: member?.joinedAt ? formatDate(member.joinedAt) : 'N/A', inline: false },
         { name: 'Primeiro ponto', value: formatDate(data.firstPointAt), inline: true },
         { name: 'Última abertura', value: formatDate(data.lastPointOpenAt), inline: true },
-        { name: 'Ultimo fechamento', value: formatDate(data.lastPointCloseAt), inline: true },
+        { name: 'Último fechamento', value: formatDate(data.lastPointCloseAt), inline: true },
         { name: 'Dias com ponto', value: String(getPointDays(data)), inline: true },
         { name: 'Total de horas', value: formatDuration(getEffectiveTotalMs(data)), inline: true },
-        { name: 'Ponto atual', value: data.activePointStartedAt ? `Aberto ha ${formatDuration(activeMs)}` : 'Fechado', inline: true },
+        { name: 'Ponto atual', value: data.activePointStartedAt ? `Aberto há ${formatDuration(activeMs)}` : 'Fechado', inline: true },
         { name: 'Link direto', value: pointSiteUrl, inline: false }
       )
       .setTimestamp()
-      .setFooter({ text: 'Vortex - Sistema de Ponto' });
+      .setFooter({ text: 'Vortex • Sistema de Ponto' });
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()

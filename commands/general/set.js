@@ -14,7 +14,7 @@ const { safeReply } = require('../../utils/safeReply');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('set')
-        .setDescription('🎯 Abre o sistema de recrutamento Vortex'),
+        .setDescription('Abre o painel de cadastro da Vortex'),
 
     async execute(interaction) {
         // 1. Verificar autorização
@@ -28,30 +28,33 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setColor('#D4AF37')
             .setAuthor({
-                name: 'Vortex MANAGEMENT • RECRUTAMENTO',
+                name: 'VORTEX • Cadastro',
                 iconURL: interaction.guild.iconURL({ dynamic: true })
             })
-            .setTitle('✨ Seja bem-vindo à nossa seletiva!')
+            .setTitle('📋 Painel de Set')
             .setDescription(
-                '### 📋 Informações Importantes\n' +
-                'Olá, **candidato**! Você está prestes a iniciar o processo de recrutamento oficial da **Vortex**.\n\n' +
-                '**📌 Requisitos Básicos:**\n' +
-                '> • Ter microfone de boa qualidade\n' +
-                '> • Respeitar as regras da organização\n' +
-                '> • Disponibilidade e compromisso'
+                '**Use este painel para solicitar seu set na Vortex.**\n\n' +
+                'Preencha seus dados corretamente para a staff analisar o pedido.'
             )
             .addFields(
                 {
-                    name: '🚀 Como funciona?',
-                    value: '`1.` Clique no botão abaixo para iniciar\n' +
-                           '`2.` Selecione o tipo de set (Morador ou Membro)\n' +
-                           '`3.` Informe ID, nome e número em game\n' +
-                           '`4.` Aguarde a análise da Staff',
+                    name: '📝 Como funciona',
+                    value: [
+                        '`1.` Clique em **Iniciar set**.',
+                        '`2.` Escolha **Morador** ou **Membro**.',
+                        '`3.` Informe seus dados em game.',
+                        '`4.` Aguarde a análise da staff.',
+                    ].join('\n'),
+                    inline: false
+                },
+                {
+                    name: '⚠️ Atenção',
+                    value: 'Dados incorretos podem atrasar ou reprovar o pedido.',
                     inline: false
                 }
             )
             .setFooter({
-                text: '© 2026 Vortex Recruitment System',
+                text: 'Vortex • Sistema de Set',
                 iconURL: interaction.guild.iconURL({ dynamic: true })
             })
             .setTimestamp();
@@ -63,7 +66,7 @@ module.exports = {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('Vortex_set_start')
-                .setLabel('Pedir Set / Recrutamento')
+                .setLabel('Iniciar set')
                 .setEmoji('📝')
                 .setStyle(ButtonStyle.Success)
         );

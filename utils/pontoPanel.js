@@ -76,18 +76,18 @@ function getPanel(guildId) {
 function createControlEmbed() {
   return new EmbedBuilder()
     .setColor('#7000FF')
-    .setAuthor({ name: 'VORTEX | Relogio de Ponto' })
-    .setTitle('Bater Ponto')
+    .setAuthor({ name: 'VORTEX | Relógio de Ponto' })
+    .setTitle('🕒 Painel de Ponto')
     .setDescription([
-      'Use este painel para registrar sua entrada e saída de serviço.',
+      '**Registre sua entrada e saída de serviço por aqui.**',
       '',
-      '**Como funciona**',
-      '1. Clique em `Entrar em Serviço` quando iniciar no game.',
-      '2. Clique em `Sair de Serviço` quando terminar.',
-      '3. Se esquecer de fechar, use `Solicitar ajuste de ponto` e informe o horário correto e o motivo.',
+      '**Como usar**',
+      '`1.` Clique em **Entrar em serviço** quando começar.',
+      '`2.` Clique em **Sair de serviço** quando terminar.',
+      '`3.` Esqueceu de fechar? Use **Solicitar ajuste**.',
       '',
-      '**Importante**',
-      'O ajuste abre um atendimento privado para você e a administração. Se aprovado, o ponto aberto é fechado automaticamente no horário informado.',
+      '**Ajuste de ponto**',
+      'Informe o horário correto de saída e o motivo. A staff vai analisar antes de aplicar.',
     ].join('\n'))
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setTimestamp()
@@ -98,15 +98,15 @@ function createControlRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ponto_open')
-      .setLabel('Entrar em Serviço')
+      .setLabel('Entrar em serviço')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('ponto_close')
-      .setLabel('Sair de Serviço')
+      .setLabel('Sair de serviço')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId('ponto_adjust_request')
-      .setLabel('Solicitar ajuste de ponto')
+      .setLabel('Solicitar ajuste')
       .setStyle(ButtonStyle.Secondary)
   );
 }
@@ -208,21 +208,21 @@ async function createStatusEmbed(guild) {
         '```',
         rows.map((row) => row.mention).join(' '),
       ].join('\n')
-    : 'Nenhuma fac em serviço no momento.';
+    : 'Nenhum membro em serviço no momento.';
 
   const description = [
-    `Temos ${active.length} membros da fac em serviço:`,
-    `Jogadores na cidade agora: ${onlineCount}`,
+    `Membros em serviço: **${active.length}**`,
+    `Detectados na cidade: **${onlineCount}**`,
     onlinePlayers.length
       ? `Na cidade: ${onlinePlayers.slice(0, 25).map((player) => `${player.mention} (${player.cityName})`).join(' ')}${onlinePlayers.length > 25 ? ` (+${onlinePlayers.length - 25})` : ''}`
-      : 'Na cidade: nenhum membro do ponto detectado agora.',
+      : 'Na cidade: nenhum membro detectado agora.',
     '',
     table,
   ].join('\n');
 
   return new EmbedBuilder()
     .setColor(0x111827)
-    .setTitle('Relógio de Ponto')
+    .setTitle('🕒 Status do Ponto')
     .setDescription(description.slice(0, 4096))
     .setTimestamp()
     .setFooter({ text: 'Atualização automática - Vortex Ponto' });

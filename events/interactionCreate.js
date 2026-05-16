@@ -119,10 +119,10 @@ async function sendRecruitmentResultDm(client, targetUser, {
     if (isDmLogDisabled()) return false;
 
     const color = approved ? '#57F287' : '#ED4245';
-    const title = approved ? 'Solicitação Aprovada' : 'Solicitação Reprovada';
+    const title = approved ? 'Set aprovado' : 'Set recusado';
     const statusText = approved
-        ? 'Sua solicitação de set foi aprovada pela equipe.'
-        : 'Sua solicitação de set foi reprovada pela equipe.';
+        ? 'Seu pedido de set foi aprovado pela staff.'
+        : 'Seu pedido de set foi recusado pela staff.';
 
     const details = [
         `**Servidor:** ${guild?.name || 'Vortex'}`,
@@ -137,13 +137,13 @@ async function sendRecruitmentResultDm(client, targetUser, {
 
     const nextSteps = approved
         ? [
-            'Seu acesso foi liberado e seus cargos foram atualizados.',
-            'Caso seu apelido tenha sido ajustado, aguarde alguns instantes para o Discord atualizar.',
-            'Procure a staff se algum cargo não aparecer corretamente.',
+            'Seus cargos foram atualizados.',
+            'Seu apelido pode levar alguns instantes para aparecer atualizado.',
+            'Se algo estiver errado, fale com a staff.',
         ].join('\n')
         : [
-            'Revise as informações enviadas e fale com a staff caso precise entender o motivo.',
-            'Quando autorizado, você poderá abrir uma nova solicitação.',
+            'Revise seus dados antes de tentar novamente.',
+            'Fale com a staff se precisar entender o motivo.',
         ].join('\n');
 
     const embed = new EmbedBuilder()
@@ -155,11 +155,11 @@ async function sendRecruitmentResultDm(client, targetUser, {
         .setTitle(`${approved ? '✅' : '❌'} ${title}`)
         .setDescription(statusText)
         .addFields(
-            { name: 'Resumo', value: details, inline: false },
-            { name: approved ? 'Próximos passos' : 'Orientação', value: nextSteps, inline: false }
+            { name: '📋 Dados do pedido', value: details, inline: false },
+            { name: approved ? '✅ Próximo passo' : '⚠️ Orientação', value: nextSteps, inline: false }
         )
         .setTimestamp()
-        .setFooter({ text: 'Vortex Recruitment System' });
+        .setFooter({ text: 'Vortex • Sistema de Set' });
 
     if (guild?.iconURL?.()) {
         embed.setThumbnail(guild.iconURL({ dynamic: true, size: 256 }));
@@ -256,22 +256,22 @@ module.exports = {
         if (interaction.isButton() && interaction.customId === 'ponto_adjust_request') {
             const modal = new ModalBuilder()
                 .setCustomId('modal_ponto_adjust_request')
-                .setTitle('Solicitar ajuste de ponto');
+                .setTitle('Ajuste de ponto');
 
             modal.addComponents(
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('closed_at')
-                        .setLabel('HORARIO QUE FICOU EM GAME')
-                        .setPlaceholder('Obrigatorio: 27/04/2026 18:30:45')
+                        .setLabel('Horário correto de saída')
+                        .setPlaceholder('Exemplo: 27/04/2026 18:30')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('reason')
-                        .setLabel('MOTIVO DE NAO FECHAR O PONTO')
-                        .setPlaceholder('Explique por que não conseguiu fechar o ponto')
+                        .setLabel('Motivo do ajuste')
+                        .setPlaceholder('Explique por que o ponto não foi fechado corretamente.')
                         .setStyle(TextInputStyle.Paragraph)
                         .setRequired(true)
                         .setMaxLength(900)
@@ -290,7 +290,7 @@ module.exports = {
                 return safeEdit(interaction, { content: `❌ ${result.message}` });
             }
             return safeEdit(interaction, {
-                content: `✅ Solicitação aberta em <#${result.channel.id}>. Aguarde a análise da administração.`,
+                content: `✅ Pedido de ajuste aberto em <#${result.channel.id}>. Aguarde a análise da staff.`,
             });
         }
 
@@ -356,13 +356,13 @@ module.exports = {
 
             if (result.action === 'already_open') {
                 return safeEdit(interaction, {
-                    content: '❌ Você já está online',
+                    content: '❌ Seu ponto já está aberto.',
                 });
             }
 
             if (result.action === 'already_closed') {
                 return safeEdit(interaction, {
-                    content: '❌ Você não está em serviço.',
+                    content: '❌ Você não possui ponto aberto.',
                 });
             }
 
@@ -379,8 +379,8 @@ module.exports = {
 
             return safeEdit(interaction, {
                 content: opening
-                    ? `✅ Você entrou em serviço em ${formatDate(result.data.activePointStartedAt)}.`
-                    : `Ponto fechado em ${formatDate(result.data.lastPointCloseAt)}. Tempo deste ponto: ${formatDuration(result.durationMs)}.`,
+                    ? `✅ Ponto aberto em ${formatDate(result.data.activePointStartedAt)}.`
+                    : `✅ Ponto fechado em ${formatDate(result.data.lastPointCloseAt)}. Tempo registrado: ${formatDuration(result.durationMs)}.`,
             });
         }
 
@@ -585,21 +585,21 @@ module.exports = {
             }
 
             const select = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Tipo de Set').addOptions([
-                    { label: 'Morador', value: 'Morador', emoji: '🏠' },
-                    { label: 'Membro', value: 'Membro', emoji: '👤' }
+                new StringSelectMenuBuilder().setCustomId('Vortex_select_tipo').setPlaceholder('Escolha o tipo de set').addOptions([
+                    { label: 'Morador', value: 'Morador', description: 'Cadastro como morador', emoji: '🏠' },
+                    { label: 'Membro', value: 'Membro', description: 'Cadastro como membro da Vortex', emoji: '👤' }
                 ])
             );
-            return safeReply(interaction, { content: 'Selecione o tipo de set:', components: [select], ephemeral: true });
+            return safeReply(interaction, { content: 'Selecione como deseja abrir seu pedido de set:', components: [select], ephemeral: true });
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'Vortex_select_tipo') {
-            const modal = new ModalBuilder().setCustomId(`Vortex_modal_${interaction.values[0]}`).setTitle(`Vortex | ${interaction.values[0]}`);
+            const modal = new ModalBuilder().setCustomId(`Vortex_modal_${interaction.values[0]}`).setTitle(`Set | ${interaction.values[0]}`);
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id_game').setLabel('ID EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nome_game').setLabel('NOME EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('NÚMERO EM GAME').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('NÍVEL EM GAME').setStyle(TextInputStyle.Short).setRequired(true))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id_game').setLabel('ID em game').setPlaceholder('Exemplo: 123').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nome_game').setLabel('Nome em game').setPlaceholder('Exemplo: Gleisson').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numero_game').setLabel('Número em game').setPlaceholder('Exemplo: 555-123').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nivel_game').setLabel('Nível em game').setPlaceholder('Exemplo: 25').setStyle(TextInputStyle.Short).setRequired(true))
             );
             return safeShowModal(interaction, modal);
         }
@@ -631,8 +631,12 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setColor('#5865F2')
-                .setTitle('📋 Nova Solicitação de Set')
-                .setDescription(`Uma nova solicitação de set foi aberta por <@${user.id}>.\n\nA staff deve analisar os dados abaixo e aprovar ou reprovar o pedido.`)
+                .setTitle('📋 Pedido de Set')
+                .setDescription([
+                    `<@${user.id}> abriu um pedido de set.`,
+                    '',
+                    'Confira os dados abaixo antes de aprovar ou recusar.',
+                ].join('\n'))
                 .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
                 .addFields(
                     { name: '👤 Usuário', value: `<@${user.id}>`, inline: true },
@@ -644,7 +648,7 @@ module.exports = {
                     { name: '📈 Nível em Game', value: `\`${nivelGame}\``, inline: true },
                     { name: '📊 Status', value: '`Aguardando análise`', inline: true }
                 )
-                .setFooter({ text: 'Vortex System • Aguardando análise da staff' })
+                .setFooter({ text: 'Vortex • Sistema de Set' })
                 .setTimestamp();
 
             const buttons = new ActionRowBuilder().addComponents(
@@ -653,8 +657,16 @@ module.exports = {
                 new ButtonBuilder().setCustomId('Vortex_del').setLabel('Apagar').setEmoji('🗑️').setStyle(ButtonStyle.Secondary)
             );
 
-            await canal.send({ content: `<@${user.id}> aguarde a análise da staff.`, embeds: [embed], components: [buttons] });
-            await safeEdit(interaction, { embeds: [new EmbedBuilder().setColor('#57F287').setTitle('✅ Solicitação enviada com sucesso').setDescription(`Canal criado: <#${canal.id}>`)] });
+            await canal.send({ content: `<@${user.id}> seu pedido foi aberto. Aguarde a análise da staff.`, embeds: [embed], components: [buttons] });
+            await safeEdit(interaction, {
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#57F287')
+                        .setTitle('✅ Pedido enviado')
+                        .setDescription(`Seu canal de atendimento foi criado: <#${canal.id}>`)
+                        .setFooter({ text: 'Vortex • Sistema de Set' }),
+                ],
+            });
 
             const pedidosAtivos = loadJSON(PEDIDOS_PATH);
             pedidosAtivos[user.id] = {
@@ -776,7 +788,7 @@ module.exports = {
 
                 const resultEmbed = new EmbedBuilder()
                     .setColor(isApp ? '#57F287' : '#ED4245')
-                    .setTitle(isApp ? '✅ Solicitação Aprovada' : '❌ Solicitação Reprovada')
+                    .setTitle(isApp ? '✅ Set aprovado' : '❌ Set recusado')
                     .setDescription([
                         `Usuário: <@${targetId}>`,
                         `Resultado: ${isApp ? 'Aprovado' : 'Reprovado'}`,
