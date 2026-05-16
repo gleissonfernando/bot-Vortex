@@ -579,7 +579,7 @@ module.exports = {
             const existingProfile = getUserProfile(guild.id, user.id);
             if (existingProfile) {
                 return safeReply(interaction, {
-                    content: '❌ Você já está cadastrado no sistema Vortex e não pode abrir outro /set.',
+                    content: '❌ Você já possui perfil cadastrado no sistema Vortex. Para pedir outro set, a gerência precisa apagar seu perfil pelo `/painel` primeiro.',
                     ephemeral: true,
                 });
             }
@@ -609,7 +609,7 @@ module.exports = {
             const existingProfile = getUserProfile(guild.id, user.id);
             if (existingProfile) {
                 return safeEdit(interaction, {
-                    content: '❌ Você já está cadastrado no sistema Vortex e não pode abrir outro /set.',
+                    content: '❌ Você já possui perfil cadastrado no sistema Vortex. Para pedir outro set, a gerência precisa apagar seu perfil pelo `/painel` primeiro.',
                 });
             }
             const tipo = interaction.customId.split('_')[2];

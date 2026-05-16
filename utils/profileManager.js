@@ -820,7 +820,9 @@ function removeUserProfileData(guildId, userId) {
 
 async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servidor') {
   const data = readProfiles();
-  const profile = data[guild.id]?.[userId] || null;
+  const normalizedGuildId = String(guild.id);
+  const normalizedUserId = String(userId);
+  const profile = getUserProfile(normalizedGuildId, normalizedUserId);
   if (!profile) return { ok: false, deleted: false, channelDeleted: false, message: 'Perfil não encontrado.' };
 
   const member = await guild.members.fetch(userId).catch(() => null);
@@ -854,11 +856,37 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
     }
   }
 
-  delete data[guild.id][userId];
-  if (Object.keys(data[guild.id]).length === 0) delete data[guild.id];
+  let deletedCount = 0;
+  for (const [currentGuildId, profiles] of Object.entries(data)) {
+    if (!profiles || typeof profiles !== 'object') continue;
+
+    if (currentGuildId === normalizedUserId) {
+      const isSameGuild = !profiles.guildId || String(profiles.guildId) === normalizedGuildId;
+      const isSameUser = String(profiles.userId || currentGuildId) === normalizedUserId;
+      if (isSameGuild && isSameUser) {
+        delete data[currentGuildId];
+        deletedCount += 1;
+      }
+      continue;
+    }
+
+    for (const [profileKey, currentProfile] of Object.entries(profiles)) {
+      const isSameUser = profileKey === normalizedUserId || String(currentProfile?.userId || '') === normalizedUserId;
+      const isSameGuild = currentGuildId === normalizedGuildId || String(currentProfile?.guildId || '') === normalizedGuildId;
+      if (isSameUser && isSameGuild) {
+        delete profiles[profileKey];
+        deletedCount += 1;
+      }
+    }
+
+    if (currentGuildId !== normalizedUserId && Object.keys(profiles).length === 0) {
+      delete data[currentGuildId];
+    }
+  }
+
   writeProfiles(data);
 
-  return { ok: true, deleted: true, channelDeleted, approvedRoleRemoved, pendingRoleAdded };
+  return { ok: true, deleted: true, deletedCount, channelDeleted, approvedRoleRemoved, pendingRoleAdded };
 }
 
 function parseTestPeriod(amountInput, unitInput) {
