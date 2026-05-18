@@ -56,6 +56,13 @@ const rest = new REST().setToken(token);
 
         console.log(`✅ Sucesso! ${data.length} comandos registrados no servidor ${guildId}.`);
         console.log('💡 Comandos de servidor aparecem mais rapido e nao duplicam com comandos globais.');
+
+        const exibirCommand = commands.find((command) => command.name === 'exibir');
+        if (exibirCommand) {
+            console.log('⏳ Registrando /exibir globalmente para outros servidores...');
+            await rest.put(Routes.applicationCommands(clientId), { body: [exibirCommand] });
+            console.log('✅ /exibir registrado globalmente.');
+        }
     } catch (error) {
         console.error('❌ Erro ao registrar comandos:', error);
     }

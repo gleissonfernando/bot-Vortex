@@ -44,6 +44,12 @@ function hasAbsenceAccess(member) {
     return hasPointRole(member) || hasAnyVortexRole(member);
 }
 
+function isPublicExibirInteraction(interaction) {
+    if (interaction.isChatInputCommand?.() && interaction.commandName === 'exibir') return true;
+    if (interaction.isStringSelectMenu?.() && String(interaction.customId || '').startsWith('exibir_panel_select')) return true;
+    return false;
+}
+
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
     if (commandName === 'exibir') return true;
@@ -189,7 +195,7 @@ module.exports = {
     async execute(interaction) {
         const { client, guild, user, member } = interaction;
         const conf = loadJSON(CONFIG_PATH);
-        if (interaction.guildId && !isPrimaryGuild(interaction.guildId)) return;
+        if (interaction.guildId && !isPrimaryGuild(interaction.guildId) && !isPublicExibirInteraction(interaction)) return;
 
         // Bloqueio de Manutenção VORTEX
         if (conf.MAINTENANCE_MODE && !hasMasterPermission(member)) {
@@ -245,6 +251,7 @@ module.exports = {
                         color: '#5865F2',
                         type: 'COMANDO',
                         channelId: interaction.channelId,
+                        guildId: interaction.guildId,
                     }).catch(() => {});
                     await cmd.execute(interaction);
                 } catch (error) {
