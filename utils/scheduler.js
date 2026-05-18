@@ -11,6 +11,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
+const { isPrimaryGuildChannel } = require('./guildScope');
 
 // ─── Constantes fixas ─────────────────────────────────────────────────────────
 const CANAL_AUTO_ID    = '11481598629365022800';
@@ -194,6 +195,7 @@ function buildTodoMundoOnEmbed() {
 async function sendToChannel(client, canalId, payload) {
     try {
         const canal = await client.channels.fetch(canalId).catch(() => null);
+        if (!isPrimaryGuildChannel(canal)) return false;
         if (!canal) {
             console.error(`[Scheduler] Canal ${canalId} não encontrado.`);
             return false;

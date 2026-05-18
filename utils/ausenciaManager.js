@@ -9,6 +9,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const { logger } = require('./logger');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { formatDate: formatRealDate } = require('./pontoManager');
 
 const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
@@ -226,8 +227,10 @@ async function createAbsenceRequestChannel(interaction, absence) {
 }
 
 async function sendAbsenceLog(client, guildId, absence, action = 'created') {
+  if (!isPrimaryGuild(guildId)) return false;
   const config = getAbsenceConfig();
   const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
+  if (!isPrimaryGuildChannel(channel)) return false;
   if (!channel?.isTextBased?.()) return false;
 
   const isCreated = action === 'created';
@@ -573,7 +576,7 @@ async function finishAbsence(client, guild, absence, data) {
   const config = getAbsenceConfig();
   if (!config.disableEndMessage) {
     const channel = await client.channels.fetch(config.logChannelId).catch(() => null);
-    if (channel?.isTextBased?.()) {
+    if (isPrimaryGuildChannel(channel) && channel?.isTextBased?.()) {
       await channel.send({
         content: `<@${absence.userId}> Hoje é seu último dia de ausência, está na hora de trabalhar.`,
       }).catch(() => null);
@@ -589,6 +592,7 @@ async function checkExpiredAbsences(client) {
   const now = Date.now();
 
   for (const [guildId, guildAbsences] of Object.entries(data)) {
+    if (!isPrimaryGuild(guildId)) continue;
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) continue;
 

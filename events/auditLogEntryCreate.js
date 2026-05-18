@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, sendVortexLog } = require('../utils/notifications');
 const { logger } = require('../utils/logger');
 const { formatDate } = require('../utils/pontoManager');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('../utils/guildScope');
 
 const ACTION_DETAILS = {
     GuildUpdate: { title: 'Servidor atualizado', verb: 'alterou configuracoes do servidor', color: '#00D9FF' },
@@ -217,6 +218,7 @@ module.exports = {
     name: Events.GuildAuditLogEntryCreate,
     async execute(auditLogEntry, guild) {
         try {
+            if (!isPrimaryGuild(guild?.id)) return;
             if (getRelatedChannelIds(auditLogEntry).some(isLogChannelIgnored)) return;
 
             const actionName = getActionName(auditLogEntry.action);
@@ -279,11 +281,13 @@ module.exports = {
                     ].join('\n').slice(0, 3900),
                     color: action.color,
                     type: 'AUDITORIA',
+                    guildId: guild.id,
                 }).catch(() => null);
                 return;
             }
 
             const channel = await guild.client.channels.fetch(getLogChannelId()).catch(() => null);
+            if (!isPrimaryGuildChannel(channel)) return;
             if (!channel?.isTextBased?.()) return;
 
             await channel.send({ embeds: [embed] }).catch(() => null);

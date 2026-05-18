@@ -39,7 +39,8 @@ module.exports = {
                     `**Ação automática:** cargo(s) pendente(s) aplicado(s): ${autoRoles.pending.map((roleId) => `<@&${roleId}>`).join(' ') || '`Nenhum`'}.`,
                     '**Próximo passo:** usuário precisa iniciar o cadastro pelo `/set`.',
                 ].join('\n'),
-                '#57F287'
+                '#57F287',
+                { guildId: guild.id }
             );
 
             await logMemberJoin(guild, member).catch((error) => {

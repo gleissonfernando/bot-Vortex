@@ -26,7 +26,8 @@ module.exports = {
                     'O usuário saiu do servidor. Desejamos boa sorte na caminhada.',
                     `Se qualquer coisa tiver acontecido ou se precisar conversar, entre em contato com <@${SUPPORT_USER_ID}> Duke | henryP1.`,
                 ].join('\n'),
-                '#ED4245'
+                '#ED4245',
+                { guildId: guild.id }
             );
 
             await logMemberLeave(guild, member).catch((error) => {

@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const { sendUpdateLog } = require('../utils/notifications');
 const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
+const { isPrimaryGuild } = require('../utils/guildScope');
 
 module.exports = {
     name: Events.ClientReady,
@@ -23,7 +24,9 @@ module.exports = {
 
         try {
             await Promise.allSettled(
-                client.guilds.cache.map((guild) => syncVoiceChannelAccess(guild))
+                client.guilds.cache
+                    .filter((guild) => isPrimaryGuild(guild.id))
+                    .map((guild) => syncVoiceChannelAccess(guild))
             );
         } catch (error) {
             console.error('Erro ao sincronizar acesso às calls ocultas:', error);
@@ -31,7 +34,9 @@ module.exports = {
 
         try {
             await Promise.allSettled(
-                client.guilds.cache.map((guild) => syncTextChannelAccess(guild))
+                client.guilds.cache
+                    .filter((guild) => isPrimaryGuild(guild.id))
+                    .map((guild) => syncTextChannelAccess(guild))
             );
         } catch (error) {
             console.error('Erro ao sincronizar acesso aos canais de texto:', error);

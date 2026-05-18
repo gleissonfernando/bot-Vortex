@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/config');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 let discordClient = null;
 
@@ -9,6 +10,8 @@ function setDiscordClient(client) {
 
 async function sendLogToDashboard(payload = {}) {
     try {
+        if (payload.guildId && !isPrimaryGuild(payload.guildId)) return false;
+
         if (!discordClient || !discordClient.channels) {
             return false;
         }
@@ -17,6 +20,7 @@ async function sendLogToDashboard(payload = {}) {
         if (!logsChannelId) return false;
 
         const channel = await discordClient.channels.fetch(logsChannelId).catch(() => null);
+        if (!isPrimaryGuildChannel(channel)) return false;
         if (!channel || !channel.isTextBased()) return false;
 
         const {

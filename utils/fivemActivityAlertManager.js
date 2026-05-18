@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { openPoint, closePoint, getUserPoint, listGuildPoints, formatDate, formatDuration } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
+const { isPrimaryGuild } = require('./guildScope');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
@@ -263,6 +264,7 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
   if (!newPresence?.guild || !newPresence.user || newPresence.user.bot) return;
 
   const guild = newPresence.guild;
+  if (!isPrimaryGuild(guild.id)) return;
   const user = newPresence.user;
   const member = newPresence.member || await guild.members.fetch(user.id).catch(() => null);
   const key = `${guild.id}:${user.id}`;
@@ -315,6 +317,7 @@ async function scanCurrentFiveMActivities(client) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
     const presenceFetchOk = await guild.members.fetch({ withPresences: true })
       .then(() => true)
       .catch(() => false);

@@ -4,6 +4,7 @@ const { buildAllPointsReportPayload } = require('./pontoReport');
 const { resetGuildPoints, formatDate } = require('./pontoManager');
 const { updateStatusPanel } = require('./pontoPanel');
 const { logger } = require('./logger');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 const DAILY_POINT_CHANNEL_ID = '1498473417144533255';
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'dailyPointTranscriptState.json');
@@ -53,7 +54,9 @@ function getSaoPauloParts(date = new Date()) {
 }
 
 async function sendDailyPointTranscriptForGuild(client, guild) {
+  if (!isPrimaryGuild(guild.id)) return false;
   const channel = await client.channels.fetch(DAILY_POINT_CHANNEL_ID).catch(() => null);
+  if (!isPrimaryGuildChannel(channel)) return false;
   if (!channel?.isTextBased?.()) return false;
 
   const payload = await buildAllPointsReportPayload(guild, { includeAllMembers: true, suppressMentions: true });
@@ -85,6 +88,7 @@ async function runDailyPointTranscript(client, force = false) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
     const stateKey = `${guild.id}:${nowParts.dateKey}`;
     if (!force && state[stateKey]) continue;
 

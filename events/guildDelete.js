@@ -18,7 +18,8 @@ module.exports = {
         client,
         "📤 Bot Removido de Servidor",
         `O bot foi removido do servidor **${guild.name}** (\`${guild.id}\`).`,
-        "#ED4245"
+        "#ED4245",
+        { guildId: guild.id }
       );
 
     } catch (error) {

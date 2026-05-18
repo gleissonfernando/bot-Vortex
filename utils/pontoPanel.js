@@ -5,6 +5,7 @@ const { listGuildPoints, formatPanelDate } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
 const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -229,6 +230,7 @@ async function createStatusEmbed(guild) {
 }
 
 async function updateStatusPanel(client, guildId) {
+  if (!isPrimaryGuild(guildId)) return false;
   const panel = getPanel(guildId);
 
   try {
@@ -239,6 +241,7 @@ async function updateStatusPanel(client, guildId) {
     const configuredStatusChannelId = pointConfig.statusChannelId;
     const channel = client.channels.cache.get(configuredStatusChannelId)
       || await client.channels.fetch(configuredStatusChannelId).catch(() => null);
+    if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.isTextBased?.()) return false;
 
     if (shouldSyncVisibility(guild.id)) {
@@ -274,6 +277,7 @@ async function updateStatusPanel(client, guildId) {
 }
 
 async function setOnlineChannelAccess(client, guildId, userId, allowed) {
+  if (!isPrimaryGuild(guildId)) return false;
   try {
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return false;
@@ -281,6 +285,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
     const pointConfig = getPointConfig();
     const channel = client.channels.cache.get(pointConfig.statusChannelId)
       || await client.channels.fetch(pointConfig.statusChannelId).catch(() => null);
+    if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.permissionOverwrites?.edit) return false;
 
     if (allowed) {
@@ -326,7 +331,9 @@ async function syncOnlineChannelVisibility(guild, channel) {
 }
 
 async function updateAllStatusPanels(client) {
-  const guildIds = client.guilds.cache.map((guild) => guild.id);
+  const guildIds = client.guilds.cache
+    .filter((guild) => isPrimaryGuild(guild.id))
+    .map((guild) => guild.id);
   await Promise.allSettled(guildIds.map((guildId) => updateStatusPanel(client, guildId)));
 }
 

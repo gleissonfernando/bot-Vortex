@@ -9,6 +9,7 @@ const {
 } = require('./pontoManager');
 const { AUTO_POINT_SOURCE, TARGET_SERVER_NAME } = require('./fivemActivityAlertManager');
 const { logger } = require('./logger');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'dailyReportState.json');
@@ -333,10 +334,12 @@ async function buildDailyReportPayload(guild, options = {}) {
 }
 
 async function sendDailyReportForGuild(client, guild, options = {}) {
+  if (!isPrimaryGuild(guild.id)) return { ok: false, message: 'Servidor fora do escopo configurado.' };
   const config = getDailyReportConfig();
   const channelId = options.channelId || config.reportChannelId || config.testChannelId;
   if (!channelId) return { ok: false, message: 'Canal de relatorio diario nao configurado.' };
   const channel = await client.channels.fetch(channelId).catch(() => null);
+  if (!isPrimaryGuildChannel(channel)) return { ok: false, message: 'Canal fora do servidor configurado.' };
   if (!channel?.isTextBased?.()) return { ok: false, message: 'Canal de relatorio diario nao encontrado.' };
 
   const payload = await buildDailyReportPayload(guild, options);
@@ -359,6 +362,7 @@ async function runDailyReportScheduler(client, force = false) {
   const state = readJSON(STATE_PATH, {});
   const results = [];
   for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
     const stateKey = `${guild.id}:${now.dateKey}`;
     if (!force && state[stateKey]) continue;
     const result = await sendDailyReportForGuild(client, guild, { dateKey: now.dateKey, mode: 'daily' }).catch((error) => {

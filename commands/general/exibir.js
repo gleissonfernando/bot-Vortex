@@ -2,6 +2,8 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   ActionRowBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
   StringSelectMenuBuilder,
 } = require('discord.js');
 const { safeReply, safeUpdate } = require('../../utils/safeReply');
@@ -105,20 +107,21 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('exibir')
     .setDescription('Exibe os painéis e a apresentação da Vortex.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
 
   async execute(interaction) {
     if (!isOwner(interaction)) {
       return safeReply(interaction, {
         content: '❌ Você não tem permissão para usar este comando.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     return safeReply(interaction, {
       embeds: [buildOverviewEmbed(interaction)],
       components: buildComponents(),
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 
@@ -128,7 +131,7 @@ module.exports = {
     if (!isOwner(interaction)) {
       return safeReply(interaction, {
         content: '❌ Você não tem permissão para usar este seletor.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 

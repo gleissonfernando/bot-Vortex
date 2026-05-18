@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { formatDate } = require('./pontoManager');
 const { safeReply, safeEdit, safeDeferReply } = require('./safeReply');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const QUEUED_CHANNEL_LOGS_PATH = path.join(__dirname, '..', 'commands', 'queuedChannelLogs.json');
@@ -175,6 +176,7 @@ function buildLogEmbed(client, { title, description, color = '#7000FF', type = '
 
 async function sendFixedChannelEmbed(client, embed) {
     const channel = await client.channels.fetch(FIXED_LOG_CHANNEL).catch(() => null);
+    if (!isPrimaryGuildChannel(channel)) return false;
     return sendEmbedToTextChannel(channel, embed);
 }
 
@@ -203,6 +205,7 @@ async function flushQueuedChannelLogs(client) {
     if (!queued.length) return 0;
 
     const channel = await client.channels.fetch(getLogChannelId()).catch(() => null);
+    if (!isPrimaryGuildChannel(channel)) return 0;
     if (!channel?.isTextBased?.()) return 0;
 
     await channel.send({
@@ -361,8 +364,9 @@ function initChannelLogRecovery(client) {
     }, 30 * 1000);
 }
 
-async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null, channelId = null, relatedChannelIds = [] }) {
+async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null, channelId = null, relatedChannelIds = [], guildId = null }) {
     if (!client) return false;
+    if (guildId && !isPrimaryGuild(guildId)) return false;
 
     syncStoredLogChannel();
     if (hasIgnoredRelatedChannel(channelId, relatedChannelIds)) return false;
@@ -382,6 +386,7 @@ async function sendVortexLog(client, { title, description, color = '#7000FF', ty
     if (!channelLogsDisabled) {
         try {
             const channel = await client.channels.fetch(logChannelId).catch(() => null);
+            if (!isPrimaryGuildChannel(channel)) return false;
             if (channel?.isTextBased?.()) {
                 await sendEmbedToTextChannel(channel, embed, files);
             }
@@ -469,12 +474,12 @@ async function notifyBotDown(client, reason, context = 'Bot caiu') {
     });
 }
 
-async function sendStaffLog(client, title, description, color = '#7000FF') {
-    return sendVortexLog(client, { title, description, color, type: 'LOG' });
+async function sendStaffLog(client, title, description, color = '#7000FF', options = {}) {
+    return sendVortexLog(client, { ...options, title, description, color, type: 'LOG' });
 }
 
-async function sendUpdateLog(client, title, description, color = '#00D9FF') {
-    return sendVortexLog(client, { title, description, color, type: 'UPDATE' });
+async function sendUpdateLog(client, title, description, color = '#00D9FF', options = {}) {
+    return sendVortexLog(client, { ...options, title, description, color, type: 'UPDATE' });
 }
 
 async function notifyError(client, error, context = '') {
@@ -515,6 +520,7 @@ module.exports = {
     getLogChannelId,
     isChannelLogDisabled,
     isDmLogDisabled,
+    isPrimaryGuild,
     getDisabledLogChannelIds,
     isLogChannelIgnored,
     hasIgnoredRelatedChannel,

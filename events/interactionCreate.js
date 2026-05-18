@@ -2,7 +2,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedB
 const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
-const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReenableChannelLogsButton } = require('../utils/notifications');
+const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReenableChannelLogsButton, isPrimaryGuild } = require('../utils/notifications');
 const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
@@ -15,6 +15,7 @@ const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
+const { isPrimaryGuildChannel } = require('../utils/guildScope');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -73,6 +74,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
 async function reportInteractionError(client, error, context = 'Interação') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
+    if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.isTextBased?.()) return false;
 
     return channel.send({
@@ -187,6 +189,7 @@ module.exports = {
     async execute(interaction) {
         const { client, guild, user, member } = interaction;
         const conf = loadJSON(CONFIG_PATH);
+        if (interaction.guildId && !isPrimaryGuild(interaction.guildId)) return;
 
         // Bloqueio de Manutenção VORTEX
         if (conf.MAINTENANCE_MODE && !hasMasterPermission(member)) {

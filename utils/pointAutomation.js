@@ -13,6 +13,7 @@ const { getGuildProfiles, getBillingExemptUserIds } = require('./profileManager'
 const { getActiveGuildAbsences } = require('./ausenciaManager');
 const { logger } = require('./logger');
 const { sendVortexLog } = require('./notifications');
+const { isPrimaryGuild } = require('./guildScope');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 const { safeReply, safeEdit, safeUpdate } = require('./safeReply');
@@ -240,6 +241,7 @@ async function openPointCorrectionForClosedPoint(client, guild, point, {
     ].filter(Boolean).join('\n'),
     color: '#FEE75C',
     type: 'PONTO',
+    guildId: guild.id,
   }).catch(() => null);
   state[key] = {
     ...(state[key] || {}),
@@ -498,6 +500,7 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
 async function runPointAutomationCheck(client, { force = false } = {}) {
   const state = readJSON(STATE_PATH, {});
   for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
     await checkOpenPointConfirmations(client, guild, state, force).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
     await checkOfflineUsers(client, guild, state, force).catch((error) => logger.error('Erro na cobrança de usuários offline:', error));
     await checkAvailabilityReminders(client, guild, state, force).catch((error) => logger.error('Erro no lembrete de status disponível:', error));

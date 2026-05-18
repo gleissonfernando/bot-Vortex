@@ -2,6 +2,7 @@ const GuildLog = require('../models/GuildLog');
 const { logger } = require('./logger');
 const dashboardClient = require('./dashboardClient');
 const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
+const { isPrimaryGuild } = require('./guildScope');
 
 /**
  * Mapeamento de tipo de log interno → cor do embed no painel
@@ -69,6 +70,8 @@ function fromSupabaseLog(row) {
  */
 async function logGuildEvent(guildId, options) {
   try {
+    if (!isPrimaryGuild(guildId)) return null;
+
     const {
       type = 'info',
       title = 'Evento',

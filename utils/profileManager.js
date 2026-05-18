@@ -5,6 +5,7 @@ const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
 const { syncApprovedSetChannel } = require('./approvedSetChannels');
 const { resetToPendingHierarchy } = require('./vortexHierarchy');
+const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -604,7 +605,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
 
   if (profile.callChannelId) {
     const userChannel = await client.channels.fetch(profile.callChannelId).catch(() => null);
-    if (userChannel?.isTextBased?.()) {
+    if (isPrimaryGuildChannel(userChannel) && userChannel?.isTextBased?.()) {
       await userChannel.send({
         content: `<@${profile.userId}> atualize seu /perfil com foto e nível.`,
         embeds: [embed],
@@ -625,8 +626,10 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
 
 async function sendProfileManagementSummary(client, guild, dueProfiles) {
   if (!dueProfiles.length) return false;
+  if (!isPrimaryGuild(guild.id)) return false;
 
   const channel = await client.channels.fetch(getProfileManagementChannelId()).catch(() => null);
+  if (!isPrimaryGuildChannel(channel)) return false;
   if (!channel?.isTextBased?.()) return false;
 
   const roleMentions = PROFILE_ALERT_ROLE_IDS.map((id) => `<@&${id}>`).join(' ');
@@ -668,6 +671,7 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
 
   for (const [currentGuildId, guildProfiles] of Object.entries(data)) {
     if (guildId && currentGuildId !== String(guildId)) continue;
+    if (!isPrimaryGuild(currentGuildId)) continue;
     const guild = await client.guilds.fetch(currentGuildId).catch(() => null);
     if (!guild) continue;
     const dueProfiles = [];
@@ -705,13 +709,14 @@ async function sendMissingProfileDailyAlert(client, { force = false } = {}) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
     if (!force && sentByGuild[guild.id] === todayKey) {
       results.push({ guildId: guild.id, sent: false, reason: 'already_sent_today' });
       continue;
     }
 
     const channel = await client.channels.fetch(MISSING_PROFILE_ALERT_CHANNEL_ID).catch(() => null);
-    if (!channel?.isTextBased?.() || channel.guildId !== guild.id) {
+    if (!isPrimaryGuildChannel(channel) || !channel?.isTextBased?.() || channel.guildId !== guild.id) {
       results.push({ guildId: guild.id, sent: false, reason: 'missing_channel' });
       continue;
     }
