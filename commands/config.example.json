@@ -60,6 +60,28 @@
     "medio": [],
     "membro": []
   },
+  "VORTEX_AUTO_ROLES": {
+    "pending": [
+      "1449514118292967578"
+    ],
+    "approved": [
+      "1201235607549124639"
+    ]
+  },
+  "FACTION_HIERARCHY": {
+    "channelId": "",
+    "messageId": "",
+    "roles": {
+      "leader": [],
+      "second": [],
+      "generalManager": [],
+      "manager": [],
+      "actionManager": [],
+      "soldier": [],
+      "member": []
+    }
+  },
+  "MIRROR_MESSAGE_CHANNEL_IDS": [],
   "COMMAND_ROLE_PERMISSIONS": {
     "avisos": [],
     "set": [],
@@ -67,7 +89,6 @@
     "ponto": [],
     "ausencia": [],
     "perfil": [],
-    "ativarponto": [],
-    "live_remove": []
+    "ativarponto": []
   }
 }

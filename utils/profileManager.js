@@ -4,6 +4,7 @@ const { EmbedBuilder } = require('discord.js');
 const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
 const { syncApprovedSetChannel } = require('./approvedSetChannels');
+const { resetToPendingHierarchy } = require('./vortexHierarchy');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -19,9 +20,6 @@ const PROFILE_ALERT_ROLE_IDS = [
 ];
 const MASTER_ROLE_ID = '1497703127074345040';
 const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
-const PROFILE_APPROVED_ROLE_ID = '1201235607549124639';
-const PROFILE_PENDING_ROLE_ID = '1449514118292967578';
-
 let interval = null;
 
 function ensureFile() {
@@ -829,20 +827,15 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   let approvedRoleRemoved = false;
   let pendingRoleAdded = false;
   if (member?.roles?.cache) {
-    if (member.roles.cache.has(PROFILE_APPROVED_ROLE_ID)) {
-      await member.roles.remove(PROFILE_APPROVED_ROLE_ID, reason).then(() => {
-        approvedRoleRemoved = true;
-      }).catch((error) => {
-        logger.error('Erro ao remover cargo de aprovado do perfil:', error);
-      });
-    }
-    if (!member.roles.cache.has(PROFILE_PENDING_ROLE_ID)) {
-      await member.roles.add(PROFILE_PENDING_ROLE_ID, reason).then(() => {
-        pendingRoleAdded = true;
-      }).catch((error) => {
-        logger.error('Erro ao adicionar cargo pendente do perfil:', error);
-      });
-    }
+    await resetToPendingHierarchy(member, reason).then((result) => {
+      approvedRoleRemoved = result.removedApproved.removed.length > 0;
+      pendingRoleAdded = result.addedPending.added.length > 0;
+      if (result.removedApproved.failed.length || result.addedPending.failed.length) {
+        logger.error('Falha parcial ao sincronizar hierarquia do perfil:', result);
+      }
+    }).catch((error) => {
+      logger.error('Erro ao sincronizar hierarquia do perfil:', error);
+    });
   }
 
   let channelDeleted = false;

@@ -41,19 +41,24 @@ const {
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { createPointTranscriptAttachment, createPointTranscriptTextAttachment } = require('../../utils/pontoTranscript');
+const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
+const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
-  ALERT_CHANNEL_ID,
-  buildLiveTermsUrl,
-  checkUserTwitchLinks,
-  getGuildLiveLinks,
-  hasAcceptedLiveTerms,
-  isValidLiveUrl,
-  parseTwitchLogin,
-  removeLiveLink,
-  setLiveLink,
-} = require('../../utils/liveAlertManager');
-
+  FACTION_HIERARCHY_ROLES,
+  ensureFactionHierarchyConfig,
+  getFactionHierarchyConfig,
+  getFactionHierarchyRole,
+  setFactionHierarchyRoleIds,
+  setFactionHierarchyChannelId,
+  publishFactionHierarchyPanel,
+  updateFactionHierarchyPanel,
+  formatConfiguredRoles,
+} = require('../../utils/factionHierarchy');
+const {
+  ensureMirrorMessageConfig,
+  getMirrorMessageChannelIds,
+  toggleMirrorMessageChannel,
+} = require('../../utils/mirrorMessageManager');
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const PANEL_ERROR_LOG_CHANNEL_ID = '1497685822525149337';
@@ -71,12 +76,13 @@ const vortexRoleModeSelections = new Map();
 const pointReadjustSelections = new Map();
 const profileRegisterSelections = new Map();
 const logChannelSelections = new Map();
+const factionHierarchySelections = new Map();
+const mirrorMessageSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/painel', value: 'painel', description: 'Quem pode usar o painel de controle' },
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/clear', value: 'clear', description: 'Quem pode limpar mensagens no chat' },
     { label: '/clipe', value: 'clipe', description: 'Quem pode enviar clipes' },
-    { label: '/live', value: 'live', description: 'Quem pode gerenciar links de live' },
     { label: '/painelponto', value: 'painelponto', description: 'Quem pode abrir o painel de ponto' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/serve', value: 'serve', description: 'Quem pode consultar ou usar serve' },
@@ -85,8 +91,76 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
-    { label: 'Remover /live', value: 'live_remove', description: 'Quem pode remover links de live cadastrados' },
 ];
+const PANEL_TOOL_OPTIONS = [
+    { label: 'Estatísticas', value: 'tab_stats', description: 'Visão geral do servidor e cadastros', emoji: '📊' },
+    { label: 'Cargos Vortex', value: 'tab_roles', description: 'Níveis de cargos e acessos principais', emoji: '🛡️' },
+    { label: 'Configurações', value: 'tab_config', description: 'Configurações gerais do painel', emoji: '⚙️' },
+    { label: 'Configurações - Set', value: 'config_set', description: 'Cargos liberados para o sistema de set', emoji: '📝' },
+    { label: 'Configurações - Avisos', value: 'config_avisos', description: 'Avisos por DM e cargo mencionado', emoji: '🔔' },
+    { label: 'Configurações - Logs', value: 'config_logs', description: 'Canal de logs e filtros por canal', emoji: '🧾' },
+    { label: 'Manutenção', value: 'tab_manutencao', description: 'Modo manutenção e ajustes gerais', emoji: '🛠️' },
+    { label: 'Pontos', value: 'tab_pontos', description: 'Folhas, reajustes e cargos de ponto', emoji: '🕒' },
+    { label: 'Ausências', value: 'tab_ausencias', description: 'Cargos, retornos e mensagens de ausência', emoji: '📆' },
+    { label: 'Comandos', value: 'tab_commands', description: 'Permissões por comando ou ação', emoji: '⌨️' },
+    { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
+    { label: 'Cobranças', value: 'tab_cobrancas', description: 'Cobranças e penalidades automáticas', emoji: '💸' },
+    { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
+    { label: 'Hierarquia FAC', value: 'tab_fac_hierarchy', description: 'Painel automatico da hierarquia da fac', emoji: '🏛️' },
+];
+
+function isPanelToolValue(value) {
+    return PANEL_TOOL_OPTIONS.some((option) => option.value === value);
+}
+
+function buildPanelToolSelectRow(currentTab) {
+    const current = PANEL_TOOL_OPTIONS.find((option) => option.value === currentTab) || PANEL_TOOL_OPTIONS[0];
+    return new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('select_panel_tool')
+            .setPlaceholder(`Ferramenta atual: ${current.emoji ? `${current.emoji} ` : ''}${current.label}`)
+            .addOptions(PANEL_TOOL_OPTIONS.map((option) => ({
+                ...option,
+                default: option.value === current.value,
+            })))
+    );
+}
+
+function getPanelBackTarget(tab) {
+    if (['config_set', 'config_avisos', 'config_logs'].includes(tab)) return 'tab_config';
+    return 'tab_stats';
+}
+
+function buildPanelBackRow(tab) {
+    const target = getPanelBackTarget(tab);
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`panel_back_${target}`)
+            .setEmoji('⬅️')
+            .setLabel(target === 'tab_config' ? 'Voltar para Configurações' : 'Voltar')
+            .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+function getPanelTabMeta(tab) {
+    switch (tab) {
+        case 'tab_stats': return { icon: '📊', title: 'DASHBOARD' };
+        case 'tab_roles': return { icon: '🛡️', title: 'GESTÃO DE ACESSOS' };
+        case 'tab_config': return { icon: '⚙️', title: 'CONFIGURAÇÕES' };
+        case 'config_set': return { icon: '📝', title: 'CONFIGURAÇÕES | SET' };
+        case 'config_avisos': return { icon: '🔔', title: 'CONFIGURAÇÕES | AVISOS' };
+        case 'config_logs': return { icon: '🧾', title: 'CONFIGURAÇÕES | LOGS' };
+        case 'tab_manutencao': return { icon: '🛠️', title: 'MANUTENÇÃO' };
+        case 'tab_pontos': return { icon: '🕒', title: 'GESTÃO DE PONTOS' };
+        case 'tab_ausencias': return { icon: '📆', title: 'GESTÃO DE AUSÊNCIAS' };
+        case 'tab_commands': return { icon: '⌨️', title: 'PERMISSÕES DE COMANDOS' };
+        case 'tab_perfil': return { icon: '👤', title: 'PERFIS' };
+        case 'tab_cobrancas': return { icon: '💸', title: 'COBRANÇAS E PENALIDADES' };
+        case 'tab_mirror_messages': return { icon: '💬', title: 'MENSAGENS EM PAINEL' };
+        case 'tab_fac_hierarchy': return { icon: '🏛️', title: 'HIERARQUIA DA FAC' };
+        default: return { icon: 'V', title: String(tab || '').replace('tab_', '').toUpperCase() };
+    }
+}
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
@@ -167,6 +241,15 @@ function buildRegisteredProfilesPreview(profiles, limit = 8) {
 function formatChannelList(channelIds, emptyText = '`Nenhum canal desativado`') {
     const ids = Array.isArray(channelIds) ? channelIds.filter(Boolean).map(String) : [];
     return ids.length ? ids.map(id => `<#${id}>`).join('\n').slice(0, 1024) : emptyText;
+}
+
+function formatLogSwitch(disabled) {
+    return disabled ? '🔴 Desativado' : '🟢 Ativo';
+}
+
+function formatLogChannelSelection(channelId, disabled) {
+    if (!channelId) return '`Nenhum canal selecionado`';
+    return `${disabled ? '🔴 Bloqueado' : '🟢 Liberado'} • <#${channelId}>`;
 }
 
 function isUnknownInteractionError(error) {
@@ -308,15 +391,15 @@ function buildRegisteredProfilesReport(guild, profiles) {
     ].join('\n');
 }
 
-function formatLiveLinksList(links) {
-    if (!links.length) return 'Nenhum canal de live cadastrado.';
-    return links.slice(0, 10).map((link, index) => {
-        const twitchLogin = link.twitchLogin || parseTwitchLogin(link.url);
-        const platform = twitchLogin ? `Twitch: ${twitchLogin}` : (link.platform || 'outro');
-        const createdBy = link.createdBy ? ` por <@${link.createdBy}>` : '';
-        const url = String(link.url || '').length > 140 ? `${String(link.url).slice(0, 137)}...` : link.url;
-        return `${index + 1}. ${url}\n   ${platform}${createdBy}`;
-    }).join('\n') + (links.length > 10 ? `\n... mais ${links.length - 10} cadastro(s).` : '');
+function formatTranscriptPeriod(startKey, endKey) {
+    const [sy, sm, sd] = String(startKey || '').split('-');
+    const [ey, em, ed] = String(endKey || '').split('-');
+    if (!sy || !sm || !sd || !ey || !em || !ed) return 'Periodo indisponivel';
+    return `${sd}/${sm}/${sy} ate ${ed}/${em}/${ey}`;
+}
+
+function formatTranscriptRecordPeriod(record) {
+    return record?.periodLabel || formatTranscriptPeriod(record?.weekStartKey, record?.weekEndKey);
 }
 
 async function getRealtimeGuildStats(guild) {
@@ -365,6 +448,14 @@ module.exports = {
       return renderDashboard(interaction, customId, true);
     }
 
+    if (customId.startsWith('panel_back_')) {
+      const target = customId.replace('panel_back_', '');
+      if (!isPanelToolValue(target)) {
+        return safeReply(interaction, { content: '❌ Destino inválido.', ephemeral: true });
+      }
+      return renderDashboard(interaction, target, true);
+    }
+
     if (!hasStaffPermission(interaction.member) && !hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
 
     if ((customId === 'tab_manutencao' || ['toggle_maint', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
@@ -399,17 +490,17 @@ module.exports = {
         return safeEdit(interaction, { content: `❌ <@${userId}> ainda não possui ponto registrado.` });
       }
 
-      const member = await interaction.guild.members.fetch(userId).catch(() => null);
-      let files = [];
+      let transcript = null;
       try {
-        files = [
-          createPointTranscriptAttachment({ guild: interaction.guild, target, member, data }),
-          createPointTranscriptTextAttachment({ guild: interaction.guild, target, member, data }),
-        ];
+        transcript = await createPointTranscriptRecord({
+          guild: interaction.guild,
+          target,
+          generatedBy: interaction.user,
+        });
       } catch (error) {
         await reportPanelError(interaction.client, error, 'Gerar folha/transcript de ponto');
         return safeEdit(interaction, {
-          content: '❌ Não consegui gerar a folha deste usuário. O erro foi enviado para os logs.',
+          content: '❌ Não consegui salvar o transcript web deste usuário. O erro foi enviado para os logs.',
         });
       }
 
@@ -421,9 +512,47 @@ module.exports = {
         userId: interaction.user.id,
       }).catch(() => {});
 
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('Ver Transcript')
+          .setStyle(ButtonStyle.Link)
+          .setURL(transcript.url)
+      );
+
+      const { record } = transcript;
+      const transcriptEmbed = new EmbedBuilder()
+        .setColor('#005DFF')
+        .setAuthor({
+          name: 'VORTEX | TRANSCRIPT DE PONTO',
+          iconURL: interaction.client.user?.displayAvatarURL?.() || undefined,
+        })
+        .setTitle('Relatorio de Ponto Gerado')
+        .setDescription([
+          `Folha/transcript de <@${userId}> gerada com sucesso.`,
+          '',
+          'O historico completo fica disponivel apenas no link web abaixo.',
+        ].join('\n'))
+        .addFields(
+          { name: 'Usuario', value: `<@${userId}>`, inline: true },
+          { name: 'Periodo', value: formatTranscriptRecordPeriod(record), inline: true },
+          { name: 'Cargo/faccao', value: record.factionName || 'N/A', inline: true },
+          { name: 'Total semanal', value: record.summary?.weeklyTotal || '0h', inline: true },
+          { name: 'Total mensal', value: record.summary?.monthlyTotal || '0h', inline: true },
+          { name: 'Dias trabalhados', value: String(record.summary?.daysWithPoints ?? 0), inline: true },
+          { name: 'Ajustes manuais', value: String(record.summary?.manualAdjustments ?? 0), inline: true },
+          { name: 'Transcript ID', value: `\`${record.id}\``, inline: true },
+          { name: 'Expira em', value: record.expiresAt ? formatDate(record.expiresAt) : 'N/A', inline: true }
+        )
+        .setFooter({ text: 'Vortex Bot • Transcript Web' })
+        .setTimestamp();
+
+      if (target.displayAvatarURL) {
+        transcriptEmbed.setThumbnail(target.displayAvatarURL({ size: 256 }));
+      }
+
       return safeEdit(interaction, {
-        content: `✅ Folha/transcript de <@${userId}> gerada em arquivo.`,
-        files,
+        embeds: [transcriptEmbed],
+        components: [row],
         allowedMentions: { users: [userId] },
       });
     }
@@ -685,6 +814,26 @@ module.exports = {
       return renderDashboard(interaction, 'config_logs', true);
     }
 
+    if (customId === 'send_test_log') {
+      if (!hasLogsManagerPermission(interaction)) {
+        return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode enviar teste de logs.', ephemeral: true });
+      }
+
+      await sendVortexLog(interaction.client, {
+        title: 'Teste do Painel de Logs',
+        description: [
+          `Teste enviado por <@${interaction.user.id}>.`,
+          `Canal principal configurado: ${conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : 'nenhum'}.`,
+          `Data/hora real: ${formatDate(new Date())}`,
+        ].join('\n'),
+        color: '#00D9FF',
+        type: 'CONFIGURAÇÃO',
+        userId: interaction.user.id
+      }).catch((error) => reportPanelError(interaction.client, error, 'Enviar teste de logs'));
+
+      return safeReply(interaction, { content: '✅ Teste de log enviado.', ephemeral: true });
+    }
+
     if (customId === 'toggle_panel_private_mode') {
       if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
         return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
@@ -713,6 +862,46 @@ module.exports = {
       vortexRoleModeSelections.set(key, nextMode);
 
       return renderDashboard(interaction, 'tab_roles', true);
+    }
+
+    if (customId === 'set_vortex_auto_pending' || customId === 'set_vortex_auto_approved') {
+      if (!hasVortexLevel(interaction.member, ['admin'])) {
+        return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar cargos automáticos.', ephemeral: true });
+      }
+
+      const type = customId === 'set_vortex_auto_pending' ? 'pending' : 'approved';
+      const autoRoles = getVortexAutoRoles(conf);
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_vortex_auto_role_${type}`)
+        .setTitle(type === 'pending' ? 'Cargo Automático Pendente' : 'Cargo Automático Aprovado');
+
+      modal.addComponents(new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('role_ids')
+          .setLabel('IDS DOS CARGOS')
+          .setPlaceholder('Cole 1 ou mais IDs separados por vírgula')
+          .setValue((autoRoles[type] || []).join(', '))
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000)
+      ));
+
+      return safeShowModal(interaction, modal);
+    }
+
+    if (customId === 'publish_fac_hierarchy_panel' || customId === 'refresh_fac_hierarchy_panel') {
+      if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        return safeReply(interaction, { content: '❌ Seu nível não libera o painel de hierarquia da fac.', ephemeral: true });
+      }
+
+      await safeDeferReply(interaction, { ephemeral: true });
+      const result = customId === 'publish_fac_hierarchy_panel'
+        ? await publishFactionHierarchyPanel(interaction).catch((error) => ({ ok: false, message: error.message }))
+        : await updateFactionHierarchyPanel(interaction.client, interaction.guild.id).catch((error) => ({ ok: false, message: error.message }));
+
+      return safeEdit(interaction, {
+        content: `${result.ok ? '✅' : '❌'} ${result.message}`,
+      });
     }
 
     if (customId === 'toggle_selected_log_channel') {
@@ -776,64 +965,29 @@ module.exports = {
         return safeReply(interaction, { embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
     }
 
-    if (customId === 'live_stream_add_link') {
-        const modal = new ModalBuilder()
-            .setCustomId('modal_live_stream_add')
-            .setTitle('Cadastrar Live Stream');
+    if (customId === 'toggle_mirror_message_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera configuração de mensagens.', ephemeral: true });
+        }
+        const selectedChannelId = mirrorMessageSelections.get(getSelectionKey(interaction));
+        if (!selectedChannelId) {
+            return safeReply(interaction, { content: '❌ Selecione um canal primeiro.', ephemeral: true });
+        }
 
-        modal.addComponents(new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-                .setCustomId('live_url')
-                .setLabel('LINK DO CANAL DA LIVE')
-                .setPlaceholder('https://twitch.tv/seucanal')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-                .setMaxLength(300)
-        ));
-
-        return safeShowModal(interaction, modal);
-    }
-
-    if (customId === 'live_stream_check_now') {
-        await safeDeferReply(interaction, { ephemeral: true });
-        const result = await checkUserTwitchLinks(interaction.client, interaction.guild.id, null, {
-            sendIfOnline: true,
-        }).catch((error) => ({
-            ok: false,
-            message: `Erro ao consultar Twitch: ${error.message}`,
-            termsAccepted: getGuildLiveLinks(interaction.guild.id).length > 0,
-            hasCredentials: false,
-            totalLinks: getGuildLiveLinks(interaction.guild.id).length,
-            twitchLinks: 0,
-            online: [],
-            offline: [],
-            sent: 0,
-        }));
-
-        return safeEdit(interaction, {
-            content: [
-                result.ok ? '✅ Verificação concluída.' : '❌ Verificação não concluída.',
-                `Resultado: ${result.message}`,
-                `Termos aceitos: ${result.termsAccepted ? 'sim' : 'não'}`,
-                `Links cadastrados: ${result.totalLinks}`,
-                `Links Twitch: ${result.twitchLinks}`,
-                `Alertas enviados agora: ${result.sent || 0}`,
-            ].join('\n'),
-        });
-    }
-
-    if (customId === 'live_stream_clear_links') {
-        const removed = removeLiveLink(interaction.guild.id);
-
+        const result = toggleMirrorMessageChannel(selectedChannelId);
         sendVortexLog(interaction.client, {
-            title: 'Links de Live Stream Removidos',
-            description: `Todos os links de live stream foram removidos por <@${interaction.user.id}>.\nHavia links para remover: ${removed ? 'sim' : 'não'}.`,
-            color: '#FF0055',
-            type: 'LIVE',
+            title: 'Canal de Mensagem em Painel Alterado',
+            description: [
+                `Canal: <#${selectedChannelId}>`,
+                `Status: **${result.enabled ? 'ativado' : 'desativado'}**`,
+                `Alterado por: <@${interaction.user.id}>`,
+            ].join('\n'),
+            color: result.enabled ? '#005DFF' : '#FF0055',
+            type: 'CONFIGURAÇÃO',
             userId: interaction.user.id
         }).catch(() => {});
 
-        return renderDashboard(interaction, 'tab_live_stream', true);
+        return renderDashboard(interaction, 'tab_mirror_messages', true);
     }
 
     if (customId === 'clear_point_user' || customId === 'correct_point_close') {
@@ -1092,6 +1246,15 @@ module.exports = {
 
   async handleSelectMenu(interaction) {
     if (!hasPanelAccess(interaction.member)) return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no /painel para usar esta seleção.', ephemeral: true });
+
+    if (interaction.customId === 'select_panel_tool') {
+        const selectedTool = interaction.values[0];
+        if (!isPanelToolValue(selectedTool)) {
+            return safeReply(interaction, { content: '❌ Ferramenta inválida.', ephemeral: true });
+        }
+        return renderDashboard(interaction, selectedTool, true);
+    }
+
     if (!hasStaffPermission(interaction.member) && !hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
@@ -1115,6 +1278,14 @@ module.exports = {
         if (!hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Apenas o responsável pelos logs pode desativar logs de canais.', ephemeral: true });
         logChannelSelections.set(getSelectionKey(interaction), String(interaction.values[0]));
         return renderDashboard(interaction, 'config_logs', true);
+    }
+
+    if (interaction.customId === 'select_mirror_message_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera configuração de mensagens.', ephemeral: true });
+        }
+        mirrorMessageSelections.set(getSelectionKey(interaction), String(interaction.values[0]));
+        return renderDashboard(interaction, 'tab_mirror_messages', true);
     }
 
     if (interaction.customId === 'select_notice_mention_role') {
@@ -1196,6 +1367,45 @@ module.exports = {
         return renderDashboard(interaction, 'tab_pontos', true);
     }
 
+    if (interaction.customId === 'select_fac_hierarchy_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        const hierarchy = setFactionHierarchyChannelId(interaction.values[0]);
+
+        sendVortexLog(interaction.client, {
+            title: 'Canal da Hierarquia FAC Alterado',
+            description: `Canal do painel de hierarquia da fac alterado para <#${hierarchy.channelId}> por <@${interaction.user.id}>.`,
+            color: '#7000FF',
+            type: 'SEGURANÇA',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_fac_hierarchy', true);
+    }
+
+    if (interaction.customId.startsWith('select_fac_hierarchy_role_')) {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        const roleKey = interaction.customId.replace('select_fac_hierarchy_role_', '');
+        const role = getFactionHierarchyRole(roleKey);
+        if (!role) return safeReply(interaction, { content: '❌ Cargo da hierarquia inválido.', ephemeral: true });
+
+        const hierarchy = setFactionHierarchyRoleIds(role.key, interaction.values);
+        await updateFactionHierarchyPanel(interaction.client, interaction.guild.id).catch(() => null);
+
+        sendVortexLog(interaction.client, {
+            title: 'Cargo da Hierarquia FAC Alterado',
+            description: [
+                `Posição: **${role.label}**`,
+                `Cargo(s): ${formatConfiguredRoles(hierarchy.roles[role.key])}`,
+                `Por <@${interaction.user.id}>.`,
+            ].join('\n'),
+            color: '#7000FF',
+            type: 'SEGURANÇA',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_fac_hierarchy', true);
+    }
+
     if (interaction.customId.startsWith('select_vortex_role_')) {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
         const level = interaction.customId.replace('select_vortex_role_', '');
@@ -1227,6 +1437,12 @@ module.exports = {
         if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
         commandPermissionSelections.set(getSelectionKey(interaction), interaction.values[0]);
         return renderDashboard(interaction, 'tab_commands', true);
+    }
+
+    if (interaction.customId === 'select_fac_hierarchy_target') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        factionHierarchySelections.set(getSelectionKey(interaction), interaction.values[0]);
+        return renderDashboard(interaction, 'tab_fac_hierarchy', true);
     }
 
     if (interaction.customId === 'select_command_permission_roles') {
@@ -1280,32 +1496,43 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
-    if (interaction.customId === 'modal_live_stream_add') {
-        await safeDeferReply(interaction, { ephemeral: true });
-        const url = interaction.fields.getTextInputValue('live_url').trim();
-
-        if (!isValidLiveUrl(url)) {
-            return safeEdit(interaction, { content: '❌ Envie um link válido começando com `http://` ou `https://`.' });
+    if (interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) {
+            return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar cargos automáticos.', ephemeral: true });
         }
 
-        const twitchLogin = parseTwitchLogin(url);
-        const liveOwnerId = twitchLogin ? `twitch:${twitchLogin}` : interaction.user.id;
-        const link = setLiveLink(interaction.guild.id, liveOwnerId, url, interaction.user.id);
-        const termsAccepted = hasAcceptedLiveTerms(interaction.guild.id, liveOwnerId);
+        const type = interaction.customId.endsWith('_pending') ? 'pending' : 'approved';
+        const rawRoleIds = interaction.fields.getTextInputValue('role_ids');
+        const roleIds = [...new Set(rawRoleIds.split(/[\s,;]+/).map((roleId) => roleId.trim()).filter(Boolean))];
+        if (!roleIds.length || roleIds.some((roleId) => !/^\d{15,25}$/.test(roleId))) {
+            return safeReply(interaction, { content: '❌ Envie apenas IDs de cargos válidos, separados por vírgula ou espaço.', ephemeral: true });
+        }
 
+        const missing = [];
+        for (const roleId of roleIds) {
+            const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+            if (!role) missing.push(roleId);
+        }
+        if (missing.length) {
+            return safeReply(interaction, {
+                content: `❌ Cargo(s) não encontrado(s): ${missing.map((roleId) => `\`${roleId}\``).join(', ')}`,
+                ephemeral: true,
+            });
+        }
+
+        const savedRoles = setVortexAutoRoles(type, roleIds);
         sendVortexLog(interaction.client, {
-            title: 'Live Stream Cadastrada',
-            description: `Link cadastrado por <@${interaction.user.id}>: ${link.url}`,
-            color: '#9146FF',
-            type: 'LIVE',
+            title: 'Hierarquia Vortex Alterada',
+            description: [
+                `Cargo(s) automático(s) de **${type === 'pending' ? 'pendente' : 'aprovado'}** alterados por <@${interaction.user.id}>.`,
+                `Cargos: ${savedRoles.map((roleId) => `<@&${roleId}>`).join(' ') || 'nenhum'}`,
+            ].join('\n'),
+            color: '#5865F2',
+            type: 'SEGURANÇA',
             userId: interaction.user.id
         }).catch(() => {});
 
-        return safeEdit(interaction, {
-            content: termsAccepted
-                ? `✅ Live Stream cadastrada. Quando o canal ficar online, vou avisar em <#${ALERT_CHANNEL_ID}>.`
-                : `✅ Live Stream cadastrada, mas o monitor só libera alertas depois do aceite dos termos: ${buildLiveTermsUrl(interaction.guild.id, interaction.user.id)}`,
-        });
+        return renderDashboard(interaction, 'tab_roles', true);
     }
 
     if (interaction.customId === 'modal_clear_point_user') {
@@ -1554,28 +1781,14 @@ async function renderDashboard(interaction, tab, edit = false) {
   const conf = loadJSON(CONFIG_PATH);
   const guild = interaction.guild;
   const client = interaction.client;
+  const tabMeta = getPanelTabMeta(tab);
   
   const embed = new EmbedBuilder()
     .setTimestamp()
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
-    .setFooter({ text: `Vortex Management System - ${String(tab).replace('tab_', '').toUpperCase()} • ${formatDate(new Date())}` });
+    .setFooter({ text: `Vortex Management System • ${tabMeta.icon} ${tabMeta.title} • ${formatDate(new Date())}` });
 
-  const mainRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tab_stats').setLabel('📊 Estatísticas').setStyle(tab === 'tab_stats' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_stats')),
-    new ButtonBuilder().setCustomId('tab_roles').setLabel('🛡️ Cargos Vortex').setStyle(tab === 'tab_roles' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_roles')),
-    new ButtonBuilder().setCustomId('tab_config').setLabel('⚙️ Configurações').setStyle(tab === 'tab_config' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_config')),
-    new ButtonBuilder().setCustomId('tab_manutencao').setLabel('🔧 Manutenção').setStyle(tab === 'tab_manutencao' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_manutencao')),
-    new ButtonBuilder().setCustomId('tab_pontos').setLabel('🕒 Pontos').setStyle(tab === 'tab_pontos' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_pontos'))
-  );
-
-  const navRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tab_ausencias').setLabel('Ausências').setStyle(tab === 'tab_ausencias' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_ausencias')),
-    new ButtonBuilder().setCustomId('tab_commands').setLabel('Comandos').setStyle(tab === 'tab_commands' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_commands')),
-    new ButtonBuilder().setCustomId('tab_perfil').setLabel('Perfil').setStyle(tab === 'tab_perfil' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_perfil')),
-    new ButtonBuilder().setCustomId('tab_cobrancas').setLabel('Cobranças').setStyle(tab === 'tab_cobrancas' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_cobrancas')),
-    new ButtonBuilder().setCustomId('tab_live_stream').setLabel('Live Stream').setStyle(tab === 'tab_live_stream' ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(!canAccessPanelTab(interaction.member, 'tab_live_stream'))
-  );
-
+  const toolSelectRow = buildPanelToolSelectRow(tab);
   const actionRow = new ActionRowBuilder();
   let extraRows = [];
 
@@ -1586,7 +1799,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     const profileList = Object.values(profiles);
     const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
     const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
-    embed.setAuthor({ name: 'VORTEX | DASHBOARD', iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
+      embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | DASHBOARD`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
       .setDescription([
         '### 📊 Visão geral',
         '',
@@ -1604,15 +1817,18 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Cadastros salvos', value: `Total: **${profileList.length}** | /set: **${setProfileCount}** | manual: **${manualProfileCount}**\n${buildRegisteredProfilesPreview(profiles, 6).slice(0, 900)}`, inline: false }
       );
   } else if (tab === 'tab_roles') {
+    ensureVortexHierarchyConfig(conf);
     const levels = ensureRoleLevels(conf);
     const permissions = ensureCommandPermissions(conf);
+    const autoRoles = getVortexAutoRoles(conf);
     const vortexRoleMode = getVortexRoleMode(interaction);
-    embed.setAuthor({ name: '🛡️ VORTEX | GESTÃO DE ACESSOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | GESTÃO DE ACESSOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#5865F2')
       .setDescription([
         '### 🔐 Cargos e acessos',
         '',
         'Defina quais cargos entram em cada nível de permissão.',
+        'Os cargos automáticos são aplicados na entrada do servidor, aprovação do set e remoção de cadastro.',
         `**Modo atual:** ${vortexRoleMode === 'remove' ? 'remover cargos selecionados' : 'definir cargos selecionados'}`,
         '',
         '**Níveis**',
@@ -1627,12 +1843,13 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
         { name: 'Médio Vortex', value: formatRoleList(levels.medio), inline: false },
         { name: 'Membro Vortex', value: formatRoleList(levels.membro), inline: false },
+        { name: 'Automático - Pendente', value: formatRoleList(autoRoles.pending), inline: true },
+        { name: 'Automático - Aprovado', value: formatRoleList(autoRoles.approved), inline: true },
         { name: '/painel privado', value: formatRoleList(permissions.painel, '`Somente Admin/Médio`'), inline: false },
         { name: 'Set', value: formatRoleList(permissions.set, '`Sem filtro extra`'), inline: true },
         { name: 'Avisos', value: formatRoleList(permissions.avisos, '`Sem filtro extra`'), inline: true },
         { name: 'Registro', value: formatRoleList(permissions.registro, '`Sem filtro extra`'), inline: true },
         { name: 'Ponto', value: formatRoleList(permissions.ponto, '`Sem filtro extra`'), inline: true },
-        { name: 'Remover live', value: formatRoleList(permissions.live_remove, '`Não configurado`'), inline: true },
         { name: 'Ajuste de ponto', value: formatRoleList(conf.POINT_ADJUST_STAFF_ROLES, '`Admin Vortex`'), inline: true }
       );
 
@@ -1650,13 +1867,21 @@ async function renderDashboard(interaction, tab, edit = false) {
         new ButtonBuilder()
           .setCustomId('toggle_vortex_role_remove_mode')
           .setLabel(vortexRoleMode === 'remove' ? 'Desativar modo remover' : 'Ativar modo remover')
-          .setStyle(vortexRoleMode === 'remove' ? ButtonStyle.Success : ButtonStyle.Danger)
+          .setStyle(vortexRoleMode === 'remove' ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('set_vortex_auto_pending')
+          .setLabel('Cargo pendente')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('set_vortex_auto_approved')
+          .setLabel('Cargo aprovado')
+          .setStyle(ButtonStyle.Secondary)
       ),
     ];
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
     
-    embed.setAuthor({ name: '🛠️ Painel de Controle — Modo Manutenção', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | Painel de Controle`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor(conf.MAINTENANCE_MODE ? '#FF0055' : '#3498DB')
       .setDescription([
         '### 🔧 Manutenção',
@@ -1709,7 +1934,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'tab_config') {
     const privateMode = Boolean(conf.PANEL_PRIVATE_MODE);
-    embed.setTitle('⚙️ CONFIGURAÇÕES').setColor('#00D9FF')
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#00D9FF')
       .setDescription([
         '### Configurações gerais',
         '',
@@ -1743,29 +1968,38 @@ async function renderDashboard(interaction, tab, edit = false) {
       ? conf.DISABLED_LOG_CHANNEL_IDS.map(String)
       : [];
     const selectedLogChannelDisabled = selectedLogChannelId && disabledLogChannelIds.includes(selectedLogChannelId);
-    embed.setTitle('⚙️ CONFIGURAÇÕES | LOGS').setColor('#00D9FF')
+    const activeLogSwitches = [
+      !conf.DISABLE_CHANNEL_LOGS,
+      !conf.DISABLE_DM_LOGS,
+      !conf.DISABLE_ACTIVITY_LOGS,
+      !conf.DISABLE_NOTICE_DMS,
+    ].filter(Boolean).length;
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES | LOGS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#00D9FF')
       .setDescription([
-        '### Logs do bot',
+        '### Central de logs',
         '',
-        'Controle onde os logs são enviados e quais tipos ficam ativos.',
+        'Controle o canal principal, os envios por DM e os canais onde auditoria deve ficar bloqueada.',
         `Apenas <@${LOGS_MANAGER_IDS[0]}> ou ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem alterar esta área.`,
         '',
-        `Selecionado agora: ${selectedLogChannelId ? `<#${selectedLogChannelId}>` : '`Nenhum canal`'}`,
+        `**Resumo:** ${activeLogSwitches}/4 sistemas ativos • ${disabledLogChannelIds.length} canal(is) bloqueado(s)`,
+        `**Selecionado:** ${formatLogChannelSelection(selectedLogChannelId, selectedLogChannelDisabled)}`,
       ].join('\n'))
       .addFields(
         { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
-        { name: 'Logs do canal', value: conf.DISABLE_CHANNEL_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Canais com logs desativados', value: formatChannelList(conf.DISABLED_LOG_CHANNEL_IDS), inline: false }
+        { name: 'Auditoria em canal', value: formatLogSwitch(conf.DISABLE_CHANNEL_LOGS), inline: true },
+        { name: 'Logs por DM', value: formatLogSwitch(conf.DISABLE_DM_LOGS), inline: true },
+        { name: 'Atividades FiveM/GTA', value: formatLogSwitch(conf.DISABLE_ACTIVITY_LOGS), inline: true },
+        { name: 'Avisos por DM', value: formatLogSwitch(conf.DISABLE_NOTICE_DMS), inline: true },
+        { name: 'Canal selecionado', value: formatLogChannelSelection(selectedLogChannelId, selectedLogChannelDisabled), inline: true },
+        { name: `Canais bloqueados (${disabledLogChannelIds.length})`, value: formatChannelList(disabledLogChannelIds), inline: false }
       );
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar logs do canal' : 'Desligar logs do canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar auditoria' : 'Desligar auditoria').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Ligar logs por DM' : 'Desligar logs por DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Ligar atividades' : 'Desligar atividades').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs de avisos' : 'Desligar DMs de avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs avisos' : 'Desligar DMs avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('send_test_log').setLabel('Enviar teste').setStyle(ButtonStyle.Secondary).setDisabled(!conf.LOG_CHANNEL)
     );
 
     extraRows = [
@@ -1794,7 +2028,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       ),
     ];
   } else if (tab === 'config_avisos') {
-    embed.setTitle('⚙️ CONFIGURAÇÕES | AVISOS').setColor('#7000FF')
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES | AVISOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
       .setDescription([
         '### Avisos',
         '',
@@ -1824,7 +2058,7 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'config_set') {
     const permissions = ensureCommandPermissions(conf);
     const setRoles = permissions.set || [];
-    embed.setTitle('⚙️ CONFIGURAÇÕES | SET').setColor('#5865F2')
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES | SET`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#5865F2')
       .setDescription('### Configurar set\n\nSelecione quais cargos podem usar as ações do sistema de set. A manutenção continua exclusiva do cargo master.')
       .addFields(
         { name: 'Cargos liberados para /set', value: formatRoleList(setRoles, '`Todos os Cargos Vortex pelas regras internas`'), inline: false },
@@ -1857,7 +2091,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         description: `Aberto desde ${formatDate(point.activePointStartedAt)}`.slice(0, 100),
         value: String(point.userId),
       }));
-    embed.setAuthor({ name: '🕒 VORTEX | GESTÃO DE PONTOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | GESTÃO DE PONTOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#ED4245')
       .setDescription([
         '### Controle de dados de ponto',
@@ -1905,7 +2139,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   } else if (tab === 'tab_cobrancas') {
     const automationConfig = readAutomationConfig();
-    embed.setAuthor({ name: 'VORTEX | COBRANÇAS E PENALIDADES', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | COBRANÇAS E PENALIDADES`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#FEE75C')
       .setDescription([
         '### Cobranças automáticas',
@@ -1927,43 +2161,114 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('toggle_offline_charge').setLabel(automationConfig.offlineChargeEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(automationConfig.offlineChargeEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
       new ButtonBuilder().setCustomId('run_point_automation').setLabel('Verificar agora').setStyle(ButtonStyle.Primary)
     );
-  } else if (tab === 'tab_live_stream') {
-    const links = getGuildLiveLinks(guild.id);
-    const termsAccepted = links.length > 0 || hasAcceptedLiveTerms(guild.id, interaction.user.id);
-    const twitchCount = links.filter((link) => link.twitchLogin || parseTwitchLogin(link.url)).length;
+  } else if (tab === 'tab_mirror_messages') {
+    ensureMirrorMessageConfig(conf);
+    const mirrorChannelIds = getMirrorMessageChannelIds(conf);
+    const selectedChannelId = mirrorMessageSelections.get(getSelectionKey(interaction));
+    const selectedEnabled = selectedChannelId && mirrorChannelIds.includes(selectedChannelId);
 
-    embed.setAuthor({ name: 'VORTEX | LIVE STREAM', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
-      .setColor('#9146FF')
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | MENSAGENS EM PAINEL`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#005DFF')
       .setDescription([
-        '### Lives monitoradas',
+        '### Mensagens em painel',
         '',
-        'Cadastre canais que devem disparar alerta automático quando entrarem ao vivo.',
-        `Os alertas são enviados em <#${ALERT_CHANNEL_ID}>.`,
+        'Nos canais ativados, quando uma pessoa enviar mensagem, o bot apaga a mensagem original e reenvia como painel com nome e foto do autor.',
         '',
-        `Termos aceitos: **${termsAccepted ? 'sim' : 'não'}**`,
-        `Total cadastrado: **${links.length}**`,
-        `Links Twitch monitorados: **${twitchCount}**`,
+        `Canais ativos: **${mirrorChannelIds.length}**`,
+        `Canal selecionado: ${selectedChannelId ? `<#${selectedChannelId}>` : '`Nenhum`'}`,
+        `Status selecionado: **${selectedEnabled ? 'ativado' : 'desativado'}**`,
         '',
-        '**Canais cadastrados**',
-        formatLiveLinksList(links),
+        '**Canais configurados**',
+        formatChannelList(mirrorChannelIds, '`Nenhum canal configurado`'),
+        '',
+        '**Permissões necessárias**',
+        'O bot precisa conseguir **ver canal**, **ler mensagens**, **apagar mensagens** e **enviar embeds** nesses canais.',
       ].join('\n'));
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('live_stream_add_link').setLabel('Adicionar live').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('live_stream_check_now').setLabel('Testar agora').setStyle(ButtonStyle.Primary).setDisabled(links.length === 0),
-      new ButtonBuilder().setCustomId('live_stream_clear_links').setLabel('Limpar lives').setStyle(ButtonStyle.Danger).setDisabled(links.length === 0)
+      new ButtonBuilder()
+        .setCustomId('toggle_mirror_message_channel')
+        .setLabel(selectedEnabled ? 'Desativar canal' : 'Ativar canal')
+        .setStyle(selectedEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+        .setDisabled(!selectedChannelId)
     );
 
-    if (!termsAccepted) {
-      extraRows = [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setLabel('Aceitar termos')
-            .setStyle(ButtonStyle.Link)
-            .setURL(buildLiveTermsUrl(guild.id, interaction.user.id))
-        ),
-      ];
-    }
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_mirror_message_channel')
+          .setPlaceholder('Selecionar canal onde mensagens viram painel')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+    ];
+  } else if (tab === 'tab_fac_hierarchy') {
+    ensureFactionHierarchyConfig(conf);
+    const hierarchy = getFactionHierarchyConfig(conf);
+    const selectedRoleKey = factionHierarchySelections.get(getSelectionKey(interaction)) || FACTION_HIERARCHY_ROLES[0].key;
+    const selectedRole = getFactionHierarchyRole(selectedRoleKey) || FACTION_HIERARCHY_ROLES[0];
+
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | HIERARQUIA DA FAC`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#7000FF')
+      .setDescription([
+        '### Painel de hierarquia da fac',
+        '',
+        'Configure os cargos de cada posição e publique o embed no canal escolhido.',
+        'Quando alguém receber ou perder um desses cargos, o embed será atualizado automaticamente.',
+        '',
+        `Canal: ${hierarchy.channelId ? `<#${hierarchy.channelId}>` : '`Não configurado`'}`,
+        `Mensagem: ${hierarchy.messageId ? `\`${hierarchy.messageId}\`` : '`Não publicada`'}`,
+        `Editando agora: **${selectedRole.label}**`,
+      ].join('\n'))
+      .addFields(
+        ...FACTION_HIERARCHY_ROLES.map((role) => ({
+          name: role.label,
+          value: formatConfiguredRoles(hierarchy.roles[role.key]),
+          inline: true,
+        }))
+      );
+
+    actionRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId('publish_fac_hierarchy_panel')
+        .setLabel(hierarchy.messageId ? 'Republicar painel' : 'Publicar painel')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('refresh_fac_hierarchy_panel')
+        .setLabel('Atualizar painel')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!hierarchy.channelId || !hierarchy.messageId)
+    );
+
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_fac_hierarchy_channel')
+          .setPlaceholder('Selecionar canal onde o embed da hierarquia ficará')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_fac_hierarchy_target')
+          .setPlaceholder(`Editar posição: ${selectedRole.label}`)
+          .addOptions(FACTION_HIERARCHY_ROLES.map((role) => ({
+            label: role.label,
+            value: role.key,
+            description: `Configurar cargo(s) de ${role.label}`,
+            default: role.key === selectedRole.key,
+          })))
+      ),
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`select_fac_hierarchy_role_${selectedRole.key}`)
+          .setPlaceholder(`Selecionar cargo(s): ${selectedRole.label}`)
+          .setMinValues(0)
+          .setMaxValues(10)
+      ),
+    ];
   } else if (tab === 'tab_commands') {
     const permissions = ensureCommandPermissions(conf);
     const selected = commandPermissionSelections.get(getSelectionKey(interaction)) || COMMAND_PERMISSION_OPTIONS[0].value;
@@ -1972,7 +2277,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       return `**${option.label}:** ${formatRoleList(roles, '`Todos os Cargos Vortex`')}`;
     }).join('\n');
 
-    embed.setAuthor({ name: 'VORTEX | PERMISSÕES DE COMANDOS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | PERMISSÕES DE COMANDOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#00D9FF')
       .setDescription([
         '### Permissões de comandos',
@@ -2019,7 +2324,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     const configuredRole = absenceConfig.roleId ? `<@&${absenceConfig.roleId}>` : '`Não configurado`';
     const logChannel = absenceConfig.logChannelId || DEFAULT_ABSENCE_LOG_CHANNEL_ID;
 
-    embed.setAuthor({ name: 'VORTEX | GESTÃO DE AUSÊNCIAS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | GESTÃO DE AUSÊNCIAS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#7000FF')
       .setDescription([
         '### Controle de ausências',
@@ -2074,7 +2379,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       return `${index + 1}. <@${profile.userId}> - ${profile.nomeGame || profile.displayName || 'Sem nome'} - call ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'} - ultima atualização ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`;
     });
 
-    embed.setAuthor({ name: 'VORTEX | PERFIS', iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | PERFIS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor('#00D9FF')
       .setDescription([
         '### Perfis',
@@ -2118,12 +2423,16 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   }
 
-  const useCompactNavigation = ['tab_config', 'config_set', 'config_avisos', 'config_logs'].includes(tab);
-  let components = useCompactNavigation ? [mainRow] : [mainRow, navRow];
+  const backRow = tab === 'tab_stats' ? null : buildPanelBackRow(tab);
+  let components = [toolSelectRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
-  if (components.length > 5 && components.includes(navRow)) {
-    components = components.filter((row) => row !== navRow);
+  if (backRow) {
+    if (components.length < 5) {
+      components.push(backRow);
+    } else {
+      components = [backRow, ...components.slice(1, 5)];
+    }
   }
 
   const options = edit

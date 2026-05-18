@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { safeReply } = require('./safeReply');
+const { ensureVortexHierarchyConfig } = require('./vortexHierarchy');
 const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 
 function normalizeIds(list) {
@@ -20,7 +21,7 @@ function getPanelConfig() {
         const panelConfigPath = path.join(__dirname, '../commands/config.json');
         if (!fs.existsSync(panelConfigPath)) return {};
         const raw = fs.readFileSync(panelConfigPath, 'utf8');
-        return JSON.parse(raw);
+        return ensureVortexHierarchyConfig(JSON.parse(raw));
     } catch {
         return {};
     }

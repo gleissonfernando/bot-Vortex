@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vortex | Termos e Live Alerts</title>
-  <meta name="description" content="Site oficial dos termos de uso e politica de privacidade do Bot Vortex para alertas de live da Twitch.">
+  <title>Vortex | Termos e Privacidade</title>
+  <meta name="description" content="Site oficial dos termos de uso e politica de privacidade do Bot Vortex.">
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
   <style>
     :root {
       color-scheme: dark;
@@ -123,6 +124,7 @@
       min-height: 48px;
       display: inline-flex;
       align-items: center;
+      gap: 10px;
       justify-content: center;
       border-radius: 8px;
       border: 1px solid transparent;
@@ -272,26 +274,26 @@
     <div class="hero-content">
       <div class="hero-inner">
         <div class="brand">
-          <div class="mark">V</div>
+          <div class="mark"><i class="fa-solid fa-shield-halved"></i></div>
           <div>
             <strong>Bot Vortex</strong>
-            <span>Termos, privacidade e alertas de live</span>
+            <span>Termos, privacidade e sistema Vortex</span>
           </div>
         </div>
-        <h1>Alertas de live da Twitch no Discord</h1>
+        <h1><i class="fa-solid fa-chart-line"></i> Vortex Management System</h1>
         <p class="lead">
-          O Bot Vortex monitora canais da Twitch vinculados por usuarios autorizados e envia notificacoes automaticas no Discord quando uma live fica online.
+          O Bot Vortex gerencia painéis, pontos, registros, perfis e automações administrativas dentro do Discord.
         </p>
         <div class="actions">
-          <a class="button" href="https://bot-vortex.shardweb.app/twitch/webhook" rel="noopener">Aceitar termos</a>
-          <a class="button secondary" href="#termos">Ler termos e privacidade</a>
+          <a class="button" href="#termos"><i class="fa-solid fa-file-signature"></i> Ler termos</a>
+          <a class="button secondary" href="#privacidade"><i class="fa-solid fa-lock"></i> Privacidade</a>
         </div>
         <div class="status" aria-label="Status do backend">
           <span><strong id="status-api">...</strong>API</span>
           <span><strong id="status-bot">...</strong>Bot</span>
           <span><strong id="status-guilds">...</strong>Servidores</span>
         </div>
-        <p class="note">Para liberar o cadastro dentro do Discord, use o comando /live e abra o link de aceite gerado pelo bot.</p>
+        <p class="note">As configurações do bot são realizadas pelos administradores autorizados dentro do Discord.</p>
       </div>
     </div>
   </header>
@@ -300,9 +302,9 @@
     <section id="termos">
       <h2>Termos de Uso — Bot Vortex</h2>
       <div class="grid">
-        <div class="item"><strong>1. Uso do Servico</strong>O Bot Vortex e um sistema automatizado integrado ao Discord para exibicao e envio de notificacoes de transmissoes ao vivo da Twitch.</div>
-        <div class="item"><strong>2. Coleta de Dados</strong>O sistema podera coletar ID do usuario no Discord, nome de usuario, ID do servidor e canal da Twitch vinculado.</div>
-        <div class="item"><strong>3. Finalidade dos Dados</strong>Os dados sao usados para identificar o usuario, enviar alertas automaticos de live e exibir informacoes no painel administrativo.</div>
+        <div class="item"><strong>1. Uso do Servico</strong>O Bot Vortex e um sistema automatizado integrado ao Discord para gerenciamento administrativo de servidores.</div>
+        <div class="item"><strong>2. Coleta de Dados</strong>O sistema podera coletar ID do usuario no Discord, nome de usuario, ID do servidor e registros operacionais gerados pelo uso do bot.</div>
+        <div class="item"><strong>3. Finalidade dos Dados</strong>Os dados sao usados para identificar usuarios, gerar relatórios, controlar permissões e exibir informacoes no painel administrativo.</div>
         <div class="item"><strong>4. Compartilhamento</strong>O Bot Vortex nao compartilha dados com terceiros.</div>
         <div class="item"><strong>5. Responsabilidade do Usuario</strong>O usuario e responsavel pelas informacoes fornecidas e pelo uso do bot dentro do servidor.</div>
         <div class="item"><strong>6. Modificacoes</strong>Os termos podem ser alterados a qualquer momento sem aviso previo.</div>
@@ -313,8 +315,8 @@
     <section id="privacidade">
       <h2>Politica de Privacidade — Bot Vortex</h2>
       <div class="text-block">
-        <p><strong>1. Informacoes Coletadas:</strong> coletamos apenas dados necessarios para funcionamento do sistema: ID do Discord, nome de usuario e canal da Twitch vinculado.</p>
-        <p><strong>2. Uso das Informacoes:</strong> os dados sao utilizados para monitorar transmissoes ao vivo, enviar notificacoes no Discord e gerenciar funcionalidades do bot.</p>
+        <p><strong>1. Informacoes Coletadas:</strong> coletamos apenas dados necessarios para funcionamento do sistema: ID do Discord, nome de usuario, cargos, registros de ponto e dados administrativos configurados no servidor.</p>
+        <p><strong>2. Uso das Informacoes:</strong> os dados sao utilizados para relatórios, controle de permissões, painéis administrativos e funcionalidades internas do bot.</p>
         <p><strong>3. Armazenamento:</strong> os dados sao armazenados de forma segura e nao sao vendidos ou compartilhados.</p>
         <p><strong>4. Seguranca:</strong> utilizamos praticas de seguranca para proteger os dados armazenados.</p>
         <p><strong>5. Direitos do Usuario:</strong> o usuario pode solicitar remocao dos dados a qualquer momento.</p>

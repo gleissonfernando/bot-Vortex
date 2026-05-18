@@ -14,7 +14,7 @@ const WEEKDAY_LABELS = [
 function buildPointSiteUrl(guildId, userId) {
   const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
   const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
-  const url = new URL(`/ponto/${userId}`, baseUrl);
+  const url = new URL(`/relatorio/ponto/${userId}`, baseUrl);
   url.searchParams.set('guildId', guildId);
   if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
   return url.toString();
@@ -210,25 +210,29 @@ function buildPointSiteHtml({ userId, apiPath }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vortex | Folha de ponto</title>
+  <title>Vortex | Relatorio de Pontos</title>
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
   <style>
-    :root{--bg:#07070d;--panel:#11131c;--panel2:#171a25;--line:#2a3144;--text:#f4f7fb;--muted:#9aa7bc;--violet:#7000ff;--cyan:#00d9ff;--green:#22c55e;--red:#ef4444;--yellow:#facc15}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,Helvetica,sans-serif;line-height:1.45}
-    .hero{min-height:260px;background:linear-gradient(90deg,rgba(7,7,13,.92),rgba(7,7,13,.58)),url("/assets/IMG_4234.png") center/cover no-repeat;border-bottom:1px solid rgba(112,0,255,.45);display:flex;align-items:flex-end}
+    :root{--bg:#02050c;--panel:#07101f;--panel2:#0b1528;--line:#12356e;--text:#F5F5F5;--muted:#9fb5d8;--blue:#005DFF;--blue2:#0066FF;--green:#22c55e;--red:#ef4444;--yellow:#facc15}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 18% 0%,rgba(0,93,255,.34),transparent 28%),linear-gradient(135deg,#02050c,#05070d 58%,#00133a);color:var(--text);font-family:Inter,Arial,Helvetica,sans-serif;line-height:1.45}
+    body:before{content:"";position:fixed;inset:0;opacity:.12;background-image:linear-gradient(45deg,rgba(255,255,255,.05) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.035) 25%,transparent 25%);background-size:18px 18px;pointer-events:none}
+    .chain{position:fixed;color:rgba(0,102,255,.34);font-size:42px;text-shadow:0 0 24px var(--blue);z-index:0}.c1{top:16px;left:16px}.c2{top:16px;right:16px}.c3{bottom:16px;left:16px}.c4{bottom:16px;right:16px}
+    .hero{min-height:290px;background:linear-gradient(90deg,rgba(2,5,12,.94),rgba(2,5,12,.66)),url("/assets/IMG_4234.png") center/cover no-repeat;border-bottom:1px solid rgba(0,102,255,.55);display:flex;align-items:flex-end;box-shadow:0 0 42px rgba(0,93,255,.22)}
     .wrap{width:min(1220px,calc(100% - 32px));margin:0 auto}.hero-inner{padding:30px 0 28px;display:grid;gap:18px}
-    .brand{display:flex;align-items:center;justify-content:space-between;gap:18px}.brand-title{font-size:14px;letter-spacing:3px;text-transform:uppercase;color:var(--cyan);font-weight:800}
+    .brand{display:flex;align-items:center;justify-content:space-between;gap:18px}.brand-title{font-size:14px;letter-spacing:3px;text-transform:uppercase;color:var(--blue2);font-weight:900;text-shadow:0 0 16px var(--blue)}
+    .brand-title i,.status i,.label i{margin-right:8px}
     h1{font-size:42px;margin:0;letter-spacing:0}.muted{color:var(--muted)}main{display:grid;gap:16px;padding:22px 0 38px}
-    .status{border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-weight:800;background:rgba(17,19,28,.78);box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}
-    .status.open{color:var(--green);border-color:rgba(34,197,94,.45)}.status.closed{color:var(--cyan);border-color:rgba(0,217,255,.45)}
-    .profile,.card,section{background:linear-gradient(180deg,var(--panel),#0e1018);border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,.24)}
-    .profile{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:18px}.avatar{width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,var(--violet),var(--cyan));object-fit:cover;display:grid;place-items:center;font-weight:900}
+    .status{border:1px solid rgba(0,102,255,.45);border-radius:8px;padding:9px 14px;font-weight:900;background:rgba(7,16,31,.82);box-shadow:0 0 22px rgba(0,93,255,.18)}
+    .status.open{color:var(--green);border-color:rgba(34,197,94,.45)}.status.closed{color:var(--blue2);border-color:rgba(0,102,255,.55)}
+    .profile,.card,section{background:linear-gradient(180deg,rgba(7,16,31,.92),rgba(5,10,20,.92));border:1px solid rgba(0,102,255,.35);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,.28),0 0 24px rgba(0,93,255,.13)}
+    .profile{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:18px}.avatar{width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,var(--blue),#5bb4ff);object-fit:cover;display:grid;place-items:center;font-weight:900;box-shadow:0 0 20px rgba(0,93,255,.35)}
     .profile h2{margin:0;font-size:24px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{padding:16px}.label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;font-weight:800}
     .weekday-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
     .weekday-card{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:12px}
     .weekday-card strong{font-size:16px}
     strong{display:block;margin-top:4px;font-size:24px}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
     .meta div{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:11px;overflow-wrap:anywhere}
-    .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-right:16px}.toolbar h2{border-bottom:0}.pill{border:1px solid rgba(0,217,255,.35);color:var(--cyan);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}
+    .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-right:16px}.toolbar h2{border-bottom:0}.pill{border:1px solid rgba(0,102,255,.5);color:var(--blue2);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;box-shadow:0 0 14px rgba(0,93,255,.16)}
     section h2{font-size:18px;margin:0;padding:15px 16px;border-bottom:1px solid var(--line)}.table-scroll{overflow:auto}
     table{width:100%;min-width:920px;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 13px;font-size:14px}
     th{color:var(--muted);font-size:12px;text-transform:uppercase}tbody tr:hover{background:rgba(112,0,255,.12)}.empty{padding:28px;text-align:center;color:var(--muted)}
@@ -238,7 +242,8 @@ function buildPointSiteHtml({ userId, apiPath }) {
   </style>
 </head>
 <body>
-  <header class="hero"><div class="wrap hero-inner"><div class="brand"><div><div class="brand-title">Vortex Management</div><h1>Folha de ponto</h1><div class="muted" id="subtitle">Carregando...</div></div><div id="status" class="status">...</div></div></div></header>
+  <div class="chain c1">⛓</div><div class="chain c2">⛓</div><div class="chain c3">⛓</div><div class="chain c4">⛓</div>
+  <header class="hero"><div class="wrap hero-inner"><div class="brand"><div><div class="brand-title"><i class="fa-solid fa-shield-halved"></i> Vortex Management</div><h1><i class="fa-solid fa-chart-line"></i> Relatorio de pontos</h1><div class="muted" id="subtitle">Carregando...</div></div><div id="status" class="status"><i class="fa-solid fa-circle-notch fa-spin"></i> ...</div></div></div></header>
   <main class="wrap" id="app"><div class="empty">Carregando folha de ponto...</div></main>
   <script>
     const apiPath = ${JSON.stringify(safeApiPath)};
@@ -261,11 +266,11 @@ function buildPointSiteHtml({ userId, apiPath }) {
       status.className = 'status ' + (data.point.status === 'ABERTO' ? 'open' : 'closed');
       const avatar = data.user.avatarUrl ? '<img class="avatar" src="' + esc(data.user.avatarUrl) + '" alt="">' : '<div class="avatar">' + esc(data.user.displayName.slice(0,2).toUpperCase()) + '</div>';
       document.getElementById('app').innerHTML =
-        '<div class="profile">' + avatar + '<div><h2>' + esc(data.user.displayName) + '</h2><div class="muted">' + esc(data.user.tag) + ' | ' + esc(data.user.id) + '</div><div class="meta">' +
-        '<div><span class="label">Cadastro</span>' + fmt(data.profile.status) + '</div><div><span class="label">Nome em game</span>' + fmt(data.profile.nomeGame) + '</div><div><span class="label">ID em game</span>' + fmt(data.profile.idGame) + '</div>' +
-        '<div><span class="label">Numero</span>' + fmt(data.profile.numeroGame) + '</div><div><span class="label">Nivel</span>' + fmt(data.profile.nivelGame) + '</div><div><span class="label">Cargo</span>' + fmt(data.user.highestRole) + '</div>' +
+        '<div class="profile">' + avatar + '<div><h2>' + esc(data.user.displayName) + '</h2><div class="muted"><i class="fa-solid fa-id-card"></i> ' + esc(data.user.tag) + ' | ' + esc(data.user.id) + '</div><div class="meta">' +
+        '<div><span class="label"><i class="fa-solid fa-circle-check"></i> Cadastro</span>' + fmt(data.profile.status) + '</div><div><span class="label"><i class="fa-solid fa-user"></i> Nome em game</span>' + fmt(data.profile.nomeGame) + '</div><div><span class="label"><i class="fa-solid fa-hashtag"></i> ID em game</span>' + fmt(data.profile.idGame) + '</div>' +
+        '<div><span class="label"><i class="fa-solid fa-list-ol"></i> Numero</span>' + fmt(data.profile.numeroGame) + '</div><div><span class="label"><i class="fa-solid fa-layer-group"></i> Nivel</span>' + fmt(data.profile.nivelGame) + '</div><div><span class="label"><i class="fa-solid fa-user-shield"></i> Cargo</span>' + fmt(data.user.highestRole) + '</div>' +
         '</div></div></div>' +
-        '<div class="grid"><div class="card"><span class="label">Tempo total</span><strong>' + esc(data.point.totalFormatted) + '</strong></div><div class="card"><span class="label">Dias com ponto</span><strong>' + esc(data.point.days) + '</strong></div><div class="card"><span class="label">Pontos no mes</span><strong>' + esc(data.summary.month.total) + '</strong></div><div class="card"><span class="label">Ponto atual</span><strong>' + esc(data.point.activeDurationFormatted) + '</strong></div><div class="card"><span class="label">Última atividade</span><strong>' + esc(data.point.lastActivityFormatted) + '</strong></div><div class="card"><span class="label">Tempo sem logar</span><strong>' + esc(data.point.offlineDurationFormatted) + '</strong></div><div class="card"><span class="label">Dia da última atividade</span><strong>' + esc(data.point.lastActivityDay) + '</strong></div><div class="card"><span class="label">Status do ponto</span><strong>' + esc(data.point.status) + '</strong></div></div>' +
+        '<div class="grid"><div class="card"><span class="label"><i class="fa-solid fa-clock"></i> Tempo total</span><strong>' + esc(data.point.totalFormatted) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-calendar-check"></i> Dias com ponto</span><strong>' + esc(data.point.days) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-calendar-days"></i> Pontos no mes</span><strong>' + esc(data.summary.month.total) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-play"></i> Ponto atual</span><strong>' + esc(data.point.activeDurationFormatted) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-fire"></i> Última atividade</span><strong>' + esc(data.point.lastActivityFormatted) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-stopwatch"></i> Tempo sem logar</span><strong>' + esc(data.point.offlineDurationFormatted) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-calendar-day"></i> Dia da última atividade</span><strong>' + esc(data.point.lastActivityDay) + '</strong></div><div class="card"><span class="label"><i class="fa-solid fa-circle-info"></i> Status do ponto</span><strong>' + esc(data.point.status) + '</strong></div></div>' +
         '<section><div class="toolbar"><h2>Dias da semana</h2><span class="pill">Resumo do período</span></div><div class="weekday-grid">' + data.summary.weekdays.map((item) => '<div class="weekday-card"><span class="label">' + esc(item.label) + '</span><strong>' + esc(String(item.count)) + ' ponto(s)</strong><div class="muted">' + esc(item.totalFormatted) + '</div></div>').join('') + '</div></section>' +
         '<section><div class="toolbar"><h2>Historico do mes</h2><span class="pill">' + esc(data.summary.month.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.monthSessions) + '</tbody></table></div></section>' +
         '<section><div class="toolbar"><h2>Todos os pontos</h2><span class="pill">' + esc(data.summary.all.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.sessions) + '</tbody></table></div></section>';

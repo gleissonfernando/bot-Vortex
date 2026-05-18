@@ -3,6 +3,7 @@ const config = require('../config/config');
 const { logger } = require('../utils/logger');
 const { logMemberJoin } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
+const { applyPendingHierarchy, getVortexAutoRoles } = require('../utils/vortexHierarchy');
 
 module.exports = {
     name: Events.GuildMemberAdd,
@@ -11,15 +12,20 @@ module.exports = {
             const guild = member.guild;
             const client = guild.client;
             
-            // Adicionar cargo automático (Pendente)
+            // Adicionar cargos automáticos de entrada configurados no /painel.
             try {
-                const pendingRole = await guild.roles.fetch(config.pendingRoleId).catch(() => null);
-                if (pendingRole) {
-                    await member.roles.add(pendingRole).catch(() => {});
+                const result = await applyPendingHierarchy(member);
+                if (!result.added.length && !result.failed.length && config.pendingRoleId) {
+                    const pendingRole = await guild.roles.fetch(config.pendingRoleId).catch(() => null);
+                    if (pendingRole) {
+                        await member.roles.add(pendingRole).catch(() => {});
+                    }
                 }
             } catch (error) {
                 console.error(`[VORTEX] Erro ao aplicar cargo pendente:`, error.message);
             }
+
+            const autoRoles = getVortexAutoRoles();
 
             // Log de entrada profissional
             await sendStaffLog(
@@ -30,7 +36,7 @@ module.exports = {
                     `**Tag:** \`${member.user.tag}\``,
                     `**ID:** \`${member.id}\``,
                     '',
-                    '**Ação automática:** cargo pendente aplicado quando disponível.',
+                    `**Ação automática:** cargo(s) pendente(s) aplicado(s): ${autoRoles.pending.map((roleId) => `<@&${roleId}>`).join(' ') || '`Nenhum`'}.`,
                     '**Próximo passo:** usuário precisa iniciar o cadastro pelo `/set`.',
                 ].join('\n'),
                 '#57F287'

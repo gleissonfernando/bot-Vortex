@@ -12,6 +12,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
+const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 
@@ -44,7 +45,8 @@ function hasAbsenceAccess(member) {
 
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
-    if (commandName === 'clear' || commandName === 'clipe' || commandName === 'live') return true;
+    if (commandName === 'exibir') return interaction.user?.id === '1426287249020158018';
+    if (commandName === 'clear' || commandName === 'clipe') return true;
     if (commandName === 'perfil') {
         const approvedSetChannelRecord = interaction.channelId
             ? getApprovedSetChannelRecord(interaction.guildId, interaction.channelId)
@@ -537,38 +539,33 @@ module.exports = {
             }
         }
 
-        const live = client.commands.get('live');
-        if (live) {
-            if (interaction.isButton() && (interaction.customId === 'live_alert_set_link' || interaction.customId === 'live_alert_remove_link' || interaction.customId === 'live_alert_test_now')) {
-                return await live.handleButton(interaction);
-            }
-            if (interaction.isModalSubmit() && interaction.customId === 'live_alert_link_modal') {
-                return await live.handleModal(interaction);
-            }
+        const exibir = client.commands.get('exibir');
+        if (exibir && interaction.isStringSelectMenu() && interaction.customId === 'exibir_panel_select:1426287249020158018') {
+            return await exibir.handleSelectMenu(interaction);
         }
 
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'toggle_panel_private_mode', 'toggle_vortex_role_remove_mode', 'toggle_selected_log_channel', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'clear_point_no_billing', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation', 'live_stream_add_link', 'live_stream_check_now', 'live_stream_clear_links'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('panel_back_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'send_test_log', 'toggle_panel_private_mode', 'toggle_vortex_role_remove_mode', 'set_vortex_auto_pending', 'set_vortex_auto_approved', 'publish_fac_hierarchy_panel', 'refresh_fac_hierarchy_panel', 'toggle_selected_log_channel', 'toggle_mirror_message_channel', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'clear_point_no_billing', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel botão: ${interaction.customId}`, () => painel.handleButton(interaction));
             }
-            if (interaction.isStringSelectMenu() && interaction.customId === 'select_log') {
+            if (interaction.isStringSelectMenu() && interaction.customId === 'select_panel_tool') {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_open_point_user')) {
+            if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_fac_hierarchy_target' || interaction.customId === 'select_open_point_user')) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isRoleSelectMenu() && ['select_notice_mention_role', 'select_point_adjust_role', 'select_point_allowed_roles', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId)) {
+            if (interaction.isRoleSelectMenu() && (interaction.customId.startsWith('select_fac_hierarchy_role_') || ['select_notice_mention_role', 'select_point_adjust_role', 'select_point_allowed_roles', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isUserSelectMenu() && ['select_point_readjust_user', 'select_profile_register_user'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register' || interaction.customId === 'modal_live_stream_add')) {
+            if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register' || interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved')) {
                 return runInteractionHandler(interaction, `Painel modal: ${interaction.customId}`, () => painel.handleModal(interaction));
             }
         }
@@ -727,10 +724,7 @@ module.exports = {
                 if (isApp) {
                     const target = await guild.members.fetch(targetId).catch(() => null);
                     if (target) {
-                        const PENDENTE_ID = '1449514118292967578';
-                        const APROVADO_ID = '1201235607549124639';
-                        await target.roles.remove(PENDENTE_ID).catch(() => {});
-                        await target.roles.add(APROVADO_ID).catch(() => {});
+                        await applyApprovedHierarchy(target, `Set aprovado por ${user.tag || user.id}`).catch(() => null);
                         if (nomeGame && idGame) {
                             await target.setNickname(`${nomeGame} | ${idGame}`).catch(() => {});
                         }

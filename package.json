@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
     "axios": "^1.15.1",
     "cors": "^2.8.6",
     "discord.js": "^14.26.3",

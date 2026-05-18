@@ -16,9 +16,14 @@ const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
 const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
-const { acceptLiveTermsToken, initTwitchLiveMonitor, parseLiveTermsToken } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
+const {
+    getPointTranscriptRecord,
+    validateTranscriptAccess,
+    registerTranscriptAccess,
+    buildTranscriptShell,
+} = require('./utils/pointTranscriptStore');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
@@ -28,6 +33,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use('/assets', express.static(path.join(__dirname, 'foto')));
+app.use('/vendor/fontawesome', express.static(path.join(__dirname, 'node_modules', '@fortawesome', 'fontawesome-free')));
 
 const client = new Client({
     intents: [
@@ -37,7 +43,8 @@ const client = new Client({
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.MessageContent
     ]
 });
 
@@ -59,7 +66,6 @@ app.get('/api/site/status', (req, res) => {
         } : null,
         guilds: client.guilds?.cache?.size || 0,
         uptimeSeconds: Math.floor(process.uptime()),
-        liveAlertChannelId: '1202251715865489459',
     });
 });
 
@@ -87,7 +93,7 @@ function buildPointApiPath(req, userId) {
     return `/api/ponto/${userId}${query ? `?${query}` : ''}`;
 }
 
-app.get('/api/ponto/:id', async (req, res) => {
+app.get(['/api/ponto/:id', '/api/relatorio/ponto/:id'], async (req, res) => {
     if (!isPointSiteAuthorized(req)) {
         return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
     }
@@ -111,7 +117,7 @@ app.get('/api/ponto/:id', async (req, res) => {
     return res.json(payload);
 });
 
-app.get('/ponto/:id', (req, res) => {
+app.get(['/ponto/:id', '/relatorio/ponto/:id'], (req, res) => {
     if (!isPointSiteAuthorized(req)) {
         return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
     }
@@ -137,47 +143,41 @@ app.get('/ponto/:id', (req, res) => {
     return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
 });
 
+app.get(['/transcripts/:id', '/vortex/transcript/ponto/:id'], (req, res) => {
+    const transcriptId = String(req.params.id || '').trim();
+    const record = getPointTranscriptRecord(transcriptId);
+    const token = req.path.startsWith('/transcripts/')
+        ? record?.token
+        : String(req.query.token || '').trim();
+    const access = validateTranscriptAccess(record, token);
+    if (!access.ok) {
+        return res.status(access.status).type('html').send(`<!doctype html><meta charset="utf-8"><title>Transcript Vortex</title><body>${access.message}</body>`);
+    }
+
+    registerTranscriptAccess(transcriptId, {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+    });
+    logger.info(`Transcript de ponto acessado: ${transcriptId}`);
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+        'Content-Security-Policy',
+        [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' https: data:",
+            "connect-src 'self'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+        ].join('; ')
+    );
+    return res.type('html').send(buildTranscriptShell(record));
+});
+
 app.get(['/', '/termos', '/privacidade'], (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'vortex-site.html'));
-});
-
-app.get(['/twitch', '/live/termos'], (req, res) => {
-    const token = String(req.query.token || '');
-    if (!parseLiveTermsToken(token)) {
-        return res.status(400).send('Link de aceite invalido ou expirado. Abra o /live novamente no Discord.');
-    }
-
-    const htmlPath = path.join(__dirname, 'public', 'twitch-terms.html');
-    const html = fs.readFileSync(htmlPath, 'utf8')
-        .replaceAll('__ACCEPT_URL__', `/twitch/webhook?token=${encodeURIComponent(token)}`);
-    return res.type('html').send(html);
-});
-
-app.get('/twitch/webhook', (req, res) => {
-    const accepted = acceptLiveTermsToken(req.query.token);
-    if (!accepted) {
-        return res.status(400).send('Link de aceite invalido ou expirado. Abra o /live novamente no Discord.');
-    }
-
-    return res.type('html').send([
-        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        '<title>Vortex | Termos aceitos</title>',
-        '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090d;color:#f5f7fb;font-family:Arial,Helvetica,sans-serif}.box{max-width:520px;border:1px solid #262637;border-radius:8px;background:#14141c;padding:28px}h1{margin:0 0 12px;font-size:28px}p{color:#a9afc3;line-height:1.5}</style>',
-        '</head><body><main class="box">',
-        '<h1>Termos aceitos</h1>',
-        '<p>Seu acesso para cadastrar links de live foi liberado. Volte ao Discord, use /live e clique em Adicionar link.</p>',
-        '</main></body></html>',
-    ].join(''));
-});
-
-app.post('/twitch/webhook', (req, res) => {
-    if (req.headers['twitch-eventsub-message-type'] === 'webhook_callback_verification') {
-        return res.status(200).send(req.body?.challenge || '');
-    }
-
-    console.log('[TWITCH WEBHOOK] Evento recebido:', req.body);
-    return res.status(200).send('OK');
 });
 
 // Carregar Comandos
@@ -218,6 +218,7 @@ const registerCommands = async () => {
     const rest = new REST({ version: '10' }).setToken(config.token);
 
     try {
+        let registeredGuildCommands = false;
         let guildId = config.guildId;
         
         // Limpeza de Guild ID (Remove links de convite e caracteres não numéricos)
@@ -232,6 +233,7 @@ const registerCommands = async () => {
             try {
                 await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body: commandsData });
                 console.log(`[VORTEX] Comandos registrados no servidor: ${guildId}`);
+                registeredGuildCommands = true;
             } catch (err) {
                 console.warn(`[VORTEX] Falha no servidor ${guildId}. Tentando registro global...`);
                 await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
@@ -240,6 +242,13 @@ const registerCommands = async () => {
         } else {
             await rest.put(Routes.applicationCommands(config.clientId), { body: commandsData });
             console.log('[VORTEX] Comandos registrados globalmente.');
+        }
+        if (registeredGuildCommands) {
+            const exibirCommand = client.commands.get('exibir');
+            if (exibirCommand) {
+                await rest.put(Routes.applicationCommands(config.clientId), { body: [exibirCommand.data.toJSON()] });
+                console.log('[VORTEX] Comando /exibir registrado globalmente.');
+            }
         }
     } catch (error) { 
         console.error('[VORTEX] Erro fatal no registro:', error.message);
@@ -255,7 +264,6 @@ client.once(Events.ClientReady, async () => {
     initProfileManager(client);
     initDailyPointTranscript(client);
     initPointAutomation(client);
-    initTwitchLiveMonitor(client);
     initChannelLogRecovery(client);
     scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao verificar atividades FiveM no startup:', error));
     

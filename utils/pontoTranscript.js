@@ -95,6 +95,21 @@ function buildWeekRange(referenceDate = new Date()) {
   return { currentKey, weekStartKey, weekEndKey };
 }
 
+function getMonthRange(monthKey = '') {
+  const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0));
+  return {
+    monthKey: `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`,
+    startKey: start.toISOString().slice(0, 10),
+    endKey: end.toISOString().slice(0, 10),
+  };
+}
+
 function getSessionStartedAt(session) {
   return session.startedAt || session.abertura || session.openedAt || null;
 }
@@ -255,6 +270,55 @@ function getWeekDayKeys(referenceDate = new Date()) {
   return { currentKey, weekStartKey, weekEndKey, keys };
 }
 
+function getDateKeysBetween(startKey, endKey) {
+  const keys = [];
+  let cursor = startKey;
+  while (cursor <= endKey) {
+    keys.push(cursor);
+    cursor = shiftDateKey(cursor, 1);
+  }
+  return keys;
+}
+
+function getReportDayKeys({ referenceDate = new Date(), monthKey = null } = {}) {
+  const currentKey = getLocalDateKey(referenceDate);
+  const monthRange = monthKey ? getMonthRange(monthKey) : null;
+  if (monthRange) {
+    return {
+      currentKey: currentKey < monthRange.startKey
+        ? monthRange.startKey
+        : currentKey > monthRange.endKey
+          ? monthRange.endKey
+          : currentKey,
+      weekStartKey: monthRange.startKey,
+      weekEndKey: monthRange.endKey,
+      keys: getDateKeysBetween(monthRange.startKey, monthRange.endKey),
+      periodType: 'month',
+      periodKey: monthRange.monthKey,
+      periodLabel: formatMonthLabel(monthRange.monthKey),
+    };
+  }
+  const week = getWeekDayKeys(referenceDate);
+  return {
+    ...week,
+    periodType: 'week',
+    periodKey: `${week.weekStartKey}:${week.weekEndKey}`,
+    periodLabel: `Semana ${formatDateKey(week.weekStartKey)} ate ${formatDateKey(week.weekEndKey)}`,
+  };
+}
+
+function formatMonthLabel(monthKey) {
+  const range = getMonthRange(monthKey);
+  if (!range) return 'Mes invalido';
+  const date = dateKeyToDate(range.startKey);
+  const label = date.toLocaleDateString('pt-BR', {
+    timeZone: TIME_ZONE,
+    month: 'long',
+    year: 'numeric',
+  });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function getDisplayWeekdayFromKey(dateKey) {
   return formatWeekdayLabel(dateKey);
 }
@@ -381,9 +445,17 @@ function buildAdjustmentHistoryText(adjustments) {
   return lines;
 }
 
-function buildTranscriptData({ guild, target, member, data }) {
+function buildTranscriptData({ guild, target, member, data, monthKey = null }) {
   const generatedAt = new Date();
-  const { currentKey, weekStartKey, weekEndKey, keys: weekKeys } = getWeekDayKeys(generatedAt);
+  const {
+    currentKey,
+    weekStartKey,
+    weekEndKey,
+    keys: weekKeys,
+    periodType,
+    periodKey,
+    periodLabel,
+  } = getReportDayKeys({ referenceDate: generatedAt, monthKey });
   const profile = getUserProfile(guild.id, target.id);
   const sessions = getAllSessions(data).filter((session) => session.dayKey && weekKeys.includes(session.dayKey));
   const adjustments = getAllAdjustments(data, guild.id, target.id)
@@ -413,6 +485,9 @@ function buildTranscriptData({ guild, target, member, data }) {
     summary,
     weekStartKey,
     weekEndKey,
+    periodType,
+    periodKey,
+    periodLabel,
     lastActivityAt,
     offlineDurationFormatted,
   };
@@ -425,7 +500,7 @@ function buildTextBody(report) {
     `Usuario: ${userName}`,
     `Discord ID: ${target.id}`,
     '',
-    `Semana: ${formatDateKey(weekStartKey)} ate ${formatDateKey(weekEndKey)}`,
+    `Periodo: ${report.periodLabel || `${formatDateKey(weekStartKey)} ate ${formatDateKey(weekEndKey)}`}`,
     `Gerado em: ${formatDate(generatedAt)}`,
     `Servidor: ${guild.name}`,
     '',
@@ -474,6 +549,9 @@ function buildHtmlBody(report) {
   const { generatedAt, guild, target, member, profile, sessionsByDay, summary, weekStartKey, weekEndKey, adjustments } = report;
   const userName = member?.displayName || profile?.displayName || target.username;
   const profileStatus = profile ? (profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set') : 'Sem cadastro no /set';
+  const avatarUrl = typeof target.displayAvatarURL === 'function'
+    ? target.displayAvatarURL({ size: 256, extension: 'png' })
+    : null;
 
   const dayBlocks = report.weekKeys.map((dayKey) => {
     const sessions = sessionsByDay[dayKey] || [];
@@ -550,47 +628,58 @@ function buildHtmlBody(report) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vortex | Folha de ponto</title>
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
   <style>
-    :root{--bg:#090a0f;--panel:#10131b;--panel2:#151a25;--line:#273042;--text:#edf2fb;--muted:#94a3b8;--accent:#7000ff;--accent2:#00d9ff;--good:#22c55e;--warn:#facc15}
+    :root{--bg:#03060d;--panel:#07111f;--panel2:#0b1728;--panel3:#101d33;--line:#163a75;--line2:#005dff;--text:#f5f7ff;--muted:#a9b8d4;--accent:#005dff;--accent2:#00d9ff;--accent3:#0066ff;--good:#22c55e;--warn:#facc15;--danger:#ff2d6f;--shadow:0 0 34px rgba(0,93,255,.24)}
     *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;line-height:1.45}
-    header.hero{padding:28px 0;border-bottom:1px solid rgba(112,0,255,.3);background:linear-gradient(135deg,rgba(9,10,15,.95),rgba(9,10,15,.75)),url("/assets/IMG_4234.png") center/cover no-repeat}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:radial-gradient(circle at 18% 0,rgba(0,93,255,.32),transparent 34%),radial-gradient(circle at 86% 12%,rgba(0,217,255,.16),transparent 30%),linear-gradient(180deg,#02040a 0%,#050a14 42%,#03060d 100%);color:var(--text);font-family:Arial,Helvetica,sans-serif;line-height:1.45;min-height:100vh}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.28;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:38px 38px;mask-image:linear-gradient(180deg,#000,transparent 82%);z-index:-1}
+    header.hero{position:relative;padding:34px 0 30px;border-bottom:1px solid rgba(0,93,255,.55);background:linear-gradient(135deg,rgba(3,6,13,.95),rgba(0,35,92,.74)),url("/assets/IMG_4234.png") center/cover no-repeat;box-shadow:0 20px 80px rgba(0,93,255,.18);overflow:hidden}
+    header.hero:before,header.hero:after{content:"";position:absolute;width:180px;height:22px;border-top:5px double rgba(245,247,255,.34);border-bottom:5px double rgba(0,217,255,.22);transform:rotate(-34deg);filter:drop-shadow(0 0 12px rgba(0,93,255,.8));opacity:.82}
+    header.hero:before{left:-38px;top:22px}
+    header.hero:after{right:-44px;bottom:26px}
     .wrap{width:min(1220px,calc(100% - 32px));margin:0 auto}
     .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
-    .brand{font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--accent2);font-weight:700}
-    h1{margin:6px 0 0;font-size:40px;line-height:1.05}
-    .subtitle{color:var(--muted);margin-top:6px;font-size:13px}
-    .status{align-self:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-weight:700;background:rgba(16,19,27,.8)}
+    .brand{display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--accent2);font-weight:800;text-shadow:0 0 18px rgba(0,217,255,.72)}
+    .brand:before{content:"V";display:grid;place-items:center;width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;letter-spacing:0;box-shadow:0 0 22px rgba(0,93,255,.72)}
+    h1{margin:10px 0 0;font-size:44px;line-height:1.02;letter-spacing:0;text-shadow:0 0 26px rgba(0,93,255,.58)}
+    .subtitle{color:#d6e2ff;margin-top:7px;font-size:13px}
+    .status{align-self:flex-start;border:1px solid rgba(0,217,255,.48);border-radius:8px;padding:11px 15px;font-weight:800;background:rgba(5,13,26,.82);box-shadow:var(--shadow);color:#fff;text-transform:uppercase;font-size:12px}
     main{display:grid;gap:16px;padding:22px 0 40px}
-    .profile,.summary,.day,.history{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+    .profile,.summary,.day,.history{background:linear-gradient(180deg,rgba(7,17,31,.96),rgba(5,10,20,.98));border:1px solid rgba(0,93,255,.34);border-radius:8px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+    .profile:before,.summary:before,.day:before,.history:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,var(--accent2),var(--accent),transparent);opacity:.85}
     .profile{padding:18px}
     .profile-grid,.summary-grid,.point-grid,.adjustment-grid,.history-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
     .profile-head{display:flex;gap:16px;align-items:center}
-    .avatar{width:64px;height:64px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:800}
-    .meta-item,.summary-item,.point-card,.adjustment,.history-item{background:var(--panel2);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px}
-    .meta-item span,.summary-item span,.point-grid span,.adjustment-grid span,.history-grid span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:700}
-    .meta-item strong,.summary-item strong,.point-grid strong,.adjustment-grid strong,.history-grid strong{display:block;margin-top:4px;font-size:14px;overflow-wrap:anywhere}
+    .avatar{width:68px;height:68px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:900;font-size:22px;border:1px solid rgba(255,255,255,.24);box-shadow:0 0 26px rgba(0,93,255,.6);overflow:hidden}
+    .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+    .meta-item,.summary-item,.point-card,.adjustment,.history-item{background:linear-gradient(180deg,rgba(16,29,51,.9),rgba(8,18,34,.92));border:1px solid rgba(0,93,255,.28);border-radius:8px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.24)}
+    .meta-item span,.summary-item span,.point-grid span,.adjustment-grid span,.history-grid span{display:block;color:#8fb5ff;font-size:11px;text-transform:uppercase;font-weight:800}
+    .meta-item strong,.summary-item strong,.point-grid strong,.adjustment-grid strong,.history-grid strong{display:block;margin-top:4px;font-size:14px;overflow-wrap:anywhere;color:var(--text)}
     .summary{padding:14px 16px}
     .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
     .summary-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-    .pill{border:1px solid rgba(0,217,255,.35);color:var(--accent2);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}
+    .pill{border:1px solid rgba(0,217,255,.45);color:#fff;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:800;background:rgba(0,93,255,.18);box-shadow:0 0 20px rgba(0,93,255,.22)}
     .day{overflow:hidden}
-    .day-header{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
-    .day-header h3{margin:0;font-size:20px}
-    .day-meta{margin-top:6px;color:var(--muted);font-size:12px}
+    .day-header{padding:16px 16px 12px;border-bottom:1px solid rgba(0,93,255,.28);background:linear-gradient(90deg,rgba(0,93,255,.18),transparent)}
+    .day-header h3{margin:0;font-size:20px;color:#fff;text-shadow:0 0 16px rgba(0,93,255,.45)}
+    .day-meta{margin-top:6px;color:#b8c8e8;font-size:12px}
     .day-body{padding:16px;display:grid;gap:12px}
     .point-card h4{margin:0 0 10px;font-size:15px}
-    .adjustments,.day-total,.empty{border-top:1px solid var(--line);padding-top:12px}
-    .subheading{font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+    .adjustments,.day-total,.empty{border-top:1px solid rgba(0,93,255,.25);padding-top:12px}
+    .day-total{color:#fff;font-weight:800}
+    .subheading{font-size:12px;color:#8fb5ff;text-transform:uppercase;font-weight:800;margin-bottom:8px}
     .adjustments ul{margin:0;padding-left:18px}
     .adjustments li{margin-bottom:10px}
     .history{padding:16px}
     .history-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
     .history-title{font-weight:700;margin-bottom:10px}
     .section-title{font-size:18px;margin:0 0 12px}
-    .empty{color:var(--muted)}
+    .empty{color:var(--muted);background:rgba(0,93,255,.06);border-radius:8px;padding:14px;border:1px dashed rgba(0,93,255,.28)}
     .stack{display:grid;gap:16px}
     .muted{color:var(--muted)}
+    @media print{body{background:#fff;color:#111}header.hero,.profile,.summary,.day,.history{box-shadow:none}button{display:none!important}}
     @media(max-width:900px){
       .hero-top,.profile-head{grid-template-columns:1fr;display:grid}
       .profile-grid,.summary-grid,.point-grid,.adjustment-grid,.history-grid{grid-template-columns:1fr 1fr}
@@ -606,22 +695,22 @@ function buildHtmlBody(report) {
   <header class="hero">
     <div class="wrap hero-top">
       <div>
-        <div class="brand">Vortex Management</div>
-        <h1>Folha de ponto</h1>
+        <div class="brand"><i class="fa-solid fa-shield-halved"></i> Vortex Management</div>
+        <h1><i class="fa-solid fa-file-lines"></i> Folha de ponto</h1>
         <div class="subtitle">Usuario: ${escapeHtml(userName)} | Discord ID: ${escapeHtml(target.id)}</div>
-        <div class="subtitle">Semana: ${escapeHtml(formatDateKey(weekStartKey))} ate ${escapeHtml(formatDateKey(weekEndKey))}</div>
+        <div class="subtitle">Periodo: ${escapeHtml(report.periodLabel || `${formatDateKey(weekStartKey)} ate ${formatDateKey(weekEndKey)}`)}</div>
         <div class="subtitle">Gerado em: ${escapeHtml(formatDate(generatedAt))}</div>
       </div>
-      <div class="status">${escapeHtml(summary.lastSession ? `${summary.lastSession.status} / ${summary.lastSession.dayLabel}` : 'Sem ponto')}</div>
+      <div class="status"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(summary.lastSession ? `${summary.lastSession.status} / ${summary.lastSession.dayLabel}` : 'Sem ponto')}</div>
     </div>
   </header>
 
   <main class="wrap stack">
     <section class="profile">
       <div class="profile-head">
-        <div class="avatar">${escapeHtml((userName || 'VX').slice(0, 2).toUpperCase())}</div>
+        <div class="avatar">${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="Avatar de ${escapeHtml(userName)}">` : escapeHtml((userName || 'VX').slice(0, 2).toUpperCase())}</div>
         <div>
-          <h2 style="margin:0 0 4px;font-size:22px;">Dados do usuario</h2>
+          <h2 style="margin:0 0 4px;font-size:22px;"><i class="fa-solid fa-user"></i> Dados do usuario</h2>
           <div class="muted">${escapeHtml(profile ? (profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set') : 'Sem cadastro no /set')}</div>
         </div>
       </div>
@@ -668,13 +757,13 @@ function buildHtmlBody(report) {
 </html>`;
 }
 
-function createPointTranscriptText({ guild, target, member, data }) {
-  const report = buildTranscriptData({ guild, target, member, data });
+function createPointTranscriptText({ guild, target, member, data, monthKey = null }) {
+  const report = buildTranscriptData({ guild, target, member, data, monthKey });
   return buildTextBody(report);
 }
 
-function createPointTranscriptHtml({ guild, target, member, data }) {
-  const report = buildTranscriptData({ guild, target, member, data });
+function createPointTranscriptHtml({ guild, target, member, data, monthKey = null }) {
+  const report = buildTranscriptData({ guild, target, member, data, monthKey });
   return buildHtmlBody(report);
 }
 
@@ -695,6 +784,7 @@ function createPointTranscriptTextAttachment({ guild, target, member, data }) {
 }
 
 module.exports = {
+  buildTranscriptData,
   createPointTranscriptAttachment,
   createPointTranscriptHtml,
   createPointTranscriptText,
