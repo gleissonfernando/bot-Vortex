@@ -543,7 +543,7 @@ module.exports = {
         }
 
         const exibir = client.commands.get('exibir');
-        if (exibir && interaction.isStringSelectMenu() && interaction.customId === 'exibir_panel_select:1426287249020158018') {
+        if (exibir && interaction.isStringSelectMenu() && String(interaction.customId || '').startsWith('exibir_panel_select')) {
             return await exibir.handleSelectMenu(interaction);
         }
 

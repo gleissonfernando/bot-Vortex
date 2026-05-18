@@ -2,13 +2,9 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   ActionRowBuilder,
-  MessageFlags,
-  PermissionFlagsBits,
   StringSelectMenuBuilder,
 } = require('discord.js');
 const { safeReply, safeUpdate } = require('../../utils/safeReply');
-
-const EXIBIR_OWNER_ID = '1426287249020158018';
 
 const PANEL_CARDS = [
   { key: 'dashboard', label: 'Dashboard', emoji: '📊', color: '#7000FF', summary: 'Visão geral do servidor, cadastros e acessos.' },
@@ -24,10 +20,6 @@ const PANEL_CARDS = [
   { key: 'maintenance', label: 'Manutenção', emoji: '🛠️', color: '#FF0055', summary: 'Modo manutenção e avisos do sistema.' },
   { key: 'reports', label: 'Relatórios', emoji: '📑', color: '#22c55e', summary: 'Relatórios de ponto e transcript web.' },
 ];
-
-function isOwner(interaction) {
-  return String(interaction.user?.id || '') === EXIBIR_OWNER_ID;
-}
 
 function getPanelCard(key) {
   return PANEL_CARDS.find((panel) => panel.key === key) || PANEL_CARDS[0];
@@ -90,7 +82,7 @@ function buildPanelEmbed(interaction, panelKey) {
 function buildComponents(panelKey = null) {
   const currentKey = panelKey || PANEL_CARDS[0].key;
   const select = new StringSelectMenuBuilder()
-    .setCustomId('exibir_panel_select:1426287249020158018')
+    .setCustomId('exibir_panel_select')
     .setPlaceholder('Escolha um painel da Vortex')
     .addOptions(PANEL_CARDS.map((panel) => ({
       label: panel.label,
@@ -107,33 +99,18 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('exibir')
     .setDescription('Exibe os painéis e a apresentação da Vortex.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false),
 
   async execute(interaction) {
-    if (!isOwner(interaction)) {
-      return safeReply(interaction, {
-        content: '❌ Você não tem permissão para usar este comando.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
     return safeReply(interaction, {
       embeds: [buildOverviewEmbed(interaction)],
       components: buildComponents(),
-      flags: MessageFlags.Ephemeral,
     });
   },
 
   async handleSelectMenu(interaction) {
-    const [customBase, ownerId] = String(interaction.customId || '').split(':');
-    if (customBase !== 'exibir_panel_select' || ownerId !== EXIBIR_OWNER_ID) return null;
-    if (!isOwner(interaction)) {
-      return safeReply(interaction, {
-        content: '❌ Você não tem permissão para usar este seletor.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+    const [customBase] = String(interaction.customId || '').split(':');
+    if (customBase !== 'exibir_panel_select') return null;
 
     const selectedKey = interaction.values[0];
     const panel = getPanelCard(selectedKey);
