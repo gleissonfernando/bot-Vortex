@@ -46,7 +46,7 @@ function hasAbsenceAccess(member) {
 
 function hasConfiguredCommandAccess(interaction, commandName) {
     if (!interaction?.member?.roles?.cache) return true;
-    if (commandName === 'exibir') return interaction.user?.id === '1426287249020158018';
+    if (commandName === 'exibir') return true;
     if (commandName === 'clear' || commandName === 'clipe') return true;
     if (commandName === 'perfil') {
         const approvedSetChannelRecord = interaction.channelId
