@@ -216,6 +216,8 @@ const registerCommands = async () => {
     if (!config.token || !config.clientId) return console.error('[VORTEX] Token ou ClientID ausentes.');
 
     const rest = new REST({ version: '10' }).setToken(config.token);
+    const exibirCommand = client.commands.get('exibir');
+    const exibirCommandsData = exibirCommand ? [exibirCommand.data.toJSON()] : [];
 
     try {
         let registeredGuildCommands = false;
@@ -244,10 +246,15 @@ const registerCommands = async () => {
             console.log('[VORTEX] Comandos registrados globalmente.');
         }
         if (registeredGuildCommands) {
-            const exibirCommand = client.commands.get('exibir');
             if (exibirCommand) {
-                await rest.put(Routes.applicationCommands(config.clientId), { body: [exibirCommand.data.toJSON()] });
+                await rest.put(Routes.applicationCommands(config.clientId), { body: exibirCommandsData });
                 console.log('[VORTEX] Comando /exibir registrado globalmente.');
+
+                for (const guild of client.guilds.cache.values()) {
+                    if (String(guild.id) === String(guildId)) continue;
+                    await rest.put(Routes.applicationGuildCommands(config.clientId, guild.id), { body: exibirCommandsData });
+                    console.log(`[VORTEX] Comando /exibir registrado no servidor externo: ${guild.name} (${guild.id}).`);
+                }
             }
         }
     } catch (error) { 
@@ -255,6 +262,24 @@ const registerCommands = async () => {
         // Não envia notifyError aqui para evitar loop se o erro for no registro
     }
 };
+
+client.on(Events.GuildCreate, async (guild) => {
+    try {
+        const primaryGuildId = String(config.guildId || '');
+        if (String(guild.id) === primaryGuildId) return;
+
+        const exibirCommand = client.commands.get('exibir');
+        if (!exibirCommand) return;
+
+        const rest = new REST({ version: '10' }).setToken(config.token);
+        await rest.put(Routes.applicationGuildCommands(config.clientId, guild.id), {
+            body: [exibirCommand.data.toJSON()],
+        });
+        console.log(`[VORTEX] /exibir liberado no novo servidor: ${guild.name} (${guild.id}).`);
+    } catch (error) {
+        logger.error('Erro ao registrar /exibir em novo servidor:', error);
+    }
+});
 
 client.once(Events.ClientReady, async () => {
     console.log(`Vortex Online: ${client.user.tag}`);
