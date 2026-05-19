@@ -3,13 +3,11 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle,
-    AttachmentBuilder
+    ButtonStyle
 } = require('discord.js');
-const path = require('path');
-const fs = require('fs');
 const { isRegisteredUser, hasCommandRole, denyNotRegistered } = require('../../utils/permissions');
 const { safeReply } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -21,9 +19,6 @@ module.exports = {
         if (!isRegisteredUser(interaction) && !hasCommandRole(interaction.member, 'set')) {
             return denyNotRegistered(interaction);
         }
-
-        const fileName = 'IMG_4234.png';
-        const bannerPath = path.join(__dirname, '../../foto/', fileName);
 
         const embed = new EmbedBuilder()
             .setColor('#D4AF37')
@@ -59,10 +54,6 @@ module.exports = {
             })
             .setTimestamp();
 
-        if (fs.existsSync(bannerPath)) {
-            embed.setImage(`attachment://${fileName}`);
-        }
-
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('Vortex_set_start')
@@ -71,11 +62,6 @@ module.exports = {
                 .setStyle(ButtonStyle.Success)
         );
 
-        const options = { embeds: [embed], components: [row] };
-        if (fs.existsSync(bannerPath)) {
-            options.files = [new AttachmentBuilder(bannerPath)];
-        }
-
-        await safeReply(interaction, options);
+        await safeReply(interaction, buildThemedPanelPayload('set', embed, { components: [row] }));
     }
 };

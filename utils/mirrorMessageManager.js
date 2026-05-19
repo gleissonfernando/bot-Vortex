@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { buildThemedPanelPayload } = require('./panelTheme');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 
@@ -90,10 +91,6 @@ async function handleMirrorMessage(message) {
     embed.setThumbnail(message.guild.iconURL({ size: 128 }));
   }
 
-  if (image?.url) {
-    embed.setImage(image.url);
-  }
-
   if (attachmentLines.length) {
     embed.addFields({
       name: 'Anexos',
@@ -109,10 +106,10 @@ async function handleMirrorMessage(message) {
     return false;
   }
 
-  await message.channel.send({
-    embeds: [embed],
+  await message.channel.send(buildThemedPanelPayload('mirrorMessages', embed, {
+    bannerUrl: image?.url,
     allowedMentions: { parse: [] },
-  });
+  }));
   return true;
 }
 

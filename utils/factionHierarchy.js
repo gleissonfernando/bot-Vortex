@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { formatDate } = require('./pontoManager');
+const { buildThemedPanelPayload } = require('./panelTheme');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 
@@ -162,7 +163,9 @@ async function updateFactionHierarchyPanel(client, guildId) {
   if (!message) return { ok: false, message: 'Mensagem do painel nao encontrada.' };
 
   const embed = await buildFactionHierarchyEmbed(guild);
-  await message.edit({ embeds: [embed], allowedMentions: { parse: [], users: [], roles: [] } });
+  await message.edit(buildThemedPanelPayload('facHierarchy', embed, {
+    allowedMentions: { parse: [], users: [], roles: [] },
+  }));
   return { ok: true, message: 'Painel atualizado.' };
 }
 
@@ -186,10 +189,9 @@ async function publishFactionHierarchyPanel(interaction) {
   }
 
   const embed = await buildFactionHierarchyEmbed(interaction.guild);
-  const message = await channel.send({
-    embeds: [embed],
+  const message = await channel.send(buildThemedPanelPayload('facHierarchy', embed, {
     allowedMentions: { parse: [], users: [], roles: [] },
-  });
+  }));
   setFactionHierarchyMessageId(message.id);
   setFactionHierarchyChannelId(channel.id);
 

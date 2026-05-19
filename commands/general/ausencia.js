@@ -1,7 +1,6 @@
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
-  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -9,12 +8,8 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const { safeReply } = require('../../utils/safeReply');
-
-const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
-const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 function buildAbsenceModal(interaction) {
   const modal = new ModalBuilder()
@@ -22,24 +17,6 @@ function buildAbsenceModal(interaction) {
     .setTitle('Vortex | Solicitar Ausência');
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('name')
-        .setLabel('Nome para identificação')
-        .setPlaceholder('Exemplo: Gleisson Fernando')
-        .setValue(interaction.member?.displayName || interaction.user.username)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('discord_id')
-        .setLabel('Seu ID do Discord')
-        .setPlaceholder('Cole seu ID do Discord')
-        .setValue(interaction.user.id)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-    ),
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('reason')
@@ -88,7 +65,8 @@ function buildAbsencePanel(interaction = null) {
       {
         name: '📝 Solicitar ausência',
         value: [
-          'Preencha o formulário com seu nome, ID, motivo, início e retorno.',
+          'Preencha o formulário com motivo, início e retorno.',
+          'Seu nome e Discord ID serão detectados automaticamente.',
         ].join('\n'),
         inline: false,
       },
@@ -113,12 +91,6 @@ function buildAbsencePanel(interaction = null) {
 
   if (iconURL) embed.setThumbnail(iconURL);
 
-  const files = [];
-  if (fs.existsSync(VORTEX_PANEL_IMAGE)) {
-    embed.setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`);
-    files.push(new AttachmentBuilder(VORTEX_PANEL_IMAGE, { name: VORTEX_PANEL_IMAGE_NAME }));
-  }
-
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ausencia_request')
@@ -132,7 +104,7 @@ function buildAbsencePanel(interaction = null) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [row], files };
+  return buildThemedPanelPayload('ausencia', embed, { components: [row] });
 }
 
 module.exports = {

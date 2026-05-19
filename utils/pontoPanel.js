@@ -6,13 +6,13 @@ const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
 const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
+const { buildThemedPanelPayload } = require('./panelTheme');
 
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
 const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
-const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 let statusPanelInterval = null;
 const transientPanelFailures = new Map();
 const lastVisibilitySyncByGuild = new Map();
@@ -90,7 +90,6 @@ function createControlEmbed() {
       '**Ajuste de ponto**',
       'Informe o horário correto de saída e o motivo. A staff vai analisar antes de aplicar.',
     ].join('\n'))
-    .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setTimestamp()
     .setFooter({ text: 'Vortex - Sistema de Ponto' });
 }
@@ -257,7 +256,7 @@ async function updateStatusPanel(client, guildId) {
       : null;
 
     if (!message) {
-      const newMessage = await channel.send({ embeds: [embed] });
+      const newMessage = await channel.send(buildThemedPanelPayload('pontoStatus', embed));
       savePanel(guildId, {
         ...(panel || {}),
         statusChannelId: channel.id,
@@ -267,7 +266,7 @@ async function updateStatusPanel(client, guildId) {
       return true;
     }
 
-    await message.edit({ embeds: [embed] });
+    await message.edit(buildThemedPanelPayload('pontoStatus', embed));
     transientPanelFailures.delete(guildId);
     return true;
   } catch (error) {

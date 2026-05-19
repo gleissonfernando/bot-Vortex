@@ -1,0 +1,126 @@
+{
+  "1201193356810780773:260830031289384960:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:05:35.984Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:289227932432334869:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:05:46.706Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:298885294495891456:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:05:57.417Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:335417019866284032:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:06:08.144Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:450357020038660096:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:06:18.879Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:482819970317680640:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:06:29.594Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:727291476576567356:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:06:40.303Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:730925532958425240:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:06:50.979Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:761011766440230932:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:01.700Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:820329655155294259:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:12.409Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:927302929063493673:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:23.105Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:997907219096010874:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:33.806Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1031285453380391032:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:44.529Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1079116856822091932:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:07:55.242Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1154885912170332251:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:08:05.982Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1164349886850924705:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:08:16.732Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1223092340877430787:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:08:27.432Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1363214073063538939:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:08:38.134Z",
+    "lastSetReminderSent": false
+  },
+  "1201193356810780773:1426287249020158018:availability": {
+    "lastSetReminderDate": "2026-05-14",
+    "lastSetReminderAt": "2026-05-14T22:33:26.285Z",
+    "lastSetReminderSent": true
+  },
+  "1201193356810780773:730925532958425240": {
+    "pointStartedAt": "2026-05-18T13:19:40.955Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:761011766440230932": {
+    "pointStartedAt": "2026-05-18T14:41:47.136Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:289227932432334869": {
+    "pointStartedAt": "2026-05-18T17:33:08.665Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:1154885912170332251": {
+    "pointStartedAt": "2026-05-18T15:56:34.794Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": "2026-05-18T15:56:34.794Z",
+    "lastConfirmedAt": "2026-05-18T20:06:41.639Z",
+    "lastDmSent": true
+  }
+}

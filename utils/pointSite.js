@@ -254,12 +254,7 @@ function buildPointSiteHtml({ userId, apiPath }) {
       if (!rows.length) return '<tr><td colspan="7" class="empty">Nenhum ponto registrado.</td></tr>';
       return rows.map((row) => '<tr><td>#' + row.index + '</td><td>' + cell(row.startedAtFormatted) + '</td><td>' + cell(row.closedAtFormatted) + '</td><td>' + cell(row.durationFormatted) + '</td><td>' + cell(row.status) + '</td><td>' + cell(row.origin) + '</td><td>' + cell(row.closedBy) + '</td></tr>').join('');
     }
-    fetch(apiPath, { cache: 'no-store' }).then(async (r) => {
-      const data = await r.json().catch(() => ({ ok: false, error: 'Resposta invalida da API' }));
-      if (!r.ok) throw new Error(data.error || 'API retornou erro ' + r.status);
-      return data;
-    }).then((data) => {
-      if (!data.ok) throw new Error(data.error || 'Falha ao carregar');
+    function renderPointData(data) {
       document.getElementById('subtitle').textContent = data.guild.name + ' | Gerado em ' + data.generatedAtFormatted;
       const status = document.getElementById('status');
       status.textContent = data.point.status;
@@ -274,9 +269,20 @@ function buildPointSiteHtml({ userId, apiPath }) {
         '<section><div class="toolbar"><h2>Dias da semana</h2><span class="pill">Resumo do período</span></div><div class="weekday-grid">' + data.summary.weekdays.map((item) => '<div class="weekday-card"><span class="label">' + esc(item.label) + '</span><strong>' + esc(String(item.count)) + ' ponto(s)</strong><div class="muted">' + esc(item.totalFormatted) + '</div></div>').join('') + '</div></section>' +
         '<section><div class="toolbar"><h2>Historico do mes</h2><span class="pill">' + esc(data.summary.month.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.monthSessions) + '</tbody></table></div></section>' +
         '<section><div class="toolbar"><h2>Todos os pontos</h2><span class="pill">' + esc(data.summary.all.totalFormatted) + '</span></div><div class="table-scroll"><table><thead><tr><th>#</th><th>Abertura</th><th>Fechamento</th><th>Duracao</th><th>Status</th><th>Origem</th><th>Responsavel</th></tr></thead><tbody>' + renderRows(data.sessions) + '</tbody></table></div></section>';
-    }).catch((error) => {
-      document.getElementById('app').innerHTML = '<div class="empty">Nao foi possivel carregar os dados do ponto: ' + esc(error.message) + '</div>';
-    });
+    }
+    async function loadPointData() {
+      try {
+        const response = await fetch(apiPath, { cache: 'no-store' });
+        const data = await response.json().catch(() => ({ ok: false, error: 'Resposta invalida da API' }));
+        if (!response.ok) throw new Error(data.error || 'API retornou erro ' + response.status);
+        if (!data.ok) throw new Error(data.error || 'Falha ao carregar');
+        renderPointData(data);
+      } catch (error) {
+        document.getElementById('app').innerHTML = '<div class="empty">Nao foi possivel carregar os dados do ponto: ' + esc(error.message) + '</div>';
+      }
+    }
+    loadPointData();
+    setInterval(loadPointData, 15000);
   </script>
 </body>
 </html>`;

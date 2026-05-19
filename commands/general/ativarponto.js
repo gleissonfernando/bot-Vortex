@@ -1,5 +1,4 @@
 const { SlashCommandBuilder } = require('discord.js');
-const path = require('path');
 const {
   createControlEmbed,
   createControlRow,
@@ -9,9 +8,7 @@ const {
 } = require('../../utils/pontoPanel');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 const { safeReply, safeEdit, safeDeferReply } = require('../../utils/safeReply');
-
-const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
-const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -48,14 +45,12 @@ module.exports = {
       });
     }
 
-    const controlPayload = {
-      embeds: [createControlEmbed()],
+    const controlPayload = buildThemedPanelPayload('ponto', createControlEmbed(), {
       components: [createControlRow()],
-      files: [{ attachment: VORTEX_PANEL_IMAGE, name: VORTEX_PANEL_IMAGE_NAME }],
-    };
+    });
     const controlMessage = await pontoChannel.send(controlPayload);
 
-    const statusPayload = { embeds: [await createStatusEmbed(interaction.guild)] };
+    const statusPayload = buildThemedPanelPayload('pontoStatus', await createStatusEmbed(interaction.guild));
     const statusMessage = await onlineChannel.send(statusPayload);
 
     savePanel(interaction.guild.id, {

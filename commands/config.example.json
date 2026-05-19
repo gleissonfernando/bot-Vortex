@@ -82,6 +82,26 @@
     }
   },
   "MIRROR_MESSAGE_CHANNEL_IDS": [],
+  "ADJUST_CALL_CHANNEL_IDS": [],
+  "PANEL_VISUALS": {
+    "defaults": {
+      "color": "#7000FF",
+      "bannerUrl": "",
+      "bannerRatio": "16:9"
+    },
+    "targets": {
+      "painel": {},
+      "set": {},
+      "avisos": {},
+      "mirrorMessages": {},
+      "ausencia": {},
+      "ponto": {},
+      "pontoStatus": {},
+      "painelponto": {},
+      "exibir": {},
+      "facHierarchy": {}
+    }
+  },
   "COMMAND_ROLE_PERMISSIONS": {
     "avisos": [],
     "set": [],

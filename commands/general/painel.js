@@ -9,6 +9,7 @@ const {
   UserSelectMenuBuilder,
   StringSelectMenuBuilder,
   ChannelType,
+  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -59,6 +60,18 @@ const {
   getMirrorMessageChannelIds,
   toggleMirrorMessageChannel,
 } = require('../../utils/mirrorMessageManager');
+const { allowVoiceChannelAccess } = require('../../utils/voiceChannelAccess');
+const {
+  PANEL_THEME_TARGETS,
+  buildThemedPanelPayload,
+  clearPanelVisualTheme,
+  getPanelTargetMeta,
+  getPanelVisualTheme,
+  normalizeBannerRatio,
+  normalizeBannerUrl,
+  normalizeHexColor,
+  setPanelVisualTheme,
+} = require('../../utils/panelTheme');
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const PANEL_ERROR_LOG_CHANNEL_ID = '1497685822525149337';
@@ -68,8 +81,6 @@ const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932']
 const LOGS_MANAGER_IDS = ['289227932432334869'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
-const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
-const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
 const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md');
 const commandPermissionSelections = new Map();
 const vortexRoleModeSelections = new Map();
@@ -78,6 +89,8 @@ const profileRegisterSelections = new Map();
 const logChannelSelections = new Map();
 const factionHierarchySelections = new Map();
 const mirrorMessageSelections = new Map();
+const adjustCallSelections = new Map();
+const visualThemeSelections = new Map();
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/painel', value: 'painel', description: 'Quem pode usar o painel de controle' },
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
@@ -106,6 +119,8 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
     { label: 'Cobranças', value: 'tab_cobrancas', description: 'Cobranças e penalidades automáticas', emoji: '💸' },
     { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
+    { label: 'Ajuste', value: 'tab_adjust_calls', description: 'Ativar ou desativar calls de ajuste', emoji: '🔧' },
+    { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
     { label: 'Hierarquia FAC', value: 'tab_fac_hierarchy', description: 'Painel automatico da hierarquia da fac', emoji: '🏛️' },
 ];
 
@@ -157,6 +172,8 @@ function getPanelTabMeta(tab) {
         case 'tab_perfil': return { icon: '👤', title: 'PERFIS' };
         case 'tab_cobrancas': return { icon: '💸', title: 'COBRANÇAS E PENALIDADES' };
         case 'tab_mirror_messages': return { icon: '💬', title: 'MENSAGENS EM PAINEL' };
+        case 'tab_adjust_calls': return { icon: '🔧', title: 'AJUSTE DE CALLS' };
+        case 'tab_visual': return { icon: '🎨', title: 'VISUAL DOS PAINÉIS' };
         case 'tab_fac_hierarchy': return { icon: '🏛️', title: 'HIERARQUIA DA FAC' };
         default: return { icon: 'V', title: String(tab || '').replace('tab_', '').toUpperCase() };
     }
@@ -217,6 +234,18 @@ function getVortexRoleMode(interaction) {
     return vortexRoleModeSelections.get(getSelectionKey(interaction)) || 'set';
 }
 
+function getVisualTargetKey(interaction) {
+    return visualThemeSelections.get(getSelectionKey(interaction)) || 'global';
+}
+
+function formatVisualTheme(theme) {
+    return [
+        `Cor: **${theme.color}**${theme.hasOwnColor ? '' : ' (global)'}`,
+        `Banner: ${theme.bannerUrl ? `<${theme.bannerUrl}>` : '`Sem banner`'}${theme.hasOwnBanner ? '' : ' (global)'}`,
+        `Proporção: **${theme.bannerRatio || '16:9'}**${theme.hasOwnRatio ? '' : ' (global)'}`,
+    ].join('\n');
+}
+
 function formatRoleList(roleIds, emptyText = '`Nenhum`') {
     const ids = Array.isArray(roleIds) ? roleIds.filter(Boolean).map(String) : [];
     return ids.length ? ids.map(id => `<@&${id}>`).join(' ') : emptyText;
@@ -250,6 +279,90 @@ function formatLogSwitch(disabled) {
 function formatLogChannelSelection(channelId, disabled) {
     if (!channelId) return '`Nenhum canal selecionado`';
     return `${disabled ? '🔴 Bloqueado' : '🟢 Liberado'} • <#${channelId}>`;
+}
+
+function ensureAdjustCallConfig(conf) {
+    if (!Array.isArray(conf.ADJUST_CALL_CHANNEL_IDS)) {
+        conf.ADJUST_CALL_CHANNEL_IDS = [];
+    }
+    conf.ADJUST_CALL_CHANNEL_IDS = [...new Set(
+        conf.ADJUST_CALL_CHANNEL_IDS
+            .filter(Boolean)
+            .map(String)
+    )];
+    return conf.ADJUST_CALL_CHANNEL_IDS;
+}
+
+function getAdjustCallChannelIds(conf = loadJSON(CONFIG_PATH)) {
+    return ensureAdjustCallConfig(conf);
+}
+
+function setAdjustCallEnabled(channelId, enabled) {
+    const conf = loadJSON(CONFIG_PATH);
+    const ids = new Set(ensureAdjustCallConfig(conf));
+    const id = String(channelId);
+    if (enabled) ids.add(id);
+    else ids.delete(id);
+    conf.ADJUST_CALL_CHANNEL_IDS = [...ids];
+    saveJSON(CONFIG_PATH, conf);
+    return { enabled, channelIds: conf.ADJUST_CALL_CHANNEL_IDS };
+}
+
+function isAdjustCallChannel(channel) {
+    return channel?.type === ChannelType.GuildVoice || channel?.type === ChannelType.GuildStageVoice;
+}
+
+function parsePanelColor(value, fallback = 0x7000FF) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const hex = String(value || '').trim().replace(/^#/, '');
+    if (/^[0-9a-f]{6}$/i.test(hex)) return parseInt(hex, 16);
+    return fallback;
+}
+
+function createPanelView(tabMeta) {
+    return {
+        color: 0x7000FF,
+        authorName: `VORTEX ${tabMeta.icon} | ${tabMeta.title}`,
+        description: '',
+        fields: [],
+        footerText: null,
+        setAuthor(author = {}) {
+            if (author.name) this.authorName = author.name;
+            return this;
+        },
+        setColor(color) {
+            this.color = parsePanelColor(color, this.color);
+            return this;
+        },
+        setDescription(description) {
+            this.description = String(description || '');
+            return this;
+        },
+        addFields(...fields) {
+            this.fields.push(...fields.flat().filter(Boolean));
+            return this;
+        },
+        setFooter(footer = {}) {
+            this.footerText = footer.text || null;
+            return this;
+        },
+        setTimestamp() {
+            return this;
+        },
+        setImage() {
+            return this;
+        },
+    };
+}
+
+function buildPanelV2Payload(panelView, rows = []) {
+    return buildThemedPanelPayload('painel', {
+        color: panelView.color,
+        author: { name: panelView.authorName },
+        description: panelView.description,
+        fields: panelView.fields,
+        footer: panelView.footerText ? { text: panelView.footerText } : null,
+    }, { components: rows });
 }
 
 function isUnknownInteractionError(error) {
@@ -294,13 +407,6 @@ async function reportPanelError(client, error, context = 'Painel') {
         ],
         allowedMentions: { parse: [] },
     }).catch(() => false);
-}
-
-function withPanelImage(options) {
-    return {
-        ...options,
-        files: [{ attachment: VORTEX_PANEL_IMAGE, name: VORTEX_PANEL_IMAGE_NAME }],
-    };
 }
 
 function readUpdatesSummary() {
@@ -462,6 +568,77 @@ module.exports = {
       return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem usar a manutenção.`, ephemeral: true });
     }
 
+    if (customId === 'visual_set_color' || customId === 'visual_set_banner') {
+      if (!hasVortexLevel(interaction.member, ['admin'])) {
+        return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o visual dos painéis.', ephemeral: true });
+      }
+
+      const targetKey = getVisualTargetKey(interaction);
+      const target = getPanelTargetMeta(targetKey);
+      const theme = getPanelVisualTheme(targetKey);
+      const modal = new ModalBuilder()
+        .setCustomId(customId === 'visual_set_color' ? 'modal_visual_color' : 'modal_visual_banner')
+        .setTitle(customId === 'visual_set_color' ? 'Cor do painel' : 'Banner do painel');
+
+      if (customId === 'visual_set_color') {
+        modal.addComponents(new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('color')
+            .setLabel(`Cor para ${target.label}`)
+            .setPlaceholder('#7000FF')
+            .setValue(theme.color || '#7000FF')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(7)
+        ));
+      } else {
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('banner_url')
+              .setLabel(`URL do banner para ${target.label}`)
+              .setPlaceholder('https://exemplo.com/banner.png')
+              .setValue(theme.bannerUrl || '')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(false)
+              .setMaxLength(400)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('banner_ratio')
+              .setLabel('Proporção do banner')
+              .setPlaceholder('16:9, 21:9, 3:1...')
+              .setValue(theme.bannerRatio || '16:9')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setMaxLength(12)
+          )
+        );
+      }
+
+      return safeShowModal(interaction, modal);
+    }
+
+    if (customId === 'visual_clear_target') {
+      if (!hasVortexLevel(interaction.member, ['admin'])) {
+        return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode limpar o visual dos painéis.', ephemeral: true });
+      }
+
+      const targetKey = getVisualTargetKey(interaction);
+      const target = getPanelTargetMeta(targetKey);
+      clearPanelVisualTheme(targetKey);
+
+      sendVortexLog(interaction.client, {
+        title: 'Visual de Painel Resetado',
+        description: `Visual de **${target.label}** resetado por <@${interaction.user.id}>.`,
+        color: '#7000FF',
+        type: 'CONFIGURAÇÃO',
+        userId: interaction.user.id,
+      }).catch(() => {});
+
+      return renderDashboard(interaction, 'tab_visual', true);
+    }
+
     if (customId === 'show_all_points') {
       await safeDeferReply(interaction, { ephemeral: true });
       const payload = await buildAllPointsReportPayload(interaction.guild);
@@ -550,11 +727,10 @@ module.exports = {
         transcriptEmbed.setThumbnail(target.displayAvatarURL({ size: 256 }));
       }
 
-      return safeEdit(interaction, {
-        embeds: [transcriptEmbed],
+      return safeEdit(interaction, buildThemedPanelPayload('painelponto', transcriptEmbed, {
         components: [row],
         allowedMentions: { users: [userId] },
-      });
+      }));
     }
 
     if (customId === 'toggle_point_monitor') {
@@ -962,7 +1138,78 @@ module.exports = {
             new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex')
         );
 
-        return safeReply(interaction, { embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
+        return safeReply(interaction, buildThemedPanelPayload('painel', maintEmbed, {
+            components: [maintBtn],
+            ephemeral: true,
+        }));
+    }
+
+    if (customId === 'open_adjust_call_v2') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
+    }
+
+    if (customId === 'adjust_call_activate' || customId === 'adjust_call_deactivate') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        const selectedChannelId = adjustCallSelections.get(getSelectionKey(interaction));
+        if (!selectedChannelId) {
+            return safeReply(interaction, { content: '❌ Selecione uma call primeiro.', ephemeral: true });
+        }
+
+        const channel = await interaction.guild.channels.fetch(selectedChannelId).catch(() => null);
+        if (!isAdjustCallChannel(channel)) {
+            adjustCallSelections.delete(getSelectionKey(interaction));
+            return safeReply(interaction, { content: '❌ A call selecionada não existe mais ou não é uma call válida.', ephemeral: true });
+        }
+
+        const enabled = customId === 'adjust_call_activate';
+        const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+        if (botMember && !channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageChannels)) {
+            return safeReply(interaction, {
+                content: `❌ Não tenho permissão para gerenciar a call <#${channel.id}>.`,
+                ephemeral: true,
+            });
+        }
+
+        try {
+            if (enabled) {
+                await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
+            }
+
+            await channel.permissionOverwrites.edit(interaction.guild.id, {
+                Connect: enabled,
+            }, {
+                reason: `Call de ajuste ${enabled ? 'ativada' : 'desativada'} por ${interaction.user.tag || interaction.user.id}`,
+            });
+        } catch (error) {
+            await reportPanelError(interaction.client, error, `Alterar call de ajuste: ${selectedChannelId}`);
+            return safeReply(interaction, {
+                content: '❌ Não consegui alterar essa call. O erro foi enviado para os logs.',
+                ephemeral: true,
+            });
+        }
+
+        const result = setAdjustCallEnabled(channel.id, enabled);
+        sendVortexLog(interaction.client, {
+            title: enabled ? 'Call de Ajuste Ativada' : 'Call de Ajuste Desativada',
+            description: [
+                `Call: <#${channel.id}> (${channel.id})`,
+                `Status: **${enabled ? 'ativada' : 'desativada'}**`,
+                `Calls ativas agora: **${result.channelIds.length}**`,
+                `Alterado por: <@${interaction.user.id}>`,
+            ].join('\n'),
+            color: enabled ? '#57F287' : '#FF0055',
+            type: 'CONFIGURAÇÃO',
+            userId: interaction.user.id,
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
     }
 
     if (customId === 'toggle_mirror_message_channel') {
@@ -1288,6 +1535,35 @@ module.exports = {
         return renderDashboard(interaction, 'tab_mirror_messages', true);
     }
 
+    if (interaction.customId === 'select_adjust_call_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        const channelId = String(interaction.values[0]);
+        const channel = interaction.channels?.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+        if (!isAdjustCallChannel(channel)) {
+            return safeReply(interaction, { content: '❌ Selecione uma call válida.', ephemeral: true });
+        }
+
+        adjustCallSelections.set(getSelectionKey(interaction), channelId);
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
+    }
+
+    if (interaction.customId === 'select_visual_target') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) {
+            return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar o visual dos painéis.', ephemeral: true });
+        }
+
+        const targetKey = interaction.values[0];
+        if (!PANEL_THEME_TARGETS.some((target) => target.key === targetKey)) {
+            return safeReply(interaction, { content: '❌ Painel visual inválido.', ephemeral: true });
+        }
+
+        visualThemeSelections.set(getSelectionKey(interaction), targetKey);
+        return renderDashboard(interaction, 'tab_visual', true);
+    }
+
     if (interaction.customId === 'select_notice_mention_role') {
         if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera configuração de avisos.', ephemeral: true });
         data.NOTICE_MENTION_ROLE_ID = String(interaction.values[0]);
@@ -1496,6 +1772,53 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
+    if (interaction.customId === 'modal_visual_color' || interaction.customId === 'modal_visual_banner') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) {
+            return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o visual dos painéis.', ephemeral: true });
+        }
+
+        const targetKey = getVisualTargetKey(interaction);
+        const target = getPanelTargetMeta(targetKey);
+        let theme;
+
+        if (interaction.customId === 'modal_visual_color') {
+            const color = normalizeHexColor(interaction.fields.getTextInputValue('color'), '');
+            if (!color) {
+                return safeReply(interaction, { content: '❌ Cor inválida. Use formato HEX, exemplo: `#7000FF`.', ephemeral: true });
+            }
+
+            theme = setPanelVisualTheme(targetKey, { color });
+        } else {
+            const bannerUrlInput = interaction.fields.getTextInputValue('banner_url').trim();
+            const ratioInput = interaction.fields.getTextInputValue('banner_ratio').trim();
+            const bannerUrl = normalizeBannerUrl(bannerUrlInput);
+            if (bannerUrlInput && !bannerUrl) {
+                return safeReply(interaction, { content: '❌ URL inválida. Use uma URL começando com `https://` ou deixe vazio para remover.', ephemeral: true });
+            }
+
+            theme = setPanelVisualTheme(targetKey, {
+                bannerUrl,
+                bannerRatio: normalizeBannerRatio(ratioInput, '16:9'),
+            });
+        }
+
+        sendVortexLog(interaction.client, {
+            title: 'Visual de Painel Alterado',
+            description: [
+                `Painel: **${target.label}**`,
+                `Cor: **${theme.color}**`,
+                `Banner: ${theme.bannerUrl ? theme.bannerUrl : 'sem banner'}`,
+                `Proporção: **${theme.bannerRatio}**`,
+                `Alterado por: <@${interaction.user.id}>`,
+            ].join('\n'),
+            color: theme.color,
+            type: 'CONFIGURAÇÃO',
+            userId: interaction.user.id,
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_visual', true);
+    }
+
     if (interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved') {
         if (!hasVortexLevel(interaction.member, ['admin'])) {
             return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar cargos automáticos.', ephemeral: true });
@@ -1783,9 +2106,8 @@ async function renderDashboard(interaction, tab, edit = false) {
   const client = interaction.client;
   const tabMeta = getPanelTabMeta(tab);
   
-  const embed = new EmbedBuilder()
+  const embed = createPanelView(tabMeta)
     .setTimestamp()
-    .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setFooter({ text: `Vortex Management System • ${tabMeta.icon} ${tabMeta.title} • ${formatDate(new Date())}` });
 
   const toolSelectRow = buildPanelToolSelectRow(tab);
@@ -2203,6 +2525,110 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMaxValues(1)
       ),
     ];
+  } else if (tab === 'tab_adjust_calls') {
+    const activeCallIds = getAdjustCallChannelIds(conf);
+    const selectedChannelId = adjustCallSelections.get(getSelectionKey(interaction));
+    const selectedActive = selectedChannelId && activeCallIds.includes(selectedChannelId);
+
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | AJUSTE DE CALLS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor(selectedActive ? '#57F287' : '#FEE75C')
+      .setDescription([
+        '### Ajuste',
+        '',
+        'Selecione uma call e use os botões para ativar ou desativar a entrada nela.',
+        '',
+        `Call selecionada: ${selectedChannelId ? `<#${selectedChannelId}>` : '`Nenhuma`'}`,
+        `Status selecionado: **${selectedActive ? 'ativada' : 'desativada'}**`,
+        `Calls ativas: **${activeCallIds.length}**`,
+        '',
+        '**Lista ativa**',
+        formatChannelList(activeCallIds, '`Nenhuma call ativa`'),
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId('adjust_call_activate')
+        .setLabel('Ativar')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!selectedChannelId || selectedActive),
+      new ButtonBuilder()
+        .setCustomId('adjust_call_deactivate')
+        .setLabel('Desativar')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!selectedChannelId || !selectedActive)
+    );
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_adjust_call_channel')
+          .setPlaceholder('Selecionar call de ajuste')
+          .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+    ];
+  } else if (tab === 'tab_visual') {
+    const selectedTargetKey = getVisualTargetKey(interaction);
+    const selectedTarget = getPanelTargetMeta(selectedTargetKey);
+    const selectedTheme = getPanelVisualTheme(selectedTargetKey);
+    const globalTheme = getPanelVisualTheme('global');
+    const configuredTargets = PANEL_THEME_TARGETS
+      .filter((target) => target.key !== 'global')
+      .map((target) => {
+        const theme = getPanelVisualTheme(target.key);
+        return `${target.label}: ${theme.color}${theme.bannerUrl ? ' + banner' : ''}`;
+      })
+      .join('\n')
+      .slice(0, 1000);
+
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | VISUAL DOS PAINÉIS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor(selectedTheme.color)
+      .setDescription([
+        '### Visual dos painéis',
+        '',
+        'Configure cor e banner dos painéis em Components V2.',
+        'Escolha **Todos os painéis** para definir o padrão global ou selecione um painel específico para sobrescrever só ele.',
+        '',
+        `Editando agora: **${selectedTarget.label}**`,
+        '',
+        '**Tema selecionado**',
+        formatVisualTheme(selectedTheme),
+        '',
+        '**Tema global**',
+        formatVisualTheme(globalTheme),
+        '',
+        '**Painéis disponíveis**',
+        configuredTargets || '`Nenhum painel encontrado`',
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId('visual_set_color')
+        .setLabel('Trocar cor')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('visual_set_banner')
+        .setLabel('Trocar banner')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('visual_clear_target')
+        .setLabel(selectedTargetKey === 'global' ? 'Resetar global' : 'Limpar painel')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_visual_target')
+          .setPlaceholder(`Editar visual: ${selectedTarget.label}`)
+          .addOptions(PANEL_THEME_TARGETS.map((target) => ({
+            label: target.label,
+            value: target.key,
+            description: target.description.slice(0, 100),
+            default: target.key === selectedTargetKey,
+          })))
+      ),
+    ];
   } else if (tab === 'tab_fac_hierarchy') {
     ensureFactionHierarchyConfig(conf);
     const hierarchy = getFactionHierarchyConfig(conf);
@@ -2427,17 +2853,9 @@ async function renderDashboard(interaction, tab, edit = false) {
   let components = [toolSelectRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
-  if (backRow) {
-    if (components.length < 5) {
-      components.push(backRow);
-    } else {
-      components = [backRow, ...components.slice(1, 5)];
-    }
-  }
+  if (backRow) components.push(backRow);
 
-  const options = edit
-    ? { embeds: [embed.setImage(null)], components: components }
-    : withPanelImage({ embeds: [embed], components: components });
+  const options = buildPanelV2Payload(embed, components);
   if (edit) {
     return safeUpdate(interaction, options).catch(async (err) => {
       await reportPanelError(interaction.client, err, `Atualizar painel: ${tab}`);

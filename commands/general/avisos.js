@@ -16,6 +16,7 @@ const fs = require('fs');
 const { hasAnyVortexRole, hasVortexLevel, hasCommandRole } = require('../../utils/permissions');
 const { sendVortexLog } = require('../../utils/notifications');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const NOTICE_FIXED_ROLE_IDS = [
@@ -32,8 +33,6 @@ const CUSTOM_IDS = {
   direct: 'avisos_send_direct',
 };
 const selections = new Map();
-const VORTEX_BANNER_IMAGE = path.join(__dirname, '..', '..', 'foto', 'IMG_4234.png');
-const VORTEX_BANNER_IMAGE_NAME = 'IMG_4234.png';
 
 function canUseAvisos(interaction) {
   return hasAnyVortexRole(interaction.member)
@@ -186,7 +185,6 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
     .setColor('#7000FF')
     .setTitle(title)
     .setDescription(message)
-    .setImage(`attachment://${VORTEX_BANNER_IMAGE_NAME}`)
     .setFooter({ text: 'Vortex Management System' })
     .setTimestamp();
 
@@ -197,11 +195,8 @@ function buildNoticeEmbed(interaction, title, message, scopeLabel, scope) {
   return embed;
 }
 
-function buildNoticePayloads(basePayload) {
-  return [{
-    ...basePayload,
-    files: [{ attachment: VORTEX_BANNER_IMAGE, name: VORTEX_BANNER_IMAGE_NAME }],
-  }];
+function buildNoticePayloads(embed) {
+  return [buildThemedPanelPayload('avisos', embed)];
 }
 
 async function getSelectedChannel(interaction) {
@@ -231,17 +226,13 @@ async function getSelectedUser(interaction) {
   return interaction.client.users.fetch(userId).catch(() => null);
 }
 
-async function sendChannelNotice(interaction, channel, payloads, options = {}) {
+async function sendChannelNotice(interaction, channel, embed, options = {}) {
   try {
-    const [firstPayload, ...extraPayloads] = payloads;
-    await channel.send({
-      ...buildNoticeMentionPayload(interaction, options),
-      ...firstPayload,
-    });
-
-    for (const payload of extraPayloads) {
-      await channel.send(payload);
-    }
+    const mentionPayload = buildNoticeMentionPayload(interaction, options);
+    await channel.send(buildThemedPanelPayload('avisos', embed, {
+      headerText: mentionPayload.content,
+      allowedMentions: mentionPayload.allowedMentions,
+    }));
 
     return true;
   } catch {
@@ -295,10 +286,9 @@ module.exports = {
       return safeReply(interaction, { content: '❌ Você precisa estar cadastrado no sistema para usar o /avisos.', ephemeral: true });
     }
 
-    return safeReply(interaction, {
-      embeds: [buildPanelEmbed(interaction)],
+    return safeReply(interaction, buildThemedPanelPayload('avisos', buildPanelEmbed(interaction), {
       components: buildPanelComponents(),
-    });
+    }));
   },
 
   async handleSelectMenu(interaction) {
@@ -387,7 +377,7 @@ module.exports = {
     }
 
     const noticeEmbed = buildNoticeEmbed(interaction, title, message, scopeLabel, scope);
-    const noticePayloads = buildNoticePayloads({ embeds: [noticeEmbed] });
+    const noticePayloads = buildNoticePayloads(noticeEmbed);
     let channelSent = false;
     let result = { sent: 0, failed: 0, total: 0 };
 
@@ -396,7 +386,7 @@ module.exports = {
       if (!selectedChannel) {
         return safeEdit(interaction, { content: '❌ Selecione um canal de texto antes de enviar o aviso local.' });
       }
-      channelSent = await sendChannelNotice(interaction, selectedChannel, noticePayloads, {
+      channelSent = await sendChannelNotice(interaction, selectedChannel, noticeEmbed, {
         includeUser: Boolean(getSelection(interaction).userId),
       });
     }

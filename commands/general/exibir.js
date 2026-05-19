@@ -5,6 +5,7 @@ const {
   StringSelectMenuBuilder,
 } = require('discord.js');
 const { safeReply, safeUpdate } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 const PANEL_CARDS = [
   { key: 'dashboard', label: 'Dashboard', emoji: '📊', color: '#7000FF', summary: 'Visão geral do servidor, cadastros e acessos.' },
@@ -102,10 +103,9 @@ module.exports = {
     .setDMPermission(false),
 
   async execute(interaction) {
-    return safeReply(interaction, {
-      embeds: [buildOverviewEmbed(interaction)],
+    return safeReply(interaction, buildThemedPanelPayload('exibir', buildOverviewEmbed(interaction), {
       components: buildComponents(),
-    });
+    }));
   },
 
   async handleSelectMenu(interaction) {
@@ -114,9 +114,8 @@ module.exports = {
 
     const selectedKey = interaction.values[0];
     const panel = getPanelCard(selectedKey);
-    return safeUpdate(interaction, {
-      embeds: [buildPanelEmbed(interaction, panel.key)],
+    return safeUpdate(interaction, buildThemedPanelPayload('exibir', buildPanelEmbed(interaction, panel.key), {
       components: buildComponents(panel.key),
-    });
+    }));
   },
 };

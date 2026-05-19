@@ -15,6 +15,7 @@ const {
 const { buildPointSiteUrl } = require('../../utils/pointSite');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 const { safeDeferReply, safeEdit, safeReply } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -71,11 +72,10 @@ module.exports = {
         .setURL(reportUrl)
     );
 
-    return safeEdit(interaction, {
-      content: `🔗 Relatório web de <@${target.id}>: ${reportUrl}`,
-      embeds: [embed],
+    return safeEdit(interaction, buildThemedPanelPayload('painelponto', embed, {
+      headerText: `🔗 Relatório web de <@${target.id}>: ${reportUrl}`,
       components: [row],
       allowedMentions: { users: [target.id] },
-    });
+    }));
   },
 };

@@ -3,6 +3,7 @@ const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatD
 const { isGerencia } = require('../../utils/permissions');
 const { buildPointSiteUrl } = require('../../utils/pointSite');
 const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -56,10 +57,9 @@ module.exports = {
         .setURL(pointSiteUrl)
     );
 
-    return safeEdit(interaction, {
-      content: `🔗 Link da folha de ponto: ${pointSiteUrl}`,
-      embeds: [embed],
+    return safeEdit(interaction, buildThemedPanelPayload('painelponto', embed, {
       components: [row],
-    });
+      headerText: `🔗 Link da folha de ponto: ${pointSiteUrl}`,
+    }));
   },
 };

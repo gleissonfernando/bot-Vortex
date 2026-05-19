@@ -265,7 +265,7 @@ async function sendAbsenceLog(client, guildId, absence, action = 'created') {
   return true;
 }
 
-async function createAbsence(interaction, { name, discordId, reason, startDateInput, returnDateInput, periodInput }) {
+async function createAbsence(interaction, { reason, startDateInput, returnDateInput, periodInput, name = null }) {
   const config = getAbsenceConfig();
   const now = new Date();
   const rawStartInput = startDateInput || periodInput;
@@ -285,13 +285,8 @@ async function createAbsence(interaction, { name, discordId, reason, startDateIn
     return { ok: false, message: 'A data de retorno precisa ser igual ou depois da data de início da ausência.' };
   }
 
-  const targetId = discordId.trim();
-  if (targetId !== interaction.user.id) {
-    return {
-      ok: false,
-      message: 'O ID informado precisa ser o seu ID do Discord.',
-    };
-  }
+  const targetId = interaction.user.id;
+  const nameValue = (name ? String(name).trim() : '') || interaction.member?.displayName || interaction.user.username || `Usuário ${targetId}`;
 
   const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (!member) {
@@ -316,7 +311,7 @@ async function createAbsence(interaction, { name, discordId, reason, startDateIn
   let absence = saveAbsence({
     guildId: interaction.guild.id,
     userId: interaction.user.id,
-    name: name.trim(),
+    name: nameValue,
     discordId: targetId,
     reason: reason.trim(),
     startDateInput: String(rawStartInput || '').trim(),

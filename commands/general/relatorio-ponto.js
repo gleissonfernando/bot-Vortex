@@ -9,6 +9,7 @@ const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 const { createPointTranscriptRecord, formatDate } = require('../../utils/pointTranscriptStore');
 const { sendVortexLog } = require('../../utils/notifications');
 const { safeDeferReply, safeEdit, safeReply } = require('../../utils/safeReply');
+const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
 function formatPeriod(startKey, endKey) {
   const [sy, sm, sd] = String(startKey).split('-');
@@ -122,10 +123,9 @@ module.exports = {
       userId: interaction.user.id,
     }).catch(() => null);
 
-    return safeEdit(interaction, {
-      embeds: [embed],
+    return safeEdit(interaction, buildThemedPanelPayload('painelponto', embed, {
       components: [row],
       allowedMentions: { users: [target.id] },
-    });
+    }));
   },
 };
