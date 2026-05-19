@@ -266,7 +266,8 @@ function buildThemedPanelPayload(targetKey, view, options = {}) {
     flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
     allowedMentions: options.allowedMentions || { parse: [] },
     embeds: [],
-    attachments: [],
+    files: options.files || [],
+    attachments: options.attachments || [],
   };
 }
 

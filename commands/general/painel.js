@@ -42,7 +42,7 @@ const {
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
+const { createPointTranscriptRecord, buildTranscriptFilePayload } = require('../../utils/pointTranscriptStore');
 const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
   FACTION_HIERARCHY_ROLES,
@@ -697,6 +697,7 @@ module.exports = {
       );
 
       const { record } = transcript;
+      const files = buildTranscriptFilePayload(record);
       const transcriptEmbed = new EmbedBuilder()
         .setColor('#005DFF')
         .setAuthor({
@@ -708,6 +709,7 @@ module.exports = {
           `Folha/transcript de <@${userId}> gerada com sucesso.`,
           '',
           'O historico completo fica disponivel apenas no link web abaixo.',
+          files.length ? 'Tambem anexei uma copia HTML caso o link web nao abra.' : '',
         ].join('\n'))
         .addFields(
           { name: 'Usuario', value: `<@${userId}>`, inline: true },
@@ -729,6 +731,7 @@ module.exports = {
 
       return safeEdit(interaction, buildThemedPanelPayload('painelponto', transcriptEmbed, {
         components: [row],
+        files,
         allowedMentions: { users: [userId] },
       }));
     }

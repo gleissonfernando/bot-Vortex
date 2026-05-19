@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getUserPoint, formatDuration, formatDate } = require('./pontoManager');
-const { buildTranscriptData, createPointTranscriptHtml, createPointTranscriptText } = require('./pontoTranscript');
+const { buildTranscriptData, createPointTranscriptHtml } = require('./pontoTranscript');
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'pointTranscripts.json');
 const PUBLIC_TRANSCRIPTS_DIR = path.join(__dirname, '..', 'public', 'transcripts');
@@ -41,8 +41,14 @@ function buildBaseUrl() {
 }
 
 function buildTranscriptUrl(transcriptId) {
-  const url = new URL(`/transcripts/${transcriptId}`, buildBaseUrl());
+  const url = new URL(`/transcripts/${normalizeTranscriptId(transcriptId)}`, buildBaseUrl());
   return url.toString();
+}
+
+function normalizeTranscriptId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return path.basename(raw).replace(/\.(html?|txt)$/i, '');
 }
 
 function getLocalMonthKey(value = new Date()) {
@@ -74,13 +80,10 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
   const data = await getUserPoint(guild.id, target.id);
   const report = buildTranscriptData({ guild, target, member, data, monthKey });
   const html = createPointTranscriptHtml({ guild, target, member, data, monthKey });
-  const text = createPointTranscriptText({ guild, target, member, data, monthKey });
   const token = crypto.randomBytes(24).toString('hex');
   const transcriptId = `vtx-${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}`;
   const htmlFileName = `${transcriptId}.html`;
-  const txtFileName = `${transcriptId}.txt`;
   const htmlPath = path.join(PUBLIC_TRANSCRIPTS_DIR, htmlFileName);
-  const txtPath = path.join(PUBLIC_TRANSCRIPTS_DIR, txtFileName);
   const monthlyTotalMs = getMonthTotalMs(data, report.periodType === 'month' ? report.periodKey : undefined);
   const userName = member?.displayName || report.profile?.displayName || target.username || target.id;
 
@@ -114,16 +117,13 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
       closedCount: report.sessions.filter((session) => session.closedAt).length,
       manualAdjustments: report.summary.totalAdjustments,
     },
-    publicPath: `/transcripts/${htmlFileName}`,
+    publicPath: `/transcripts/${transcriptId}`,
     htmlFileName,
-    txtFileName,
     htmlPath,
-    txtPath,
     accessLog: [],
   };
 
   fs.writeFileSync(htmlPath, buildTranscriptShellHtml(html, record), 'utf8');
-  fs.writeFileSync(txtPath, text, 'utf8');
 
   const store = readStore();
   store[transcriptId] = record;
@@ -136,7 +136,7 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
 }
 
 function getPointTranscriptRecord(id) {
-  return readStore()[String(id)] || null;
+  return readStore()[normalizeTranscriptId(id)] || null;
 }
 
 function validateTranscriptAccess(record, token) {
@@ -152,7 +152,8 @@ function validateTranscriptAccess(record, token) {
 
 function registerTranscriptAccess(id, details = {}) {
   const store = readStore();
-  const record = store[String(id)];
+  const transcriptId = normalizeTranscriptId(id);
+  const record = store[transcriptId];
   if (!record) return null;
   record.accessLog = [
     ...(Array.isArray(record.accessLog) ? record.accessLog : []),
@@ -162,9 +163,31 @@ function registerTranscriptAccess(id, details = {}) {
       userAgent: details.userAgent || null,
     },
   ].slice(-100);
-  store[String(id)] = record;
+  store[transcriptId] = record;
   writeStore(store);
   return record;
+}
+
+function resolveTranscriptFile(record, pathKey, fileNameKey) {
+  if (record?.[pathKey] && fs.existsSync(record[pathKey])) return record[pathKey];
+  const fileName = record?.[fileNameKey] ? path.basename(record[fileNameKey]) : '';
+  if (!fileName) return null;
+  const fallbackPath = path.join(PUBLIC_TRANSCRIPTS_DIR, fileName);
+  return fs.existsSync(fallbackPath) ? fallbackPath : null;
+}
+
+function buildTranscriptFilePayload(record) {
+  const files = [];
+  const htmlPath = resolveTranscriptFile(record, 'htmlPath', 'htmlFileName');
+
+  if (htmlPath) {
+    files.push({
+      attachment: htmlPath,
+      name: record.htmlFileName || `${record.id || 'transcript'}.html`,
+    });
+  }
+
+  return files;
 }
 
 function buildTranscriptShell(record) {
@@ -201,5 +224,7 @@ module.exports = {
   registerTranscriptAccess,
   buildTranscriptShell,
   buildTranscriptUrl,
+  buildTranscriptFilePayload,
+  normalizeTranscriptId,
   formatDate,
 };
