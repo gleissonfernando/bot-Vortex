@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { getUserPoint, formatDuration, formatDate } = require('./pontoManager');
 const { buildTranscriptData, createPointTranscriptHtml } = require('./pontoTranscript');
+const { buildDailyPointReportData, createDailyPointReportHtml } = require('./dailyPointReportTranscript');
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'pointTranscripts.json');
 const PUBLIC_TRANSCRIPTS_DIR = path.join(__dirname, '..', 'public', 'transcripts');
@@ -41,7 +42,12 @@ function buildBaseUrl() {
 }
 
 function buildTranscriptUrl(transcriptId) {
-  const url = new URL(`/transcripts/${normalizeTranscriptId(transcriptId)}`, buildBaseUrl());
+  const url = new URL(`/ponto/${normalizeTranscriptId(transcriptId)}`, buildBaseUrl());
+  return url.toString();
+}
+
+function buildDailyReportUrl(transcriptId) {
+  const url = new URL(`/relatorio/${normalizeTranscriptId(transcriptId)}`, buildBaseUrl());
   return url.toString();
 }
 
@@ -49,6 +55,15 @@ function normalizeTranscriptId(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   return path.basename(raw).replace(/\.(html?|txt)$/i, '');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function getLocalMonthKey(value = new Date()) {
@@ -89,6 +104,7 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
 
   const record = {
     id: transcriptId,
+    kind: 'point-report',
     token,
     guildId: guild.id,
     guildName: guild.name,
@@ -117,9 +133,10 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
       closedCount: report.sessions.filter((session) => session.closedAt).length,
       manualAdjustments: report.summary.totalAdjustments,
     },
-    publicPath: `/transcripts/${transcriptId}`,
+    publicPath: `/ponto/${transcriptId}`,
     htmlFileName,
     htmlPath,
+    html,
     accessLog: [],
   };
 
@@ -135,8 +152,74 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
   };
 }
 
+async function createDailyPointReportRecord({ guild, generatedBy, dateKey = null, includeAllMembers = true } = {}) {
+  ensureStore();
+  const report = await buildDailyPointReportData(guild, { dateKey: dateKey || undefined, includeAllMembers });
+  const html = createDailyPointReportHtml(report);
+  const token = crypto.randomBytes(24).toString('hex');
+  const transcriptId = `vtx-${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}`;
+  const htmlFileName = `${transcriptId}.html`;
+  const htmlPath = path.join(PUBLIC_TRANSCRIPTS_DIR, htmlFileName);
+
+  const record = {
+    id: transcriptId,
+    kind: 'daily-report',
+    token,
+    guildId: guild.id,
+    guildName: guild.name,
+    generatedById: generatedBy?.id || null,
+    generatedByTag: generatedBy?.tag || generatedBy?.username || generatedBy?.id || 'Sistema',
+    generatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    periodType: 'day',
+    periodKey: report.dateKey,
+    periodLabel: report.dateLabel,
+    summary: report.summary,
+    publicPath: `/relatorio/${transcriptId}`,
+    htmlFileName,
+    htmlPath,
+    html,
+    accessLog: [],
+  };
+
+  fs.writeFileSync(htmlPath, buildTranscriptShellHtml(html, record), 'utf8');
+
+  const store = readStore();
+  store[transcriptId] = record;
+  writeStore(store);
+
+  return {
+    record,
+    report,
+    url: buildDailyReportUrl(transcriptId),
+  };
+}
+
 function getPointTranscriptRecord(id) {
-  return readStore()[normalizeTranscriptId(id)] || null;
+  const transcriptId = normalizeTranscriptId(id);
+  return readStore()[transcriptId] || buildFallbackTranscriptRecord(transcriptId);
+}
+
+function buildFallbackTranscriptRecord(id) {
+  const transcriptId = normalizeTranscriptId(id);
+  if (!transcriptId) return null;
+
+  const htmlFileName = `${transcriptId}.html`;
+  const htmlPath = path.join(PUBLIC_TRANSCRIPTS_DIR, htmlFileName);
+  if (!fs.existsSync(htmlPath)) return null;
+
+  return {
+    id: transcriptId,
+    kind: 'point-report',
+    guildName: 'Vortex',
+    targetUserName: 'N/A',
+    factionName: 'N/A',
+    periodLabel: 'Transcript recuperado do arquivo HTML',
+    publicPath: `/ponto/${transcriptId}`,
+    htmlFileName,
+    htmlPath,
+    accessLog: [],
+  };
 }
 
 function validateTranscriptAccess(record, token) {
@@ -198,32 +281,58 @@ function buildTranscriptShell(record) {
     const filePath = path.join(PUBLIC_TRANSCRIPTS_DIR, record.htmlFileName);
     if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf8');
   }
+  if (record?.htmlShell) return record.htmlShell;
   return buildTranscriptShellHtml(record.html || '<!doctype html><html><body>Transcript indisponivel.</body></html>', record);
 }
 
 function buildTranscriptShellHtml(html, record = {}) {
+  const metaText = record.kind === 'daily-report'
+    ? `relatorio diario ${record.periodLabel || record.periodKey || 'N/A'} | servidor ${record.guildName || 'Vortex'}`
+    : `periodo ${record.periodLabel || `${record.weekStartKey} ate ${record.weekEndKey}`} | usuario ${record.targetUserName || 'N/A'} | faccao ${record.factionName || 'N/A'}`;
+  const themeStyle = `
+    <style id="vortex-transcript-red-theme">
+      :root{--accent:#ef4444!important;--accent2:#f87171!important;--line:#7f1d1d!important;--line2:#ef4444!important;--panel:#151518!important;--panel2:#232327!important;--panel3:#2f2f35!important;--muted:#a7a7ad!important;--shadow:0 24px 80px rgba(0,0,0,.42)!important}
+      body{background:radial-gradient(circle at 14% -8%,rgba(239,68,68,.24),transparent 34%),radial-gradient(circle at 92% 0,rgba(120,113,108,.22),transparent 28%),linear-gradient(180deg,#050506,#101012 48%,#070708)!important;color:#f8fafc!important}
+      header.hero{background:linear-gradient(135deg,rgba(10,10,12,.94),rgba(127,29,29,.36)),url("/assets/IMG_4234.png") center/cover no-repeat!important;border-bottom-color:rgba(239,68,68,.42)!important;box-shadow:0 24px 80px rgba(0,0,0,.42)!important}
+      .brand,.day-header h3,.section-title{color:#fff!important;text-shadow:none!important}
+      .brand{color:#fca5a5!important}
+      .brand:before,.avatar{background:linear-gradient(135deg,#ef4444,#3f3f46)!important;box-shadow:0 0 24px rgba(239,68,68,.35)!important}
+      .profile,.summary,.day,.history,.card,.panel{background:linear-gradient(180deg,rgba(21,21,24,.74),rgba(12,12,14,.9))!important;border-color:rgba(239,68,68,.28)!important;box-shadow:0 24px 80px rgba(0,0,0,.34)!important;backdrop-filter:blur(18px)}
+      .profile:before,.summary:before,.day:before,.history:before{background:linear-gradient(90deg,transparent,#ef4444,#7f1d1d,transparent)!important}
+      .meta-item,.summary-item,.point-card,.adjustment,.history-item{background:linear-gradient(180deg,rgba(35,35,39,.78),rgba(15,15,17,.88))!important;border-color:rgba(239,68,68,.2)!important}
+      .meta-item span,.summary-item span,.point-grid span,.adjustment-grid span,.history-grid span{color:#fca5a5!important}
+      .pill{background:rgba(239,68,68,.12)!important;border-color:rgba(239,68,68,.32)!important;color:#fecaca!important}
+      .day-header{background:linear-gradient(90deg,rgba(239,68,68,.14),transparent)!important;border-bottom-color:rgba(239,68,68,.18)!important}
+      button{background:linear-gradient(135deg,#ef4444,#7f1d1d)!important;border-color:rgba(255,255,255,.18)!important;box-shadow:0 18px 50px rgba(0,0,0,.36)!important}
+    </style>
+  `;
   const filters = `
     <div style="position:fixed;right:16px;bottom:16px;z-index:9;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;font-family:Arial,Helvetica,sans-serif">
-      <button onclick="window.print()" style="background:linear-gradient(135deg,#005DFF,#00D9FF);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:8px;padding:11px 13px;font-weight:900;box-shadow:0 0 28px rgba(0,93,255,.55);cursor:pointer">Baixar PDF</button>
-      <button onclick="navigator.clipboard.writeText(location.href)" style="background:rgba(7,17,31,.94);color:#F5F5F5;border:1px solid rgba(0,217,255,.55);border-radius:8px;padding:11px 13px;font-weight:900;box-shadow:0 0 22px rgba(0,93,255,.28);cursor:pointer">Copiar link</button>
+      <button onclick="window.print()" style="background:linear-gradient(135deg,#ef4444,#7f1d1d);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:8px;padding:11px 13px;font-weight:900;box-shadow:0 18px 50px rgba(0,0,0,.36);cursor:pointer">Baixar PDF</button>
+      <button onclick="navigator.clipboard.writeText(location.href)" style="background:rgba(21,21,24,.94);color:#F5F5F5;border:1px solid rgba(239,68,68,.45);border-radius:8px;padding:11px 13px;font-weight:900;box-shadow:0 18px 50px rgba(0,0,0,.28);cursor:pointer">Copiar link</button>
     </div>
     <div style="max-width:1220px;margin:16px auto 0;padding:0 16px;font-family:Arial,Helvetica,sans-serif">
-      <div style="border:1px solid rgba(0,93,255,.35);background:linear-gradient(90deg,rgba(0,93,255,.18),rgba(7,17,31,.78));box-shadow:0 0 28px rgba(0,93,255,.2);border-radius:8px;padding:12px 14px;color:#d6e2ff">
+      <div style="border:1px solid rgba(239,68,68,.28);background:linear-gradient(90deg,rgba(239,68,68,.14),rgba(21,21,24,.78));box-shadow:0 24px 80px rgba(0,0,0,.26);border-radius:8px;padding:12px 14px;color:#e5e7eb;backdrop-filter:blur(16px)">
         <strong style="color:#fff">Filtros web</strong>
-        <span style="color:#8fb5ff"> | periodo ${record.periodLabel || `${record.weekStartKey} ate ${record.weekEndKey}`} | usuario ${record.targetUserName} | faccao ${record.factionName}</span>
+        <span style="color:#fca5a5"> | ${escapeHtml(metaText)}</span>
       </div>
     </div>
   `;
-  return String(html || '').replace('<body>', `<body>${filters}`);
+  const withTheme = String(html || '').includes('</head>')
+    ? String(html || '').replace('</head>', `${themeStyle}</head>`)
+    : `${themeStyle}${String(html || '')}`;
+  return withTheme.replace('<body>', `<body>${filters}`);
 }
 
 module.exports = {
   createPointTranscriptRecord,
+  createDailyPointReportRecord,
   getPointTranscriptRecord,
   validateTranscriptAccess,
   registerTranscriptAccess,
   buildTranscriptShell,
   buildTranscriptUrl,
+  buildDailyReportUrl,
   buildTranscriptFilePayload,
   normalizeTranscriptId,
   formatDate,

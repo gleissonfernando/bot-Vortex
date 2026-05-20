@@ -3,6 +3,7 @@ const path = require('path');
 const { logger } = require('./logger');
 const { FIXED_LOG_CHANNEL } = require('./notifications');
 const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
+const { logDatabaseError } = require('./databaseErrorLogger');
 const { formatLocalDate, formatTime } = require('./pontoManager');
 
 const GUILD_CONFIGS_PATH = path.join(__dirname, '..', 'commands', 'guildConfigs.json');
@@ -90,7 +91,13 @@ async function getGuildConfig(guildId) {
     configCache.set(guildId, { data: config, timestamp: Date.now() });
     return config;
   } catch (error) {
-    logger.error(`Erro ao buscar config do servidor ${guildId}:`, error);
+    logDatabaseError({
+      event: 'guild_config_query',
+      error,
+      payload: { guildId },
+      query: error.query || 'getGuildConfig',
+      params: error.params || { guildId },
+    });
     return getDefaultConfig(guildId);
   }
 }
@@ -143,8 +150,31 @@ async function updateGuildConfig(guildId, updates) {
     logger.info(`Config do servidor ${guildId} atualizada`);
     return next;
   } catch (error) {
-    logger.error(`Erro ao atualizar config do servidor ${guildId}:`, error);
-    throw error;
+    logDatabaseError({
+      event: 'guild_config_upsert',
+      error,
+      payload: { guildId, updates },
+      query: error.query || 'updateGuildConfig',
+      params: error.params || { guildId, updates },
+    });
+
+    const configs = readGuildConfigs();
+    const current = {
+      ...getDefaultConfig(guildId),
+      ...(configs[guildId] || {}),
+    };
+    const next = {
+      ...current,
+      ...updates,
+      guildId,
+      logChannelId: FIXED_LOG_CHANNEL,
+      updatedAt: new Date().toISOString(),
+    };
+
+    configs[guildId] = next;
+    writeGuildConfigs(configs);
+    configCache.delete(guildId);
+    return next;
   }
 }
 
@@ -168,8 +198,18 @@ async function deleteGuildConfig(guildId) {
     configCache.delete(guildId);
     logger.info(`Config do servidor ${guildId} deletada`);
   } catch (error) {
-    logger.error(`Erro ao deletar config do servidor ${guildId}:`, error);
-    throw error;
+    logDatabaseError({
+      event: 'guild_config_delete',
+      error,
+      payload: { guildId },
+      query: error.query || 'deleteGuildConfig',
+      params: error.params || { guildId },
+    });
+
+    const configs = readGuildConfigs();
+    delete configs[guildId];
+    writeGuildConfigs(configs);
+    configCache.delete(guildId);
   }
 }
 

@@ -16,6 +16,7 @@ const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 const { isPrimaryGuildChannel } = require('../utils/guildScope');
+const { createPointActionTranscriptSummary } = require('../utils/pointTranscriptNotifier');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -389,10 +390,17 @@ module.exports = {
                 channelId: interaction.channelId,
             }).catch(() => {});
 
+            const summary = await createPointActionTranscriptSummary({
+                guild,
+                target: user,
+                generatedBy: user,
+                action: opening ? 'opened' : 'closed',
+                result,
+            });
+
             return safeEdit(interaction, {
-                content: opening
-                    ? `✅ Ponto aberto em ${formatDate(result.data.activePointStartedAt)}.`
-                    : `✅ Ponto fechado em ${formatDate(result.data.lastPointCloseAt)}. Tempo registrado: ${formatDuration(result.durationMs)}.`,
+                content: summary.content,
+                allowedMentions: { users: [user.id] },
             });
         }
 

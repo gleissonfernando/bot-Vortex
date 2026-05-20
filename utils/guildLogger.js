@@ -2,6 +2,8 @@ const GuildLog = require('../models/GuildLog');
 const { logger } = require('./logger');
 const dashboardClient = require('./dashboardClient');
 const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
+const { getDatabaseStatus, isMongoConfigured, isMongoConnected } = require('./database');
+const { logDatabaseError, sanitizeValue } = require('./databaseErrorLogger');
 const { isPrimaryGuild } = require('./guildScope');
 
 /**
@@ -65,12 +67,55 @@ function fromSupabaseLog(row) {
   };
 }
 
+function normalizeNullableString(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function normalizeMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
+
+  try {
+    return sanitizeValue(metadata);
+  } catch (error) {
+    return {
+      invalidMetadata: true,
+      error: error.message,
+      rawType: typeof metadata,
+      rawValue: String(metadata),
+    };
+  }
+}
+
+function emptyGuildLogs(limit = 50, skip = 0) {
+  return {
+    logs: [],
+    total: 0,
+    limit,
+    skip,
+    hasMore: false,
+  };
+}
+
 /**
  * Registrar evento no log do servidor (MongoDB) e replicar para o painel em background.
  */
 async function logGuildEvent(guildId, options) {
   try {
-    if (!isPrimaryGuild(guildId)) return null;
+    const normalizedGuildId = normalizeNullableString(guildId);
+    if (!normalizedGuildId) {
+      logDatabaseError({
+        event: 'guild_log_validation',
+        error: new Error('guildId/Discord ID indefinido ao registrar log.'),
+        payload: { guildId, options },
+        query: 'GuildLog.save',
+        params: { guildId },
+      });
+      return null;
+    }
+
+    if (!isPrimaryGuild(normalizedGuildId)) return null;
 
     const {
       type = 'info',
@@ -88,50 +133,90 @@ async function logGuildEvent(guildId, options) {
       userAgent = null,
       fields = [],
       imageUrl = null,
-    } = options;
+    } = options || {};
 
     const logEntry = {
-      guildId,
-      type,
-      title,
-      description,
-      userId,
-      userName,
-      userAvatar,
-      channelId,
-      channelName,
-      messageId,
-      metadata,
-      severity,
-      ipAddress,
-      userAgent,
+      guildId: normalizedGuildId,
+      type: normalizeNullableString(type) || 'info',
+      title: normalizeNullableString(title) || 'Evento',
+      description: normalizeNullableString(description) || '',
+      userId: normalizeNullableString(userId),
+      userName: normalizeNullableString(userName),
+      userAvatar: normalizeNullableString(userAvatar),
+      channelId: normalizeNullableString(channelId),
+      channelName: normalizeNullableString(channelName),
+      messageId: normalizeNullableString(messageId),
+      metadata: normalizeMetadata(metadata),
+      severity: normalizeNullableString(severity) || 'low',
+      ipAddress: normalizeNullableString(ipAddress),
+      userAgent: normalizeNullableString(userAgent),
       createdAt: new Date()
     };
 
     if (isSupabaseEnabled()) {
-      const rows = await supabaseRequest('guild_logs', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        body: toSupabaseLog(logEntry),
-      });
-      if (Array.isArray(rows) && rows[0]) Object.assign(logEntry, fromSupabaseLog(rows[0]));
-      logger.debug(`Log registrado no Supabase para servidor ${guildId}: ${title}`);
+      const body = toSupabaseLog(logEntry);
+      try {
+        const rows = await supabaseRequest('guild_logs', {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body,
+        });
+        if (Array.isArray(rows) && rows[0]) Object.assign(logEntry, fromSupabaseLog(rows[0]));
+        logger.debug(`Log registrado no Supabase para servidor ${normalizedGuildId}: ${logEntry.title}`);
+      } catch (error) {
+        logDatabaseError({
+          event: 'guild_log_insert',
+          error,
+          payload: logEntry,
+          query: error.query || 'POST guild_logs',
+          params: error.params || { table: 'guild_logs', body },
+        });
+      }
     } else {
-      const mongoEntry = new GuildLog(logEntry);
-      await mongoEntry.save();
-      Object.assign(logEntry, mongoEntry.toObject ? mongoEntry.toObject() : mongoEntry);
-      logger.debug(`Log registrado para servidor ${guildId}: ${title}`);
+      const query = 'GuildLog.save';
+      const params = {
+        collection: GuildLog.collection?.name || 'guildlogs',
+        document: logEntry,
+      };
+
+      if (!isMongoConfigured() || !isMongoConnected()) {
+        logDatabaseError({
+          event: 'connection_event',
+          error: new Error('MongoDB nao conectado antes de salvar GuildLog.'),
+          payload: logEntry,
+          query,
+          params: {
+            ...params,
+            databaseStatus: getDatabaseStatus(),
+          },
+        });
+      } else {
+        try {
+          const mongoEntry = new GuildLog(logEntry);
+          await mongoEntry.save();
+          Object.assign(logEntry, mongoEntry.toObject ? mongoEntry.toObject() : mongoEntry);
+          logger.debug(`Log registrado para servidor ${normalizedGuildId}: ${logEntry.title}`);
+        } catch (error) {
+          logDatabaseError({
+            event: 'guild_log_insert',
+            error,
+            payload: logEntry,
+            query,
+            params,
+          });
+        }
+      }
     }
 
     // 2. Replicar para o painel em background (fire-and-forget)
     dashboardClient.sendLogToDashboard({
-      guildId,
-      title,
-      description,
-      type,
-      userId:   userId   || undefined,
-      userName: userName || undefined,
-      color:    TYPE_COLORS[type] || 0x5865F2,
+      guildId: logEntry.guildId,
+      title: logEntry.title,
+      description: logEntry.description,
+      type: logEntry.type,
+      userId:   logEntry.userId   || undefined,
+      userName: logEntry.userName || undefined,
+      color:    TYPE_COLORS[logEntry.type] || 0x5865F2,
       footer:   'Vortex Management System • Bot',
       imageUrl: imageUrl || undefined,
       fields,
@@ -140,8 +225,14 @@ async function logGuildEvent(guildId, options) {
     return logEntry;
 
   } catch (error) {
-    logger.error(`Erro ao registrar log para servidor ${guildId}:`, error);
-    throw error;
+    logDatabaseError({
+      event: 'guild_log_event',
+      error,
+      payload: { guildId, options },
+      query: 'logGuildEvent',
+      params: { guildId },
+    });
+    return null;
   }
 }
 
@@ -158,11 +249,23 @@ async function getGuildLogs(guildId, options = {}) {
       startDate = null,
       endDate = null
     } = options;
+    const normalizedGuildId = normalizeNullableString(guildId);
+
+    if (!normalizedGuildId) {
+      logDatabaseError({
+        event: 'guild_log_validation',
+        error: new Error('guildId/Discord ID indefinido ao buscar logs.'),
+        payload: { guildId, options },
+        query: 'GuildLog.find',
+        params: { guildId, options },
+      });
+      return emptyGuildLogs(limit, skip);
+    }
 
     if (isSupabaseEnabled()) {
       const query = {
         select: '*',
-        guild_id: `eq.${guildId}`,
+        guild_id: `eq.${normalizedGuildId}`,
         order: 'created_at.desc',
         limit,
         offset: skip,
@@ -178,7 +281,20 @@ async function getGuildLogs(guildId, options = {}) {
         query.created_at = `lte.${new Date(endDate).toISOString()}`;
       }
 
-      const rows = await supabaseRequest('guild_logs', { query });
+      let rows = [];
+      try {
+        rows = await supabaseRequest('guild_logs', { query });
+      } catch (error) {
+        logDatabaseError({
+          event: 'guild_log_query',
+          error,
+          payload: { guildId: normalizedGuildId, options },
+          query: error.query || 'GET guild_logs',
+          params: error.params || { table: 'guild_logs', query },
+        });
+        return emptyGuildLogs(limit, skip);
+      }
+
       const logs = Array.isArray(rows) ? rows.map(fromSupabaseLog) : [];
 
       return {
@@ -190,7 +306,18 @@ async function getGuildLogs(guildId, options = {}) {
       };
     }
 
-    const query = { guildId };
+    if (!isMongoConfigured() || !isMongoConnected()) {
+      logDatabaseError({
+        event: 'connection_event',
+        error: new Error('MongoDB nao conectado antes de buscar GuildLog.'),
+        payload: { guildId: normalizedGuildId, options },
+        query: 'GuildLog.find/countDocuments',
+        params: { databaseStatus: getDatabaseStatus() },
+      });
+      return emptyGuildLogs(limit, skip);
+    }
+
+    const query = { guildId: normalizedGuildId };
 
     if (type) query.type = type;
     if (userId) query.userId = userId;
@@ -201,13 +328,27 @@ async function getGuildLogs(guildId, options = {}) {
       if (endDate) query.createdAt.$lte = new Date(endDate);
     }
 
-    const logs = await GuildLog.find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .skip(skip)
-      .lean();
+    let logs = [];
+    let total = 0;
 
-    const total = await GuildLog.countDocuments(query);
+    try {
+      logs = await GuildLog.find(query)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean();
+
+      total = await GuildLog.countDocuments(query);
+    } catch (error) {
+      logDatabaseError({
+        event: 'guild_log_query',
+        error,
+        payload: { guildId: normalizedGuildId, options },
+        query: 'GuildLog.find/countDocuments',
+        params: { filter: query, sort: { createdAt: -1 }, limit, skip },
+      });
+      return emptyGuildLogs(limit, skip);
+    }
 
     return {
       logs,
@@ -218,8 +359,14 @@ async function getGuildLogs(guildId, options = {}) {
     };
 
   } catch (error) {
-    logger.error(`Erro ao buscar logs do servidor ${guildId}:`, error);
-    throw error;
+    logDatabaseError({
+      event: 'guild_log_query',
+      error,
+      payload: { guildId, options },
+      query: 'getGuildLogs',
+      params: { guildId, options },
+    });
+    return emptyGuildLogs(options.limit || 50, options.skip || 0);
   }
 }
 
@@ -228,34 +375,90 @@ async function getGuildLogs(guildId, options = {}) {
  */
 async function clearOldLogs(guildId, daysOld = 30) {
   try {
+    const normalizedGuildId = normalizeNullableString(guildId);
+    if (!normalizedGuildId) {
+      logDatabaseError({
+        event: 'guild_log_validation',
+        error: new Error('guildId/Discord ID indefinido ao limpar logs.'),
+        payload: { guildId, daysOld },
+        query: 'GuildLog.deleteMany',
+        params: { guildId, daysOld },
+      });
+      return 0;
+    }
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
     if (isSupabaseEnabled()) {
-      await supabaseRequest('guild_logs', {
-        method: 'DELETE',
-        query: {
-          guild_id: `eq.${guildId}`,
-          created_at: `lt.${cutoffDate.toISOString()}`,
-        },
-        headers: { Prefer: 'return=minimal' },
-      });
+      const query = {
+        guild_id: `eq.${normalizedGuildId}`,
+        created_at: `lt.${cutoffDate.toISOString()}`,
+      };
 
-      logger.info(`Logs antigos removidos do Supabase para servidor ${guildId}`);
+      try {
+        await supabaseRequest('guild_logs', {
+          method: 'DELETE',
+          query,
+          headers: { Prefer: 'return=minimal' },
+        });
+      } catch (error) {
+        logDatabaseError({
+          event: 'guild_log_delete',
+          error,
+          payload: { guildId: normalizedGuildId, daysOld },
+          query: error.query || 'DELETE guild_logs',
+          params: error.params || { table: 'guild_logs', query },
+        });
+        return 0;
+      }
+
+      logger.info(`Logs antigos removidos do Supabase para servidor ${normalizedGuildId}`);
       return 0;
     }
 
-    const result = await GuildLog.deleteMany({
-      guildId,
-      createdAt: { $lt: cutoffDate }
-    });
+    if (!isMongoConfigured() || !isMongoConnected()) {
+      logDatabaseError({
+        event: 'connection_event',
+        error: new Error('MongoDB nao conectado antes de limpar GuildLog.'),
+        payload: { guildId: normalizedGuildId, daysOld },
+        query: 'GuildLog.deleteMany',
+        params: { databaseStatus: getDatabaseStatus() },
+      });
+      return 0;
+    }
 
-    logger.info(`${result.deletedCount} logs antigos removidos do servidor ${guildId}`);
+    const filter = {
+      guildId: normalizedGuildId,
+      createdAt: { $lt: cutoffDate }
+    };
+
+    let result = { deletedCount: 0 };
+    try {
+      result = await GuildLog.deleteMany(filter);
+    } catch (error) {
+      logDatabaseError({
+        event: 'guild_log_delete',
+        error,
+        payload: { guildId: normalizedGuildId, daysOld },
+        query: 'GuildLog.deleteMany',
+        params: { filter },
+      });
+      return 0;
+    }
+
+    logger.info(`${result.deletedCount} logs antigos removidos do servidor ${normalizedGuildId}`);
     return result.deletedCount;
 
   } catch (error) {
-    logger.error(`Erro ao limpar logs antigos do servidor ${guildId}:`, error);
-    throw error;
+    logDatabaseError({
+      event: 'guild_log_delete',
+      error,
+      payload: { guildId, daysOld },
+      query: 'clearOldLogs',
+      params: { guildId, daysOld },
+    });
+    return 0;
   }
 }
 

@@ -54,6 +54,30 @@ class Logger {
         };
     }
 
+    isLockedFileError(error) {
+        return ['EBUSY', 'EPERM', 'EACCES'].includes(error?.code);
+    }
+
+    retryWriteToFile(file, message, attempt = 1) {
+        const maxAttempts = 5;
+        const delay = Math.min(100 * attempt, 1000);
+
+        const timer = setTimeout(() => {
+            try {
+                fs.appendFileSync(file, message + '\n', 'utf8');
+            } catch (error) {
+                if (this.isLockedFileError(error) && attempt < maxAttempts) {
+                    this.retryWriteToFile(file, message, attempt + 1);
+                    return;
+                }
+
+                console.error('Erro ao escrever log em arquivo apos tentativas:', error.message || error);
+            }
+        }, delay);
+
+        if (typeof timer.unref === 'function') timer.unref();
+    }
+
     /**
      * Formata timestamp
      * @returns {string}
@@ -109,7 +133,12 @@ class Logger {
 
             fs.appendFileSync(file, message + '\n', 'utf8');
         } catch (error) {
-            console.error('❌ Erro ao escrever log em arquivo:', error);
+            if (this.isLockedFileError(error)) {
+                this.retryWriteToFile(file, message);
+                return;
+            }
+
+            console.error('Erro ao escrever log em arquivo:', error);
         }
     }
 

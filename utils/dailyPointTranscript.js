@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const { buildAllPointsReportPayload } = require('./pontoReport');
 const { resetGuildPoints, formatDate } = require('./pontoManager');
 const { updateStatusPanel } = require('./pontoPanel');
 const { logger } = require('./logger');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
+const { createDailyPointReportRecord } = require('./pointTranscriptStore');
 
 const DAILY_POINT_CHANNEL_ID = '1498473417144533255';
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'dailyPointTranscriptState.json');
@@ -53,25 +53,49 @@ function getSaoPauloParts(date = new Date()) {
   };
 }
 
+function shiftDateKey(dateKey, offsetDays) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const base = Date.UTC(year, month - 1, day);
+  return new Date(base + offsetDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 async function sendDailyPointTranscriptForGuild(client, guild) {
   if (!isPrimaryGuild(guild.id)) return false;
   const channel = await client.channels.fetch(DAILY_POINT_CHANNEL_ID).catch(() => null);
   if (!isPrimaryGuildChannel(channel)) return false;
   if (!channel?.isTextBased?.()) return false;
 
-  const payload = await buildAllPointsReportPayload(guild, { includeAllMembers: true, suppressMentions: true });
+  const nowParts = getSaoPauloParts();
+  const reportDateKey = nowParts.hour === '00' ? shiftDateKey(nowParts.dateKey, -1) : nowParts.dateKey;
+  const { record, report, url } = await createDailyPointReportRecord({
+    guild,
+    generatedBy: client.user,
+    dateKey: reportDateKey,
+    includeAllMembers: true,
+  });
 
   const content = [
-    `📌 **Transcript diario de ponto**`,
-    `Servidor: **${guild.name}**`,
+    '📊 **VORTEX | RELATÓRIO DIÁRIO**',
+    '',
+    `📅 Data: **${record.periodLabel || report.dateLabel}**`,
+    '',
+    `👥 Total de usuários ativos: **${report.summary.activeUsers}**`,
+    `⏱ Horas registradas: **${report.summary.totalFormatted}**`,
+    '',
+    '🏆 Usuário com maior atividade:',
+    `**${report.summary.topUserName}** (${report.summary.topUserTotal})`,
+    '',
+    `📈 Média diária: **${report.summary.averageFormatted}**`,
+    '',
+    '🔗 Ver relatório completo:',
+    url,
+    '',
     `Gerado em: **${formatDate(new Date())}**`,
     'Depois deste envio, o ciclo de ponto foi reiniciado automaticamente.',
   ].join('\n');
 
   await channel.send({
     content,
-    embeds: payload.embeds || [],
-    files: payload.files || [],
     allowedMentions: { parse: [] },
   });
 

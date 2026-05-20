@@ -6,7 +6,7 @@ const {
   SlashCommandBuilder,
 } = require('discord.js');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
-const { createPointTranscriptRecord, formatDate, buildTranscriptFilePayload } = require('../../utils/pointTranscriptStore');
+const { createPointTranscriptRecord, formatDate } = require('../../utils/pointTranscriptStore');
 const { sendVortexLog } = require('../../utils/notifications');
 const { safeDeferReply, safeEdit, safeReply } = require('../../utils/safeReply');
 const { buildThemedPanelPayload } = require('../../utils/panelTheme');
@@ -79,7 +79,6 @@ module.exports = {
     });
 
     const { record, url } = result;
-    const files = buildTranscriptFilePayload(record);
     const embed = new EmbedBuilder()
       .setColor('#005DFF')
       .setAuthor({ name: 'VORTEX | TRANSCRIPT DE PONTO' })
@@ -90,7 +89,6 @@ module.exports = {
         `Cargo/facção: **${record.factionName}**`,
         '',
         'O histórico completo está disponível apenas no transcript web.',
-        files.length ? 'Também anexei uma cópia HTML caso o link web não abra.' : '',
       ].join('\n'))
       .addFields(
         { name: 'Total semanal', value: record.summary.weeklyTotal, inline: true },
@@ -127,7 +125,6 @@ module.exports = {
 
     return safeEdit(interaction, buildThemedPanelPayload('painelponto', embed, {
       components: [row],
-      files,
       allowedMentions: { users: [target.id] },
     }));
   },

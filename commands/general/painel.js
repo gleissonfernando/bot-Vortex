@@ -42,7 +42,8 @@ const {
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { createPointTranscriptRecord, buildTranscriptFilePayload } = require('../../utils/pointTranscriptStore');
+const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
+const { createPointActionTranscriptSummary } = require('../../utils/pointTranscriptNotifier');
 const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
   FACTION_HIERARCHY_ROLES,
@@ -697,7 +698,6 @@ module.exports = {
       );
 
       const { record } = transcript;
-      const files = buildTranscriptFilePayload(record);
       const transcriptEmbed = new EmbedBuilder()
         .setColor('#005DFF')
         .setAuthor({
@@ -709,7 +709,6 @@ module.exports = {
           `Folha/transcript de <@${userId}> gerada com sucesso.`,
           '',
           'O historico completo fica disponivel apenas no link web abaixo.',
-          files.length ? 'Tambem anexei uma copia HTML caso o link web nao abra.' : '',
         ].join('\n'))
         .addFields(
           { name: 'Usuario', value: `<@${userId}>`, inline: true },
@@ -731,7 +730,6 @@ module.exports = {
 
       return safeEdit(interaction, buildThemedPanelPayload('painelponto', transcriptEmbed, {
         components: [row],
-        files,
         allowedMentions: { users: [userId] },
       }));
     }
@@ -858,13 +856,23 @@ module.exports = {
       }
       await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
       await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+      const pointSummary = targetUser ? await createPointActionTranscriptSummary({
+        guild: interaction.guild,
+        target: targetUser,
+        generatedBy: interaction.user,
+        action: 'closed',
+        result,
+      }) : null;
       if (targetUser) {
         await targetUser.send({
           content: [
             '⚠️ Seu ponto foi fechado manualmente pela gerência.',
             `Fechado por: <@${interaction.user.id}>`,
-            `Horário registrado: ${formatDate(result.data.lastPointCloseAt)}`,
-            `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+            '',
+            pointSummary?.content || [
+              `Horário registrado: ${formatDate(result.data.lastPointCloseAt)}`,
+              `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+            ].join('\n'),
             '',
             'Se esse horário estiver errado, solicite a correção de ponto pelo painel de ponto ou fale com a gerência.',
           ].join('\n'),
@@ -895,8 +903,9 @@ module.exports = {
       return safeEdit(interaction, {
         content: [
           `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.`,
+          pointSummary?.transcriptUrl ? `Transcript: ${pointSummary.transcriptUrl}` : null,
           correctionChannel ? `Canal de correção: <#${correctionChannel.id}>` : 'Canal de correção: não criado.',
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
       });
     }
     

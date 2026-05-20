@@ -457,12 +457,25 @@ function buildTranscriptData({ guild, target, member, data, monthKey = null }) {
     periodLabel,
   } = getReportDayKeys({ referenceDate: generatedAt, monthKey });
   const profile = getUserProfile(guild.id, target.id);
-  const sessions = getAllSessions(data).filter((session) => session.dayKey && weekKeys.includes(session.dayKey));
+  const allSessions = getAllSessions(data);
+  const sessions = allSessions.filter((session) => session.dayKey && weekKeys.includes(session.dayKey));
   const adjustments = getAllAdjustments(data, guild.id, target.id)
     .filter((adjustment) => adjustment.dayKey && adjustment.dayKey >= weekStartKey && adjustment.dayKey <= weekEndKey)
     .sort((a, b) => new Date(a.adjustedAt || 0).getTime() - new Date(b.adjustedAt || 0).getTime());
   const sessionsByDay = groupSessionsByDay(sessions, weekKeys);
   const summary = buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekStartKey, weekEndKey });
+  const currentMonthKey = currentKey.slice(0, 7);
+  const daySessions = allSessions.filter((session) => session.dayKey === currentKey);
+  const monthSessions = allSessions.filter((session) => String(session.dayKey || '').startsWith(currentMonthKey));
+  const latestSession = sessions[sessions.length - 1] || allSessions[allSessions.length - 1] || null;
+  const statistics = {
+    dayMs: daySessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0),
+    weekMs: summary.totalMs,
+    monthMs: monthSessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0),
+    totalAccumulatedMs: getEffectiveTotalMs(data),
+    pauseMs: 0,
+    totalSessions: allSessions.length,
+  };
   const lastActivityAt = data.lastPointCloseAt
     || data.lastPointOpenAt
     || data.firstPointAt
@@ -479,10 +492,14 @@ function buildTranscriptData({ guild, target, member, data, monthKey = null }) {
     member,
     profile,
     sessions,
+    allSessions,
     adjustments,
     weekKeys,
     sessionsByDay,
     summary,
+    statistics,
+    latestSession,
+    currentKey,
     weekStartKey,
     weekEndKey,
     periodType,
@@ -546,7 +563,7 @@ function renderPointAdjustmentHtml(adjustment) {
 }
 
 function buildHtmlBody(report) {
-  const { generatedAt, guild, target, member, profile, sessionsByDay, summary, weekStartKey, weekEndKey, adjustments } = report;
+  const { generatedAt, guild, target, member, profile, sessionsByDay, summary, statistics, latestSession, weekStartKey, weekEndKey, adjustments } = report;
   const userName = member?.displayName || profile?.displayName || target.username;
   const profileStatus = profile ? (profile.registeredManually ? 'Cadastro manual' : 'Aprovado no /set') : 'Sem cadastro no /set';
   const avatarUrl = typeof target.displayAvatarURL === 'function'
@@ -622,12 +639,29 @@ function buildHtmlBody(report) {
         </div>`).join('')
     : '<div class="empty">Nenhum ajuste registrado nesta semana.</div>';
 
+  const actionHistoryBlocks = report.sessions.length
+    ? report.sessions.map((session, index) => `
+        <div class="history-item">
+          <div class="history-title">${index + 1}. ${escapeHtml(session.dayLabel)} | ${escapeHtml(session.startedAt ? formatDate(session.startedAt) : 'N/A')}</div>
+          <div class="history-grid">
+            <div><span>Entrada registrada</span><strong>${escapeHtml(formatMomentValue(session.startedAt))}</strong></div>
+            <div><span>Pausa iniciada</span><strong>Nenhuma pausa registrada</strong></div>
+            <div><span>Pausa encerrada</span><strong>Nenhuma pausa registrada</strong></div>
+            <div><span>Saida registrada</span><strong>${escapeHtml(session.closedAt ? formatMomentValue(session.closedAt) : 'Em andamento')}</strong></div>
+            <div><span>Tempo total</span><strong>${escapeHtml(session.durationFormatted)}</strong></div>
+            <div><span>Origem</span><strong>${escapeHtml(session.origin || 'Ponto manual')}</strong></div>
+            <div><span>Status</span><strong>${escapeHtml(session.status)}</strong></div>
+            <div><span>ID do ponto</span><strong>${escapeHtml(session.pointId || 'N/A')}</strong></div>
+          </div>
+        </div>`).join('')
+    : '<div class="empty">Nenhuma ação registrada neste periodo.</div>';
+
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vortex | Folha de ponto</title>
+  <title>Vortex | Relatorio completo</title>
   <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
   <style>
     :root{--bg:#03060d;--panel:#07111f;--panel2:#0b1728;--panel3:#101d33;--line:#163a75;--line2:#005dff;--text:#f5f7ff;--muted:#a9b8d4;--accent:#005dff;--accent2:#00d9ff;--accent3:#0066ff;--good:#22c55e;--warn:#facc15;--danger:#ff2d6f;--shadow:0 0 34px rgba(0,93,255,.24)}
@@ -696,7 +730,7 @@ function buildHtmlBody(report) {
     <div class="wrap hero-top">
       <div>
         <div class="brand"><i class="fa-solid fa-shield-halved"></i> Vortex Management</div>
-        <h1><i class="fa-solid fa-file-lines"></i> Folha de ponto</h1>
+        <h1><i class="fa-solid fa-file-lines"></i> VORTEX — Relatorio Completo</h1>
         <div class="subtitle">Usuario: ${escapeHtml(userName)} | Discord ID: ${escapeHtml(target.id)}</div>
         <div class="subtitle">Periodo: ${escapeHtml(report.periodLabel || `${formatDateKey(weekStartKey)} ate ${formatDateKey(weekEndKey)}`)}</div>
         <div class="subtitle">Gerado em: ${escapeHtml(formatDate(generatedAt))}</div>
@@ -728,10 +762,18 @@ function buildHtmlBody(report) {
 
     <section class="summary">
       <div class="summary-title">
-        <h2 class="section-title" style="margin:0;">Resumo da semana</h2>
-        <div class="pill">Historico completo preservado</div>
+        <h2 class="section-title" style="margin:0;">Estatisticas de ponto</h2>
+        <div class="pill">Vortex - relatorio completo</div>
       </div>
       <div class="summary-grid">
+        <div class="summary-item"><span>Data</span><strong>${escapeHtml(formatDateKey(report.currentKey))}</strong></div>
+        <div class="summary-item"><span>Entrada</span><strong>${escapeHtml(latestSession?.startedAt ? formatDate(latestSession.startedAt) : 'N/A')}</strong></div>
+        <div class="summary-item"><span>Saida</span><strong>${escapeHtml(latestSession?.closedAt ? formatDate(latestSession.closedAt) : 'Em andamento')}</strong></div>
+        <div class="summary-item"><span>Tempo em pausa</span><strong>${escapeHtml(formatDuration(statistics.pauseMs))}</strong></div>
+        <div class="summary-item"><span>Horas do dia</span><strong>${escapeHtml(formatDuration(statistics.dayMs))}</strong></div>
+        <div class="summary-item"><span>Horas semanais</span><strong>${escapeHtml(formatDuration(statistics.weekMs))}</strong></div>
+        <div class="summary-item"><span>Horas mensais</span><strong>${escapeHtml(formatDuration(statistics.monthMs))}</strong></div>
+        <div class="summary-item"><span>Total acumulado</span><strong>${escapeHtml(formatDuration(statistics.totalAccumulatedMs))}</strong></div>
         <div class="summary-item"><span>Dias que abriu ponto</span><strong>${escapeHtml(String(summary.daysWithPoints))}</strong></div>
         <div class="summary-item"><span>Dias sem abrir ponto</span><strong>${escapeHtml(String(summary.daysWithoutPoint))}</strong></div>
         <div class="summary-item"><span>Total de pontos abertos</span><strong>${escapeHtml(String(summary.totalPoints))}</strong></div>
@@ -747,6 +789,11 @@ function buildHtmlBody(report) {
     </section>
 
     ${dayBlocks}
+
+    <section class="history">
+      <h2 class="section-title">Historico de acoes</h2>
+      ${actionHistoryBlocks}
+    </section>
 
     <section class="history">
       <h2 class="section-title">Historico completo dos ajustes</h2>

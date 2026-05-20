@@ -21,6 +21,12 @@ function buildUrl(table, query = {}) {
   return url;
 }
 
+function createSupabaseError(message, context = {}) {
+  const error = new Error(message);
+  Object.assign(error, context);
+  return error;
+}
+
 async function supabaseRequest(table, options = {}) {
   if (!isSupabaseEnabled()) {
     throw new Error('Supabase não configurado. Defina SUPABASE_URL e SUPABASE_ANON_KEY no .env.');
@@ -32,8 +38,19 @@ async function supabaseRequest(table, options = {}) {
     headers = {},
     body,
   } = options;
+  const url = buildUrl(table, query);
+  const requestContext = {
+    query: `${method} ${table}`,
+    params: {
+      table,
+      method,
+      query,
+      body,
+      url: url.toString().replace(SUPABASE_KEY, '[REDACTED]'),
+    },
+  };
 
-  const response = await fetch(buildUrl(table, query), {
+  const response = await fetch(url, {
     method,
     headers: {
       apikey: SUPABASE_KEY,
@@ -45,11 +62,35 @@ async function supabaseRequest(table, options = {}) {
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (error) {
+    throw createSupabaseError(`Supabase ${method} ${table} retornou JSON invalido: ${error.message}`, {
+      ...requestContext,
+      payload: {
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: text.slice(0, 1000),
+      },
+      cause: error,
+    });
+  }
 
   if (!response.ok) {
     const message = data?.message || data?.error || response.statusText;
-    throw new Error(`Supabase ${method} ${table} falhou: ${message}`);
+    throw createSupabaseError(`Supabase ${method} ${table} falhou: ${message}`, {
+      ...requestContext,
+      code: data?.code || response.status,
+      details: data?.details || null,
+      hint: data?.hint || null,
+      payload: {
+        status: response.status,
+        statusText: response.statusText,
+        response: data,
+      },
+    });
   }
 
   return data;

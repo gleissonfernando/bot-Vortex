@@ -9,6 +9,7 @@ const {
 } = require('discord.js');
 const { correctOpenPointCloseTime, formatDate, formatDuration } = require('./pontoManager');
 const { getPointConfig } = require('./pontoPanel');
+const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
 
 const REQUESTS_PATH = path.join(__dirname, '..', 'commands', 'pontoAdjustRequests.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -215,6 +216,27 @@ async function decideAdjustment(interaction, requestId, approved) {
 async function sendAdjustmentDecisionDm(interaction, request, approved, result) {
   const user = await interaction.client.users.fetch(request.userId).catch(() => null);
   if (!user) return false;
+
+  if (approved && result) {
+    const summary = await createPointActionTranscriptSummary({
+      guild: interaction.guild,
+      target: user,
+      generatedBy: interaction.user,
+      action: 'closed',
+      result,
+    });
+    await user.send({
+      content: [
+        '✅ Ajuste de ponto aprovado e ponto fechado automaticamente.',
+        `Aprovado por: <@${interaction.user.id}>`,
+        `Motivo informado: ${request.reason}`,
+        '',
+        summary.content,
+      ].join('\n'),
+      allowedMentions: { users: [interaction.user.id] },
+    });
+    return true;
+  }
 
   const embed = new EmbedBuilder()
     .setColor(approved ? '#57F287' : '#ED4245')

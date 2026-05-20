@@ -1,9 +1,10 @@
 const { ActivityType, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { openPoint, closePoint, getUserPoint, listGuildPoints, formatDate, formatDuration } = require('./pontoManager');
+const { openPoint, closePoint, getUserPoint, listGuildPoints } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { isPrimaryGuild } = require('./guildScope');
+const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
@@ -179,19 +180,22 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
     if (result.action !== 'opened') return;
     await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
 
+    const summary = await createPointActionTranscriptSummary({
+      guild,
+      target: user,
+      generatedBy: guild.client.user,
+      action: 'opened',
+      result,
+    });
     await user.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor('#57F287')
-          .setTitle('Ponto aberto automaticamente')
-          .setDescription([
-            `Detectei você na cidade **${cityName || TARGET_SERVER_NAME}** e abri seu ponto.`,
-            '',
-            `Entrada: **${formatDate(result.data.activePointStartedAt)}**`,
-            'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
-          ].join('\n'))
-          .setTimestamp(),
-      ],
+      content: [
+        `Detectei você na cidade **${cityName || TARGET_SERVER_NAME}** e abri seu ponto automaticamente.`,
+        '',
+        summary.content,
+        '',
+        'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
+      ].join('\n'),
+      allowedMentions: { users: [] },
     }).catch(() => null);
     return;
   }
@@ -209,19 +213,20 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
   if (result.action !== 'closed') return;
   await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
 
+  const summary = await createPointActionTranscriptSummary({
+    guild,
+    target: user,
+    generatedBy: guild.client.user,
+    action: 'closed',
+    result,
+  });
   await user.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('Ponto fechado automaticamente')
-        .setDescription([
-          `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** e fechei seu ponto.`,
-          '',
-          `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
-          `Tempo online: **${formatDuration(result.durationMs)}**`,
-        ].join('\n'))
-        .setTimestamp(),
-    ],
+    content: [
+      `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** e fechei seu ponto automaticamente.`,
+      '',
+      summary.content,
+    ].join('\n'),
+    allowedMentions: { users: [] },
   }).catch(() => null);
 }
 
@@ -343,18 +348,20 @@ async function scanCurrentFiveMActivities(client) {
       if (result?.action === 'opened') {
         results.push({ guildId: guild.id, userId: presence.user.id });
         await syncPointOnlineChannel(client, guild.id, presence.user.id, true);
+        const summary = await createPointActionTranscriptSummary({
+          guild,
+          target: presence.user,
+          generatedBy: client.user,
+          action: 'opened',
+          result,
+        });
         await presence.user.send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor('#57F287')
-              .setTitle('Ponto aberto automaticamente')
-              .setDescription([
-                `Detectei você no **${cityName || TARGET_SERVER_NAME}** quando o bot iniciou e abri seu ponto.`,
-                '',
-                `Entrada: **${formatDate(result.data.activePointStartedAt)}**`,
-              ].join('\n'))
-              .setTimestamp(),
-          ],
+          content: [
+            `Detectei você no **${cityName || TARGET_SERVER_NAME}** quando o bot iniciou e abri seu ponto.`,
+            '',
+            summary.content,
+          ].join('\n'),
+          allowedMentions: { users: [] },
         }).catch(() => null);
       }
     }
@@ -375,20 +382,23 @@ async function scanCurrentFiveMActivities(client) {
       await syncPointOnlineChannel(client, guild.id, point.userId, false);
 
       const user = await client.users.fetch(point.userId).catch(() => null);
-      await user?.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle('Ponto fechado automaticamente')
-            .setDescription([
-              `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** após o bot iniciar e fechei seu ponto.`,
-              '',
-              `Saída: **${formatDate(result.data.lastPointCloseAt)}**`,
-              `Tempo online: **${formatDuration(result.durationMs)}**`,
-            ].join('\n'))
-            .setTimestamp(),
-        ],
-      }).catch(() => null);
+      if (user) {
+        const summary = await createPointActionTranscriptSummary({
+          guild,
+          target: user,
+          generatedBy: client.user,
+          action: 'closed',
+          result,
+        });
+        await user.send({
+          content: [
+            `Não detectei mais você na cidade **${point.activePointServerName || TARGET_SERVER_NAME}** após o bot iniciar e fechei seu ponto.`,
+            '',
+            summary.content,
+          ].join('\n'),
+          allowedMentions: { users: [] },
+        }).catch(() => null);
+      }
     }
   }
 

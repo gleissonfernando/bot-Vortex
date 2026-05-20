@@ -6,8 +6,15 @@ const cors = require('cors');
 const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
+const {
+    installMongoJsonStoreBridge,
+    initializeMongoJsonStore,
+    flushMongoJsonStore,
+} = require('./utils/mongoJsonStore');
+installMongoJsonStoreBridge();
 const config = require('./config/config');
 const { logger } = require('./utils/logger');
+const { connectDatabase, disconnectDatabase, getDatabaseStatus, isMongoRequired } = require('./utils/database');
 const { setDiscordClient } = require('./utils/dashboardClient');
 const { notifyError, notifyBotDown, sendVortexLog, initChannelLogRecovery } = require('./utils/notifications');
 const { setupErrorHandlers } = require('./src/events/errorHandler');
@@ -23,6 +30,7 @@ const {
     validateTranscriptAccess,
     registerTranscriptAccess,
     buildTranscriptShell,
+    normalizeTranscriptId,
 } = require('./utils/pointTranscriptStore');
 
 const app = express();
@@ -53,7 +61,20 @@ setDiscordClient(client);
 setupErrorHandlers(client, { notifyError, notifyBotDown });
 
 app.get('/health', (req, res) => {
-    res.json({ ok: true, service: 'vortex-bot' });
+    res.json({
+        ok: true,
+        service: 'vortex-bot',
+        mongo: getDatabaseStatus(),
+    });
+});
+
+app.get(['/api/database/status', '/api/db/status'], (req, res) => {
+    const status = getDatabaseStatus();
+    res.status(status.required && !status.connected ? 503 : 200).json({
+        ok: status.connected,
+        service: 'vortex-database',
+        mongo: status,
+    });
 });
 
 app.get('/api/site/status', (req, res) => {
@@ -66,6 +87,7 @@ app.get('/api/site/status', (req, res) => {
         } : null,
         guilds: client.guilds?.cache?.size || 0,
         uptimeSeconds: Math.floor(process.uptime()),
+        mongo: getDatabaseStatus(),
     });
 });
 
@@ -117,12 +139,53 @@ app.get(['/api/ponto/:id', '/api/relatorio/ponto/:id'], async (req, res) => {
     return res.json(payload);
 });
 
+function isTranscriptId(value) {
+    return /^vtx-[a-z0-9-]+$/i.test(normalizeTranscriptId(value));
+}
+
+function sendTranscriptPage(req, res, transcriptId) {
+    const normalizedId = normalizeTranscriptId(transcriptId);
+    const record = getPointTranscriptRecord(normalizedId);
+    const requiresQueryToken = req.path.startsWith('/vortex/transcript/');
+    const token = requiresQueryToken ? String(req.query.token || '').trim() : record?.token;
+    const access = validateTranscriptAccess(record, token);
+    if (!access.ok) {
+        return res.status(access.status).type('html').send(`<!doctype html><meta charset="utf-8"><title>Transcript Vortex</title><body>${access.message}</body>`);
+    }
+
+    registerTranscriptAccess(normalizedId, {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+    });
+    logger.info(`Transcript Vortex acessado: ${normalizedId} (${record.kind || 'point-report'})`);
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+        'Content-Security-Policy',
+        [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' https: data:",
+            "connect-src 'self'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+        ].join('; ')
+    );
+    return res.type('html').send(buildTranscriptShell(record));
+}
+
 app.get(['/ponto/:id', '/relatorio/ponto/:id'], (req, res) => {
+    const requestedId = String(req.params.id || '').trim();
+    if (isTranscriptId(requestedId)) {
+        return sendTranscriptPage(req, res, requestedId);
+    }
+
     if (!isPointSiteAuthorized(req)) {
         return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
     }
 
-    const userId = String(req.params.id || '').trim();
+    const userId = requestedId;
     if (!/^\d{15,25}$/.test(userId)) {
         return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>ID invalido</title><body>ID de usuario invalido.</body>');
     }
@@ -144,36 +207,11 @@ app.get(['/ponto/:id', '/relatorio/ponto/:id'], (req, res) => {
 });
 
 app.get(['/transcripts/:id', '/vortex/transcript/ponto/:id'], (req, res) => {
-    const transcriptId = String(req.params.id || '').trim();
-    const record = getPointTranscriptRecord(transcriptId);
-    const token = req.path.startsWith('/transcripts/')
-        ? record?.token
-        : String(req.query.token || '').trim();
-    const access = validateTranscriptAccess(record, token);
-    if (!access.ok) {
-        return res.status(access.status).type('html').send(`<!doctype html><meta charset="utf-8"><title>Transcript Vortex</title><body>${access.message}</body>`);
-    }
+    return sendTranscriptPage(req, res, req.params.id);
+});
 
-    registerTranscriptAccess(transcriptId, {
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
-    });
-    logger.info(`Transcript de ponto acessado: ${transcriptId}`);
-
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader(
-        'Content-Security-Policy',
-        [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' https: data:",
-            "connect-src 'self'",
-            "base-uri 'self'",
-            "frame-ancestors 'none'",
-        ].join('; ')
-    );
-    return res.type('html').send(buildTranscriptShell(record));
+app.get('/relatorio/:id', (req, res) => {
+    return sendTranscriptPage(req, res, req.params.id);
 });
 
 app.get(['/', '/termos', '/privacidade'], (req, res) => {
@@ -300,16 +338,19 @@ client.once(Events.ClientReady, async () => {
     });
 });
 
+async function shutdown(reason, type) {
+    await notifyBotDown(client, reason, type).catch(() => null);
+    await flushMongoJsonStore().catch((error) => logger.error('Erro ao sincronizar JSON Store no encerramento:', error));
+    await disconnectDatabase().catch(() => null);
+    process.exit(0);
+}
+
 process.on('SIGINT', () => {
-    notifyBotDown(client, 'Processo encerrado por SIGINT', 'Encerramento manual').finally(() => {
-        process.exit(0);
-    });
+    shutdown('Processo encerrado por SIGINT', 'Encerramento manual');
 });
 
 process.on('SIGTERM', () => {
-    notifyBotDown(client, 'Processo encerrado por SIGTERM', 'Encerramento do processo').finally(() => {
-        process.exit(0);
-    });
+    shutdown('Processo encerrado por SIGTERM', 'Encerramento do processo');
 });
 
 client.on('shardDisconnect', (event, shardId) => {
@@ -318,9 +359,24 @@ client.on('shardDisconnect', (event, shardId) => {
     notifyBotDown(client, reason, 'Shard Disconnect');
 });
 
-client.login(config.token).catch(err => {
-    console.error('[VORTEX] Falha no Login:', err.message);
-    notifyBotDown(client, err, 'Falha no Login');
+async function start() {
+    const connected = await connectDatabase();
+    if (!connected && isMongoRequired()) {
+        throw new Error('MongoDB obrigatorio, mas a conexao falhou. Verifique MONGODB_URI/MONGO_URI e acesso de rede.');
+    }
+    if (connected) await initializeMongoJsonStore();
+
+    await client.login(config.token).catch(err => {
+        console.error('[VORTEX] Falha no Login:', err.message);
+        notifyBotDown(client, err, 'Falha no Login');
+    });
+
+    app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));
+}
+
+start().catch((error) => {
+    logger.error('Erro fatal ao iniciar Vortex:', error);
+    process.exit(1);
 });
-app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));
-   module.exports = { client };
+
+module.exports = { client };

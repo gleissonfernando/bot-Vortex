@@ -17,6 +17,7 @@ const { isPrimaryGuild } = require('./guildScope');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 const { safeReply, safeEdit, safeUpdate } = require('./safeReply');
+const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -290,7 +291,27 @@ async function closeUnconfirmedPoint(client, guild, point, item, state, key, rea
     ].filter(Boolean).join('\n'))
     .setTimestamp();
   const user = await client.users.fetch(point.userId).catch(() => null);
-  if (user) await user.send({ embeds: [embed] }).catch(() => null);
+  if (user) {
+    const summary = result?.action === 'closed'
+      ? await createPointActionTranscriptSummary({
+        guild,
+        target: user,
+        generatedBy: client.user,
+        action: 'closed',
+        result,
+      })
+      : null;
+    await user.send(summary ? {
+      content: [
+        `<@${point.userId}> não confirmou o alerta de ponto aberto.`,
+        '',
+        summary.content,
+        '',
+        'Se o horário estiver errado, solicite correção de ponto.',
+      ].join('\n'),
+      allowedMentions: { users: [] },
+    } : { embeds: [embed] }).catch(() => null);
+  }
   const channel = await openPointCorrectionForClosedPoint(client, guild, point, {
     reason,
     closedAt: result?.data?.lastPointCloseAt || new Date().toISOString(),
