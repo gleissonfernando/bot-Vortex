@@ -61,7 +61,8 @@ const {
   getMirrorMessageChannelIds,
   toggleMirrorMessageChannel,
 } = require('../../utils/mirrorMessageManager');
-const { allowVoiceChannelAccess } = require('../../utils/voiceChannelAccess');
+const { allowVoiceChannelAccess, fetchVoiceChannels, syncVoiceChannelAccess } = require('../../utils/voiceChannelAccess');
+const { allowTextChannelAccess, isTextChannel } = require('../../utils/textChannelAccess');
 const {
   PANEL_THEME_TARGETS,
   buildThemedPanelPayload,
@@ -311,6 +312,117 @@ function setAdjustCallEnabled(channelId, enabled) {
 
 function isAdjustCallChannel(channel) {
     return channel?.type === ChannelType.GuildVoice || channel?.type === ChannelType.GuildStageVoice;
+}
+
+function buildAdjustCallIdModal() {
+    return new ModalBuilder()
+        .setCustomId('modal_adjust_call_id')
+        .setTitle('Selecionar call por ID')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('channel_id')
+                    .setLabel('ID da call/canal de voz')
+                    .setPlaceholder('Ex: 1234567890123456789')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+            )
+        );
+}
+
+function formatAdjustCallOption(channel, activeIds = [], selectedChannelId = null) {
+    const isStage = channel.type === ChannelType.GuildStageVoice;
+    const parentName = channel.parent?.name || 'Sem categoria';
+    const memberCount = channel.members?.size ?? 0;
+    const status = activeIds.includes(channel.id) ? 'ativa' : 'desativada';
+    return {
+        label: String(channel.name || `Call ${channel.id}`).slice(0, 100),
+        description: `${isStage ? 'Palco' : 'Call'} | ${parentName} | ${memberCount} online | ${status}`.slice(0, 100),
+        value: channel.id,
+        default: selectedChannelId === channel.id,
+    };
+}
+
+async function getAdjustCallSelectData(guild, activeIds = [], selectedChannelId = null) {
+    const channels = await fetchVoiceChannels(guild).catch(() => new Map());
+    const allOptions = [...channels.values()].map((channel) => formatAdjustCallOption(channel, activeIds, selectedChannelId));
+    let options = allOptions.slice(0, 25);
+
+    if (selectedChannelId && !options.some((option) => option.value === selectedChannelId)) {
+        const selectedOption = allOptions.find((option) => option.value === selectedChannelId);
+        if (selectedOption) options = [...options.slice(0, 24), selectedOption];
+    }
+
+    return {
+        total: allOptions.length,
+        shown: options.length,
+        options,
+    };
+}
+
+async function registerSelectedProfileFromPanel(interaction, selected = {}) {
+    const userId = String(selected.userId || '').trim();
+    if (!/^\d{15,25}$/.test(userId)) {
+        return safeReply(interaction, { content: '❌ Selecione um usuário primeiro.', ephemeral: true });
+    }
+
+    await safeDeferReply(interaction, { ephemeral: true });
+
+    const member = await interaction.guild.members.fetch(userId).catch(() => null);
+    const target = member?.user || await interaction.client.users.fetch(userId).catch(() => null);
+    if (!target) {
+        return safeEdit(interaction, { content: '❌ Usuário não encontrado no servidor.' });
+    }
+
+    const callChannelId = selected.channelId ? String(selected.channelId) : null;
+    if (callChannelId) {
+        const channel = await interaction.guild.channels.fetch(callChannelId).catch(() => null);
+        if (!isTextChannel(channel)) {
+            return safeEdit(interaction, { content: '❌ O canal selecionado não é um canal de texto válido. Selecione outro canal.' });
+        }
+        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
+    }
+
+    const result = await registerManualProfile(interaction.guild, target, {
+        name: member?.displayName || target.username,
+        callChannelId,
+        registeredBy: interaction.user.id,
+    });
+
+    if (!result.ok) {
+        return safeEdit(interaction, { content: `❌ ${result.message}` });
+    }
+
+    profileRegisterSelections.set(getSelectionKey(interaction), {
+        ...selected,
+        userId,
+        channelId: result.profile.callChannelId || selected.channelId || null,
+    });
+
+    await target.send({
+        content: [
+            '✅ Você foi cadastrado no sistema Vortex.',
+            `Servidor: ${interaction.guild.name}`,
+            `Cadastrado por: <@${interaction.user.id}>`,
+            `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
+            result.profile.callChannelId ? `Canal de texto vinculado: <#${result.profile.callChannelId}>` : null,
+            '',
+            'Agora você pode usar os recursos liberados para usuários cadastrados.',
+        ].filter(Boolean).join('\n'),
+        allowedMentions: { users: [interaction.user.id] },
+    }).catch(() => null);
+
+    return safeEdit(interaction, {
+        content: [
+            '✅ Perfil cadastrado no sistema.',
+            `Usuário: <@${userId}>`,
+            `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
+            `Canal de texto: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
+            `Data/hora real: ${formatDate(new Date())}`,
+            '',
+            'Abra o painel novamente ou volte para a aba de perfil para ver a lista atualizada.',
+        ].join('\n'),
+    });
 }
 
 function parsePanelColor(value, fallback = 0x7000FF) {
@@ -1164,6 +1276,23 @@ module.exports = {
         return renderDashboard(interaction, 'tab_adjust_calls', true);
     }
 
+    if (customId === 'adjust_call_select_by_id') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        return safeShowModal(interaction, buildAdjustCallIdModal());
+    }
+
+    if (customId === 'adjust_call_sync') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        await syncVoiceChannelAccess(interaction.guild).catch((error) => reportPanelError(interaction.client, error, 'Sincronizar calls'));
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
+    }
+
     if (customId === 'adjust_call_activate' || customId === 'adjust_call_deactivate') {
         if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
@@ -1381,6 +1510,10 @@ module.exports = {
 
     if (customId === 'profile_register') {
         const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+        if (selected.userId) {
+            return registerSelectedProfileFromPanel(interaction, selected);
+        }
+
         const modal = new ModalBuilder()
             .setCustomId('modal_profile_register')
             .setTitle('Cadastrar Perfil');
@@ -1399,15 +1532,15 @@ module.exports = {
                 new TextInputBuilder()
                     .setCustomId('name')
                     .setLabel('NOME DO USUARIO')
-                    .setPlaceholder('Nome para salvar no perfil')
+                    .setPlaceholder('Opcional: se vazio, usa o nome do Discord')
                     .setStyle(TextInputStyle.Short)
-                    .setRequired(true)
+                    .setRequired(false)
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('call_channel_id')
-                    .setLabel('ID DA CALL/CANAL')
-                    .setPlaceholder('Selecione no painel ou cole o ID do canal')
+                    .setLabel('ID DO CANAL DE TEXTO')
+                    .setPlaceholder('Selecione no painel ou cole o ID do canal de texto')
                     .setValue(selected.channelId || '')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(false)
@@ -1545,6 +1678,22 @@ module.exports = {
         }
         mirrorMessageSelections.set(getSelectionKey(interaction), String(interaction.values[0]));
         return renderDashboard(interaction, 'tab_mirror_messages', true);
+    }
+
+    if (interaction.customId === 'select_adjust_call_id') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        const channelId = String(interaction.values[0]);
+        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+        if (!isAdjustCallChannel(channel)) {
+            return safeReply(interaction, { content: '❌ Essa call não existe mais ou não é uma call válida.', ephemeral: true });
+        }
+
+        adjustCallSelections.set(getSelectionKey(interaction), channelId);
+        await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
     }
 
     if (interaction.customId === 'select_adjust_call_channel') {
@@ -1771,9 +1920,16 @@ module.exports = {
 
     if (interaction.customId === 'select_profile_register_channel') {
         const key = getSelectionKey(interaction);
+        const channelId = String(interaction.values[0]);
+        const channel = interaction.channels?.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+        if (!isTextChannel(channel)) {
+            return safeReply(interaction, { content: '❌ Selecione um canal de texto válido.', ephemeral: true });
+        }
+
+        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
         profileRegisterSelections.set(key, {
             ...(profileRegisterSelections.get(key) || {}),
-            channelId: interaction.values[0],
+            channelId,
         });
         return renderDashboard(interaction, 'tab_perfil', true);
     }
@@ -1784,6 +1940,26 @@ module.exports = {
     if (!hasStaffPermission(interaction.member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
     
     const data = loadJSON(CONFIG_PATH);
+    if (interaction.customId === 'modal_adjust_call_id') {
+        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+            return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
+        }
+
+        const channelId = interaction.fields.getTextInputValue('channel_id').trim();
+        if (!/^\d{15,25}$/.test(channelId)) {
+            return safeReply(interaction, { content: '❌ ID de call inválido.', ephemeral: true });
+        }
+
+        const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
+        if (!channel || String(channel.guildId || channel.guild?.id || '') !== String(interaction.guild.id) || !isAdjustCallChannel(channel)) {
+            return safeReply(interaction, { content: '❌ Não encontrei essa call neste servidor. Confira o ID e minhas permissões.', ephemeral: true });
+        }
+
+        adjustCallSelections.set(getSelectionKey(interaction), channel.id);
+        await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
+        return renderDashboard(interaction, 'tab_adjust_calls', true);
+    }
+
     if (interaction.customId === 'modal_visual_color' || interaction.customId === 'modal_visual_banner') {
         if (!hasVortexLevel(interaction.member, ['admin'])) {
             return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o visual dos painéis.', ephemeral: true });
@@ -2061,16 +2237,24 @@ module.exports = {
             return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
         }
         if (callChannelId && !/^\d{15,25}$/.test(callChannelId)) {
-            return safeReply(interaction, { content: '❌ ID de canal/call inválido.', ephemeral: true });
+            return safeReply(interaction, { content: '❌ ID de canal de texto inválido.', ephemeral: true });
+        }
+        if (callChannelId) {
+            const channel = await interaction.guild.channels.fetch(callChannelId).catch(() => null);
+            if (!isTextChannel(channel)) {
+                return safeReply(interaction, { content: '❌ O ID informado não é de um canal de texto válido.', ephemeral: true });
+            }
+            await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
         }
 
         const target = await interaction.client.users.fetch(userId).catch(() => null);
         if (!target) {
             return safeReply(interaction, { content: '❌ Usuário não encontrado.', ephemeral: true });
         }
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
 
         const result = await registerManualProfile(interaction.guild, target, {
-            name,
+            name: name || member?.displayName || target.username,
             callChannelId: callChannelId || null,
             nivelGame: nivelGame || null,
             photoLink: photoLink || null,
@@ -2087,7 +2271,7 @@ module.exports = {
                 `Servidor: ${interaction.guild.name}`,
                 `Cadastrado por: <@${interaction.user.id}>`,
                 `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
-                result.profile.callChannelId ? `Call/Canal vinculado: <#${result.profile.callChannelId}>` : null,
+                result.profile.callChannelId ? `Canal de texto vinculado: <#${result.profile.callChannelId}>` : null,
                 '',
                 'Agora você pode usar os recursos liberados para usuários cadastrados, como `/perfil` e os comandos autorizados pela equipe.',
             ].filter(Boolean).join('\n'),
@@ -2100,7 +2284,7 @@ module.exports = {
                 `Usuário: <@${userId}>`,
                 `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
                 `Nível: ${result.profile.nivelGame || 'N/A'}`,
-                `Call/Canal: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
+                `Canal de texto: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
                 `Mídias salvas: ${Array.isArray(result.profile.photoLinks) ? result.profile.photoLinks.length : 0}`,
                 `Data/hora real: ${formatDate(new Date())}`,
             ].join('\n'),
@@ -2541,6 +2725,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     const activeCallIds = getAdjustCallChannelIds(conf);
     const selectedChannelId = adjustCallSelections.get(getSelectionKey(interaction));
     const selectedActive = selectedChannelId && activeCallIds.includes(selectedChannelId);
+    const callSelectData = await getAdjustCallSelectData(guild, activeCallIds, selectedChannelId);
 
     embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | AJUSTE DE CALLS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
       .setColor(selectedActive ? '#57F287' : '#FEE75C')
@@ -2548,9 +2733,12 @@ async function renderDashboard(interaction, tab, edit = false) {
         '### Ajuste',
         '',
         'Selecione uma call e use os botões para ativar ou desativar a entrada nela.',
+        'A lista abaixo é montada pelo bot, então ela também tenta encontrar calls privadas/ocultas.',
         '',
         `Call selecionada: ${selectedChannelId ? `<#${selectedChannelId}>` : '`Nenhuma`'}`,
         `Status selecionado: **${selectedActive ? 'ativada' : 'desativada'}**`,
+        `Calls encontradas pelo bot: **${callSelectData.total}**`,
+        `Mostrando no seletor: **${callSelectData.shown}/25**`,
         `Calls ativas: **${activeCallIds.length}**`,
         '',
         '**Lista ativa**',
@@ -2567,18 +2755,29 @@ async function renderDashboard(interaction, tab, edit = false) {
         .setCustomId('adjust_call_deactivate')
         .setLabel('Desativar')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(!selectedChannelId || !selectedActive)
+        .setDisabled(!selectedChannelId || !selectedActive),
+      new ButtonBuilder()
+        .setCustomId('adjust_call_select_by_id')
+        .setLabel('Selecionar por ID')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('adjust_call_sync')
+        .setLabel('Sincronizar calls')
+        .setStyle(ButtonStyle.Primary)
     );
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_adjust_call_channel')
-          .setPlaceholder('Selecionar call de ajuste')
-          .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-    ];
+
+    if (callSelectData.options.length) {
+      extraRows = [
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('select_adjust_call_id')
+            .setPlaceholder('Selecionar call encontrada pelo bot')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(callSelectData.options)
+        ),
+      ];
+    }
   } else if (tab === 'tab_visual') {
     const selectedTargetKey = getVisualTargetKey(interaction);
     const selectedTarget = getPanelTargetMeta(selectedTargetKey);
@@ -2814,7 +3013,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
     const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
     const profileRows = profileList.slice(0, 10).map((profile, index) => {
-      return `${index + 1}. <@${profile.userId}> - ${profile.nomeGame || profile.displayName || 'Sem nome'} - call ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'} - ultima atualização ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`;
+      return `${index + 1}. <@${profile.userId}> - ${profile.nomeGame || profile.displayName || 'Sem nome'} - canal ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'} - ultima atualização ${profile.lastProfileUpdateAt ? formatDate(profile.lastProfileUpdateAt) : 'N/A'}`;
     });
 
     embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | PERFIS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
@@ -2828,7 +3027,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
-        `Selecionado: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhuma call/canal`'}`,
+        `Selecionado: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhum canal de texto`'}`,
         '',
         '**Perfis salvos**',
         profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
@@ -2854,7 +3053,8 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_profile_register_channel')
-          .setPlaceholder('Selecionar call/canal vinculado')
+          .setPlaceholder('Selecionar canal de texto vinculado')
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
           .setMinValues(1)
           .setMaxValues(1)
       ),

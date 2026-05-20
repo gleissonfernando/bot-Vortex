@@ -485,7 +485,7 @@ async function registerManualProfile(guild, user, {
       `Perfil cadastrado/atualizado por: ${registeredBy ? `<@${registeredBy}>` : 'sistema'}`,
       `Nome salvo: ${profile.nomeGame || profile.displayName || 'N/A'}`,
       `Nível em game: ${profile.nivelGame || 'N/A'}`,
-      `Call/Canal vinculado: ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'}`,
+      `Canal de texto vinculado: ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'}`,
       profileUrl ? `Mídia salva: ${profileUrl}` : null,
     ].filter(Boolean),
   }).catch(() => null);
@@ -543,7 +543,7 @@ function buildProfileEmbed({ guild, user, member, profile }) {
       { name: 'ID em game', value: profile?.idGame || 'N/A', inline: true },
       { name: 'Número', value: profile?.numeroGame || 'N/A', inline: true },
       { name: 'Nível em game', value: profile?.nivelGame || 'N/A', inline: true },
-      { name: 'Call/Canal', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
+      { name: 'Canal de texto', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
       { name: 'Tipo', value: profile?.tipo || 'N/A', inline: true },
       { name: 'Cargo mais alto', value: member?.roles?.highest ? `<@&${member.roles.highest.id}>` : 'N/A', inline: true },
       { name: 'Links de mídias salvos', value: latestPhotos.slice(0, 1024), inline: false },

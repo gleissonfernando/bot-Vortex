@@ -27,13 +27,24 @@ async function allowTextChannelAccess(channel, guild) {
   return true;
 }
 
+async function fetchTextChannels(guild) {
+  const fetched = await guild.channels.fetch().catch(() => null);
+  const source = fetched || guild.channels.cache;
+  return source
+    .filter((channel) => isTextChannel(channel))
+    .sort((a, b) => {
+      const parentCompare = String(a.parent?.name || '').localeCompare(String(b.parent?.name || ''));
+      if (parentCompare) return parentCompare;
+      return (a.rawPosition ?? 0) - (b.rawPosition ?? 0) || String(a.name || '').localeCompare(String(b.name || ''));
+    });
+}
+
 async function syncTextChannelAccess(guild) {
   try {
-    const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+    const channels = await fetchTextChannels(guild);
     if (!channels) return false;
 
-    const targets = channels.filter((channel) => isTextChannel(channel));
-    for (const channel of targets.values()) {
+    for (const channel of channels.values()) {
       await allowTextChannelAccess(channel, guild);
     }
 
@@ -46,5 +57,7 @@ async function syncTextChannelAccess(guild) {
 
 module.exports = {
   allowTextChannelAccess,
+  fetchTextChannels,
+  isTextChannel,
   syncTextChannelAccess,
 };
