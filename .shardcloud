@@ -1,0 +1,6 @@
+DISPLAY_NAME=bot-Vortex
+DESCRIPTION=Vortex Discord bot
+MAIN=index.js
+LANGUAGE=node
+MEMORY=1024
+VERSION=recommended
