@@ -105,6 +105,35 @@ function copyIfExists(source, target) {
   return true;
 }
 
+function newestMtimeMs(target) {
+  if (!fs.existsSync(target)) return 0;
+  const stat = fs.statSync(target);
+  if (!stat.isDirectory()) return stat.mtimeMs;
+
+  let newest = stat.mtimeMs;
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    if (entry.name === '.next' || entry.name === 'node_modules') continue;
+    newest = Math.max(newest, newestMtimeMs(path.join(target, entry.name)));
+  }
+  return newest;
+}
+
+function shouldBuildWeb() {
+  if (process.env.BUILD_WEB_ON_STARTUP === 'false') return false;
+  if (process.env.FORCE_WEB_BUILD === 'true') return true;
+  if (!fs.existsSync(standaloneServer)) return true;
+
+  const standaloneMtime = fs.statSync(standaloneServer).mtimeMs;
+  const sourceMtime = Math.max(
+    newestMtimeMs(path.join(webDir, 'src')),
+    newestMtimeMs(path.join(webDir, 'public')),
+    newestMtimeMs(path.join(webDir, 'package.json')),
+    newestMtimeMs(path.join(webDir, 'next.config.mjs')),
+    newestMtimeMs(path.join(panelDir, 'package.json'))
+  );
+  return sourceMtime > standaloneMtime;
+}
+
 function ensureStandaloneWebAssets() {
   if (!fs.existsSync(standaloneServer)) return;
 
@@ -159,8 +188,8 @@ if (process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL
   console.error('[shardcloud] MONGODB_URI/MONGO_URI/DATABASE_URL not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
 }
 
-if (!fs.existsSync(standaloneServer) && process.env.BUILD_WEB_ON_STARTUP !== 'false') {
-  console.log('[shardcloud] Next standalone build not found. Building web for production...');
+if (shouldBuildWeb()) {
+  console.log('[shardcloud] Building Next web for production...');
   run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
     cwd: rootDir,
     env: {
