@@ -3088,7 +3088,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     ];
   }
 
-  const backRow = (tab === 'tab_stats' || tab === 'tab_perfil') ? null : buildPanelBackRow(tab);
+  const backRow = tab === 'tab_stats' ? null : buildPanelBackRow(tab);
   let components = [toolSelectRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
