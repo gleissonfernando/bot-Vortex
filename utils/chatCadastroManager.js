@@ -100,6 +100,14 @@ function getCadastroSession({ guildId, channelId, userId }) {
   return activeSessions.get(getSessionKey(guildId, channelId, userId)) || null;
 }
 
+async function sendCadastroFeedback(message, payload) {
+  if (!message?.channel?.send) return false;
+  return message.channel.send({
+    ...payload,
+    allowedMentions: payload.allowedMentions || { parse: [] },
+  }).then(() => true).catch(() => false);
+}
+
 async function executeCadastroCommand(interaction) {
   if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
     return safeReply(interaction, { content: '❌ Apenas Admin/Médio Vortex pode usar o modo cadastro.', ephemeral: true });
@@ -161,7 +169,7 @@ async function handleCadastroMessage(message) {
       channelId: message.channelId,
       userId: message.author.id,
     });
-    await message.reply({ content: '✅ Modo cadastro desligado.', allowedMentions: { repliedUser: false } }).catch(() => null);
+    await sendCadastroFeedback(message, { content: '✅ Modo cadastro desligado.' });
     return true;
   }
 
@@ -171,7 +179,8 @@ async function handleCadastroMessage(message) {
       channelId: message.channelId,
       userId: message.author.id,
     });
-    await message.reply({ content: '❌ Modo cadastro desligado: você não tem permissão.', allowedMentions: { repliedUser: false } }).catch(() => null);
+    await message.delete().catch(() => null);
+    await sendCadastroFeedback(message, { content: '❌ Modo cadastro desligado: você não tem permissão.' });
     return true;
   }
 
@@ -236,13 +245,12 @@ async function handleCadastroMessage(message) {
   }
 
   if (!successes.length) {
-    await message.reply({
+    await sendCadastroFeedback(message, {
       content: [
         '❌ Nenhum usuário foi cadastrado.',
         failures.slice(0, 10).join('\n'),
       ].filter(Boolean).join('\n'),
-      allowedMentions: { repliedUser: false },
-    }).catch(() => null);
+    });
     return true;
   }
 
@@ -259,7 +267,7 @@ async function handleCadastroMessage(message) {
     databaseMessage = `Banco de dados: falha ao sincronizar agora (${error.message}). Cadastro salvo localmente.`;
   }
 
-  return message.reply({
+  return sendCadastroFeedback(message, {
     content: [
       `✅ Cadastro concluído: **${successes.length}** usuário(s).`,
       'Os usuários já foram cadastrados no `/perfil`.',
@@ -269,8 +277,8 @@ async function handleCadastroMessage(message) {
       }).join('\n'),
       failures.length ? `\n⚠️ Falhas:\n${failures.slice(0, 10).join('\n')}` : null,
     ].filter(Boolean).join('\n'),
-    allowedMentions: { users: successes.map((item) => item.userId), repliedUser: false },
-  }).then(() => true).catch(() => true);
+    allowedMentions: { users: successes.map((item) => item.userId) },
+  }).then(() => true);
 }
 
 module.exports = {
