@@ -7,7 +7,7 @@ const { syncApprovedSetChannel } = require('./approvedSetChannels');
 const { resetToPendingHierarchy } = require('./vortexHierarchy');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { isSilentLogUser } = require('./notifications');
-const { flushMongoJsonStore, refreshMongoJsonKeys } = require('./mongoJsonStore');
+const { refreshMongoJsonKeys } = require('./mongoJsonStore');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -841,9 +841,6 @@ async function ensureAllProfileChannelAccess(client) {
 
 async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = false, syncChannels = false, refreshFromMongo = false } = {}) {
   if (refreshFromMongo) {
-    await flushMongoJsonStore().catch((error) => {
-      logger.error('Erro ao gravar cache JSON antes de atualizar perfis pelo Mongo:', error);
-    });
     await refreshMongoJsonKeys([
       'commands/perfis.json',
       'commands/approvedSetChannels.json',
