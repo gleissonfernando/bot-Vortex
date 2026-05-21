@@ -11,6 +11,7 @@ const {
     installMongoJsonStoreBridge,
     initializeMongoJsonStore,
     flushMongoJsonStore,
+    getMongoJsonStoreStatus,
 } = require('./utils/mongoJsonStore');
 installMongoJsonStoreBridge();
 const config = require('./config/config');
@@ -71,6 +72,7 @@ app.get('/health', (req, res) => {
         ok: true,
         service: 'vortex-bot',
         mongo: getDatabaseStatus(),
+        jsonStore: getMongoJsonStoreStatus(),
     });
 });
 
@@ -80,6 +82,7 @@ app.get(['/api/database/status', '/api/db/status'], (req, res) => {
         ok: status.connected,
         service: 'vortex-database',
         mongo: status,
+        jsonStore: getMongoJsonStoreStatus(),
     });
 });
 

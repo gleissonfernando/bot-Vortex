@@ -8,6 +8,7 @@ const { logger } = require('./logger');
 const ROOT_DIR = path.resolve(__dirname, '..');
 const cache = new Map();
 const pendingWrites = new Map();
+const skippedEmptyImports = new Set();
 
 let installed = false;
 let original = null;
@@ -199,6 +200,18 @@ function normalizeDataForMongo(key, data) {
   return data;
 }
 
+function isEmptyJsonData(data) {
+  if (Array.isArray(data)) return data.length === 0;
+  if (!data || typeof data !== 'object') return data === null || data === undefined || data === '';
+  return Object.keys(data).length === 0;
+}
+
+function shouldImportLocalJson(key, data) {
+  if (!isEmptyJsonData(data)) return true;
+  skippedEmptyImports.add(key);
+  return false;
+}
+
 function installMongoJsonStoreBridge() {
   if (installed) return;
   const fsOriginal = getOriginalFs();
@@ -317,6 +330,7 @@ async function importLocalJsonFilesToMongo() {
     try {
       const data = readJsonFromDisk(filePath);
       if (data === null) continue;
+      if (!shouldImportLocalJson(key, data)) continue;
       cacheJson(key, filePath, normalizeDataForMongo(key, data), false);
       await persistKey(key);
     } catch (error) {
@@ -367,8 +381,11 @@ async function hydrateMongoJsonStore() {
 async function initializeMongoJsonStore() {
   installMongoJsonStoreBridge();
   if (!isMongoConfigured() || !isMongoConnected()) return;
-  await importLocalJsonFilesToMongo();
   await hydrateMongoJsonStore();
+  await importLocalJsonFilesToMongo();
+  if (skippedEmptyImports.size > 0) {
+    logger.warn(`Mongo JSON Store ignorou ${skippedEmptyImports.size} JSON local vazio para evitar sobrescrever dados: ${[...skippedEmptyImports].join(', ')}`);
+  }
 }
 
 async function flushMongoJsonStore() {
@@ -378,9 +395,20 @@ async function flushMongoJsonStore() {
   await Promise.all(keys.map((key) => persistKey(key)));
 }
 
+function getMongoJsonStoreStatus() {
+  return {
+    installed,
+    cachedKeys: cache.size,
+    pendingWrites: pendingWrites.size,
+    keys: Array.from(cache.keys()).sort(),
+    skippedEmptyImports: Array.from(skippedEmptyImports).sort(),
+  };
+}
+
 module.exports = {
   installMongoJsonStoreBridge,
   initializeMongoJsonStore,
   flushMongoJsonStore,
+  getMongoJsonStoreStatus,
   toStoreKey,
 };

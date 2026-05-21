@@ -89,6 +89,7 @@ commands/pointTranscripts.json
 commands/pontoAdjustRequests.json
 commands/pontoPanels.json
 commands/pontos.json
+commands/queuedChannelLogs.json
 commands/scheduled_messages.json
 commands/stats.json
 commands/*cache*.json
