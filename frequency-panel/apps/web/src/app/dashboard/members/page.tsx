@@ -149,7 +149,7 @@ export default function MembersPage() {
 function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | 'lg' }) {
   const sizeClass = size === 'lg' ? 'h-14 w-14 text-lg' : 'h-9 w-9 text-sm';
   const initials = (member.display_name || member.username || 'VX').slice(0, 2).toUpperCase();
-  const avatarUrl = normalizeDiscordAvatar(member.avatar_url);
+  const avatarUrl = member.avatar_url ? `/api/members/${member.id}/avatar` : '';
 
   return (
     <div className={`${sizeClass} relative shrink-0 overflow-hidden rounded-lg bg-blue-500/15 font-semibold text-blue-200`}>
@@ -167,9 +167,4 @@ function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | '
       <span className="absolute inset-0 z-0 grid place-items-center">{initials}</span>
     </div>
   );
-}
-
-function normalizeDiscordAvatar(url?: string | null) {
-  if (!url) return '';
-  return url.replace(/\.webp(\?size=\d+)?$/i, '.png$1');
 }

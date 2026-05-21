@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { collection, serializeDoc } from '../db.js';
 import { getAbsences, getFrequency, getMemberAttendance } from '../services/attendance.js';
 import { getMember, listMembers } from '../services/members.js';
 import { memberReport, secondsToLabel, toCsv } from '../services/reports.js';
@@ -16,6 +17,25 @@ membersRouter.get('/', async (req, res) => {
   });
 
   return res.json({ ok: true, members });
+});
+
+membersRouter.get('/:id/avatar', async (req, res) => {
+  const members = await collection('discord_members');
+  const member = serializeDoc(await members.findOne({ id: req.params.id })) as any;
+  const avatarUrl = String(member?.avatar_url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
+  if (!avatarUrl) return res.status(404).end();
+
+  try {
+    const response = await fetch(avatarUrl);
+    if (!response.ok || !response.body) return res.status(404).end();
+
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return res.send(buffer);
+  } catch {
+    return res.status(404).end();
+  }
 });
 
 membersRouter.get('/:id', async (req, res) => {
