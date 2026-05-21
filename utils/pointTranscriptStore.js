@@ -7,7 +7,7 @@ const { buildDailyPointReportData, createDailyPointReportHtml } = require('./dai
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'pointTranscripts.json');
 const PUBLIC_TRANSCRIPTS_DIR = path.join(__dirname, '..', 'public', 'transcripts');
-const DEFAULT_PUBLIC_BASE_URL = 'https://vortex.shardweb.app';
+const DEFAULT_PUBLIC_BASE_URL = 'https://bot-vortex.shardcloud.app';
 
 function ensureStore() {
   if (!fs.existsSync(STORE_PATH)) {
@@ -51,6 +51,13 @@ function buildTranscriptUrl(transcriptId) {
 function buildDailyReportUrl(transcriptId) {
   const url = new URL(`/relatorio/${normalizeTranscriptId(transcriptId)}`, buildBaseUrl());
   return url.toString();
+}
+
+function getTranscriptPublicPath(record = {}) {
+  const transcriptId = normalizeTranscriptId(record.id);
+  if (!transcriptId) return '#';
+  if (record.kind === 'daily-report') return `/relatorio/${transcriptId}`;
+  return `/ponto/${transcriptId}`;
 }
 
 function normalizeTranscriptId(value) {
@@ -206,6 +213,71 @@ function getPointTranscriptRecord(id) {
   return readStore()[transcriptId] || buildFallbackTranscriptRecord(transcriptId);
 }
 
+function formatTranscriptListItem(record = {}) {
+  const accessLog = Array.isArray(record.accessLog) ? record.accessLog : [];
+  return {
+    id: normalizeTranscriptId(record.id),
+    kind: record.kind || 'point-report',
+    title: record.kind === 'daily-report'
+      ? `Relatorio diario - ${record.periodLabel || record.periodKey || 'N/A'}`
+      : `Folha de ponto - ${record.targetUserName || 'N/A'}`,
+    guildId: record.guildId || null,
+    guildName: record.guildName || 'Vortex',
+    targetUserId: record.targetUserId || null,
+    targetUserName: record.targetUserName || null,
+    generatedByTag: record.generatedByTag || 'Sistema',
+    generatedAt: record.generatedAt || null,
+    expiresAt: record.expiresAt || null,
+    periodType: record.periodType || null,
+    periodKey: record.periodKey || null,
+    periodLabel: record.periodLabel || null,
+    publicPath: getTranscriptPublicPath(record),
+    views: accessLog.length,
+    lastAccessAt: accessLog.length ? accessLog[accessLog.length - 1].at || null : null,
+    summary: record.summary || {},
+  };
+}
+
+function listPointTranscriptRecords({ search = '', kind = '', limit = 200 } = {}) {
+  const query = String(search || '').trim().toLowerCase();
+  const kindFilter = String(kind || '').trim().toLowerCase();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
+  const records = Object.values(readStore())
+    .filter((record) => record && typeof record === 'object')
+    .map(formatTranscriptListItem)
+    .filter((record) => record.id);
+
+  return records
+    .filter((record) => !kindFilter || String(record.kind || '').toLowerCase() === kindFilter)
+    .filter((record) => {
+      if (!query) return true;
+      return [
+        record.id,
+        record.kind,
+        record.title,
+        record.guildName,
+        record.targetUserName,
+        record.generatedByTag,
+        record.periodLabel,
+        record.periodKey,
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+    })
+    .sort((a, b) => new Date(b.generatedAt || 0).getTime() - new Date(a.generatedAt || 0).getTime())
+    .slice(0, safeLimit);
+}
+
+function getTranscriptStoreStats() {
+  const records = listPointTranscriptRecords({ limit: 500 });
+  const now = Date.now();
+  return {
+    total: records.length,
+    pointReports: records.filter((record) => record.kind === 'point-report').length,
+    dailyReports: records.filter((record) => record.kind === 'daily-report').length,
+    expired: records.filter((record) => record.expiresAt && new Date(record.expiresAt).getTime() < now).length,
+    views: records.reduce((sum, record) => sum + Number(record.views || 0), 0),
+  };
+}
+
 function buildFallbackTranscriptRecord(id) {
   const transcriptId = normalizeTranscriptId(id);
   if (!transcriptId) return null;
@@ -340,6 +412,8 @@ module.exports = {
   buildTranscriptUrl,
   buildDailyReportUrl,
   buildTranscriptFilePayload,
+  listPointTranscriptRecords,
+  getTranscriptStoreStats,
   normalizeTranscriptId,
   formatDate,
 };
