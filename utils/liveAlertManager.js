@@ -13,6 +13,14 @@ let monitorInterval = null;
 let twitchTokenCache = null;
 const lastGuildCheckAt = new Map();
 
+function databaseNameFromUri(uri) {
+  const withoutQuery = String(uri || '').split('?')[0] || '';
+  const withoutScheme = withoutQuery.replace(/^mongodb(?:\+srv)?:\/\//i, '');
+  const slashIndex = withoutScheme.indexOf('/');
+  const pathname = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1).trim() : '';
+  return decodeURIComponent(pathname) || 'vortex_frequency';
+}
+
 function ensureStore() {
   if (!fs.existsSync(STORE_PATH)) {
     fs.writeFileSync(STORE_PATH, `${JSON.stringify({ lives: [], settings: {} }, null, 2)}\n`, 'utf8');
@@ -39,7 +47,9 @@ function writeStore(data) {
 
 function mongoCollection(name) {
   if (!isMongoConnected() || !mongoose.connection.db) return null;
-  return mongoose.connection.db.collection(name);
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL || '';
+  const dbName = process.env.MONGODB_DB || databaseNameFromUri(uri);
+  return mongoose.connection.client.db(dbName).collection(name);
 }
 
 function detectPlatform(url) {
