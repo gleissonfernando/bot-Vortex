@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node shardcloud-start.js",
     "start:bot": "node index.js",
-    "postinstall": "npm --prefix frequency-panel install --include=dev",
+    "postinstall": "npm --prefix frequency-panel install --include=dev && npm --prefix frequency-panel run build:api && npm --prefix frequency-panel run build:web",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
