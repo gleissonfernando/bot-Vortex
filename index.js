@@ -40,7 +40,7 @@ const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 const DISCORD_HANDSHAKE_TIMEOUT_MS = Number(process.env.DISCORD_HANDSHAKE_TIMEOUT_MS || 120_000);
 const REGISTER_COMMANDS_ON_STARTUP = process.env.REGISTER_COMMANDS_ON_STARTUP !== 'false';
-const FIVEM_STARTUP_SCAN_ENABLED = process.env.FIVEM_STARTUP_SCAN_ENABLED === 'true';
+const FIVEM_STARTUP_SCAN_ENABLED = process.env.FIVEM_STARTUP_SCAN_ENABLED !== 'false';
 const ENABLE_PRESENCE_FEATURES = process.env.ENABLE_PRESENCE_FEATURES !== 'false';
 
 function readCacheLimit(name, fallback) {

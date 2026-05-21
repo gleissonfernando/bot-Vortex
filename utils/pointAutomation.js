@@ -30,7 +30,7 @@ const CHECK_INTERVAL_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.POINT_AUTOMATION_INTERVAL_MS || DEFAULT_CHECK_INTERVAL_MS) || DEFAULT_CHECK_INTERVAL_MS
 );
-const POINT_AUTOMATION_FETCH_PRESENCES = process.env.POINT_AUTOMATION_FETCH_PRESENCES === 'true';
+const POINT_AUTOMATION_FETCH_PRESENCES = process.env.POINT_AUTOMATION_FETCH_PRESENCES !== 'false';
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
 let interval = null;
@@ -545,6 +545,8 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
 
 async function runPointAutomationCheck(client, { force = false } = {}) {
   const state = readJSON(STATE_PATH, {});
+  const { scanCurrentFiveMActivities } = require('./fivemActivityAlertManager');
+  await scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao reconciliar atividades FiveM no ciclo de ponto:', error));
   for (const guild of client.guilds.cache.values()) {
     if (!isPrimaryGuild(guild.id)) continue;
     await checkOpenPointConfirmations(client, guild, state, force).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
