@@ -256,12 +256,14 @@ function buildPeriodOptions(sessions) {
       const week = weekMap.get(weekKey) || {
         key: weekKey,
         monthKey: monthKey || getWeekMonthKey(weekKey),
+        monthKeys: [],
         total: 0,
         totalMs: 0,
       };
       week.total += 1;
       week.totalMs += durationMs;
       if (!week.monthKey && monthKey) week.monthKey = monthKey;
+      if (monthKey && !week.monthKeys.includes(monthKey)) week.monthKeys.push(monthKey);
       weekMap.set(weekKey, week);
     }
   }
@@ -301,6 +303,7 @@ function ensureSelectedWeekOption(weeks, weekKey) {
   return [{
     key: weekKey,
     monthKey: getWeekMonthKey(weekKey),
+    monthKeys: [getWeekMonthKey(weekKey)].filter(Boolean),
     label: formatWeekLabel(weekKey),
     total: 0,
     totalMs: 0,
@@ -542,7 +545,7 @@ function buildPointSiteHtml({ userId, apiPath }) {
       return (filters.availableMonths || []).map((item) => '<option value="' + esc(item.key) + '"' + (item.key === filters.monthKey ? ' selected' : '') + '>' + esc(item.label) + ' - ' + esc(item.total) + ' ponto(s)</option>').join('');
     }
     function renderWeekOptions(filters) {
-      const weeks = (filters.availableWeeks || []).filter((item) => !filters.monthKey || item.monthKey === filters.monthKey || item.key === filters.weekKey);
+      const weeks = (filters.availableWeeks || []).filter((item) => !filters.monthKey || item.monthKey === filters.monthKey || (item.monthKeys || []).includes(filters.monthKey) || item.key === filters.weekKey);
       return '<option value=""' + (!filters.weekKey ? ' selected' : '') + '>Mes inteiro</option>' + weeks.map((item) => '<option value="' + esc(item.key) + '"' + (item.key === filters.weekKey ? ' selected' : '') + '>' + esc(item.label) + ' - ' + esc(item.total) + ' ponto(s)</option>').join('');
     }
     function renderRows(rows) {
