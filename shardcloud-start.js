@@ -7,6 +7,7 @@ const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 const apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
 const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
+const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
 const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
@@ -55,29 +56,11 @@ process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 
-if (!fs.existsSync(path.join(panelDir, 'apps', 'api', 'dist', 'index.js'))) {
-  console.log('[shardcloud] API build not found; building now.');
-  run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api']);
-}
-
-if (!fs.existsSync(path.join(webDir, '.next'))) {
-  console.log('[shardcloud] Web build not found; building now.');
-  run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
-    env: {
-      INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-    }
-  });
-}
-
-if (!fs.existsSync(standaloneServer)) {
-  console.error(`[shardcloud] Standalone server not found: ${standaloneServer}`);
-  console.error('[shardcloud] Run npm --prefix frequency-panel run build:web before starting.');
-  process.exit(1);
-}
-
 if (process.env.MONGODB_URI || process.env.MONGO_URI) {
-  start('frequency-api', 'npm', ['--prefix', 'frequency-panel', 'run', 'start:api'], {
+  const apiArgs = fs.existsSync(apiDist)
+    ? ['--prefix', 'frequency-panel', 'run', 'start:api']
+    : ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts'];
+  start('frequency-api', 'npm', apiArgs, {
     env: {
       API_PORT: apiPort,
       API_ORIGIN: process.env.API_ORIGIN
@@ -88,15 +71,23 @@ if (process.env.MONGODB_URI || process.env.MONGO_URI) {
   console.error('[shardcloud] MONGODB_URI not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
 }
 
-const web = start('frequency-web', 'node', [standaloneServer], {
-  cwd: webDir,
-  env: {
-    HOSTNAME: '0.0.0.0',
-    PORT: webPort,
-    INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-  }
-});
+const web = fs.existsSync(standaloneServer)
+  ? start('frequency-web', 'node', [standaloneServer], {
+      cwd: webDir,
+      env: {
+        HOSTNAME: '0.0.0.0',
+        PORT: webPort,
+        INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+        NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+      }
+    })
+  : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webPort, '-H', '0.0.0.0'], {
+      cwd: rootDir,
+      env: {
+        INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+        NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+      }
+    });
 
 process.on('SIGINT', () => {
   web.kill('SIGINT');
