@@ -1,5 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { registerManualProfile } = require('./profileManager');
+const { getDatabaseStatus } = require('./database');
+const { flushMongoJsonStore } = require('./mongoJsonStore');
 const { allowTextChannelAccess, isTextChannel } = require('./textChannelAccess');
 const { hasVortexLevel } = require('./permissions');
 const { safeReply } = require('./safeReply');
@@ -72,6 +74,8 @@ function buildCadastroHelpText(enabled = true) {
     'Exemplo:',
     '`@Joao #canal-do-joao`',
     '`@Maria | Maria Vortex | #canal-da-maria | 18`',
+    '',
+    'O cadastro salva no banco de dados e libera o usuário no `/perfil`.',
     '',
     'Para desligar, envie `...`.',
   ].join('\n');
@@ -242,9 +246,24 @@ async function handleCadastroMessage(message) {
     return true;
   }
 
+  let databaseMessage = 'Banco de dados: sincronizado.';
+  try {
+    await flushMongoJsonStore();
+    const status = getDatabaseStatus();
+    if (!status.configured) {
+      databaseMessage = 'Banco de dados: MongoDB não configurado; cadastro salvo no backup local.';
+    } else if (!status.connected) {
+      databaseMessage = 'Banco de dados: MongoDB desconectado; cadastro salvo localmente e será sincronizado quando conectar.';
+    }
+  } catch (error) {
+    databaseMessage = `Banco de dados: falha ao sincronizar agora (${error.message}). Cadastro salvo localmente.`;
+  }
+
   return message.reply({
     content: [
       `✅ Cadastro concluído: **${successes.length}** usuário(s).`,
+      'Os usuários já foram cadastrados no `/perfil`.',
+      databaseMessage,
       successes.slice(0, 10).map((item, index) => {
         return `${index + 1}. <@${item.userId}> - ${item.profile.nomeGame || item.profile.displayName} - ${item.profile.callChannelId ? `<#${item.profile.callChannelId}>` : 'N/A'}`;
       }).join('\n'),
