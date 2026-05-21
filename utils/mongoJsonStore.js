@@ -222,19 +222,68 @@ function countNestedJsonRecords(data) {
   return count;
 }
 
+function parseDateTime(value) {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getRecordTimestamp(record) {
+  if (!record || typeof record !== 'object') return 0;
+  return Math.max(
+    parseDateTime(record.updatedAt),
+    parseDateTime(record.lastProfileUpdateAt),
+    parseDateTime(record.approvedAt),
+    parseDateTime(record.createdAt),
+  );
+}
+
+function mergeProfileJsonData(mongoData, diskData) {
+  const merged = clone(mongoData && typeof mongoData === 'object' && !Array.isArray(mongoData) ? mongoData : {});
+  const disk = diskData && typeof diskData === 'object' && !Array.isArray(diskData) ? diskData : {};
+  let changed = false;
+
+  for (const [guildId, diskGuildRecords] of Object.entries(disk)) {
+    if (!diskGuildRecords || typeof diskGuildRecords !== 'object' || Array.isArray(diskGuildRecords)) continue;
+    if (!merged[guildId] || typeof merged[guildId] !== 'object' || Array.isArray(merged[guildId])) {
+      merged[guildId] = {};
+      changed = true;
+    }
+
+    for (const [userId, diskRecord] of Object.entries(diskGuildRecords)) {
+      if (!diskRecord || typeof diskRecord !== 'object' || Array.isArray(diskRecord)) continue;
+      const mongoRecord = merged[guildId][userId];
+
+      if (!mongoRecord || typeof mongoRecord !== 'object' || Array.isArray(mongoRecord)) {
+        merged[guildId][userId] = diskRecord;
+        changed = true;
+        continue;
+      }
+
+      if (getRecordTimestamp(diskRecord) > getRecordTimestamp(mongoRecord)) {
+        merged[guildId][userId] = { ...mongoRecord, ...diskRecord };
+        changed = true;
+      }
+    }
+  }
+
+  return { data: merged, changed };
+}
+
 function chooseJsonDataForHydration(key, mongoData, diskData) {
   if (!PROFILE_DATA_KEYS.has(key) || diskData === null) {
     return { data: mongoData ?? {}, source: 'mongo' };
   }
 
+  const merged = mergeProfileJsonData(mongoData, diskData);
   const mongoCount = countNestedJsonRecords(mongoData);
   const diskCount = countNestedJsonRecords(diskData);
-  if (diskCount > mongoCount) {
-    logger.warn(`Mongo JSON Store preservou ${key} local com ${diskCount} registro(s); Mongo tinha ${mongoCount}.`);
-    return { data: diskData, source: 'disk' };
+  const mergedCount = countNestedJsonRecords(merged.data);
+  if (merged.changed || mergedCount !== mongoCount) {
+    logger.warn(`Mongo JSON Store uniu ${key}: Mongo ${mongoCount}, local ${diskCount}, final ${mergedCount}.`);
+    return { data: merged.data, source: 'merged' };
   }
 
-  return { data: mongoData ?? {}, source: 'mongo' };
+  return { data: merged.data, source: 'mongo' };
 }
 
 function shouldImportLocalJson(key, data) {
@@ -403,7 +452,7 @@ async function hydrateMongoJsonStore() {
 
     try {
       writeJsonToDisk(sourcePath, selected.data);
-      if (selected.source === 'disk') await persistKey(key);
+      if (selected.source === 'merged') await persistKey(key);
     } catch (error) {
       logger.warn(`Nao foi possivel atualizar backup local de ${key}: ${error.message}`);
     }
@@ -445,7 +494,7 @@ async function refreshMongoJsonKeys(keys = []) {
 
     try {
       writeJsonToDisk(sourcePath, selected.data);
-      if (selected.source === 'disk') await persistKey(key);
+      if (selected.source === 'merged') await persistKey(key);
       refreshed.push(key);
     } catch (error) {
       logDatabaseError({
