@@ -7,7 +7,7 @@ const { buildDailyPointReportData, createDailyPointReportHtml } = require('./dai
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'pointTranscripts.json');
 const PUBLIC_TRANSCRIPTS_DIR = path.join(__dirname, '..', 'public', 'transcripts');
-const DEFAULT_PUBLIC_BASE_URL = 'https://bot-vortex.shardcloud.app';
+const DEFAULT_PUBLIC_BASE_URL = 'https://bot-vortex.shardweb.app';
 
 function ensureStore() {
   if (!fs.existsSync(STORE_PATH)) {
