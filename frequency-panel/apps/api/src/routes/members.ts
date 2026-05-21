@@ -7,19 +7,7 @@ import { memberReport, secondsToLabel, toCsv } from '../services/reports.js';
 
 export const membersRouter = Router();
 
-membersRouter.get('/', async (req, res) => {
-  const members = await listMembers({
-    guildId: String(req.query.guildId || ''),
-    search: String(req.query.search || ''),
-    role: String(req.query.role || ''),
-    status: String(req.query.status || ''),
-    limit: Number(req.query.limit || 80)
-  });
-
-  return res.json({ ok: true, members });
-});
-
-membersRouter.get('/:id/avatar', async (req, res) => {
+export async function memberAvatarHandler(req: any, res: any) {
   const members = await collection('discord_members');
   const member = serializeDoc(await members.findOne({ id: req.params.id })) as any;
   const avatarUrl = String(member?.avatar_url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
@@ -36,6 +24,22 @@ membersRouter.get('/:id/avatar', async (req, res) => {
   } catch {
     return res.status(404).end();
   }
+}
+
+membersRouter.get('/', async (req, res) => {
+  const members = await listMembers({
+    guildId: String(req.query.guildId || ''),
+    search: String(req.query.search || ''),
+    role: String(req.query.role || ''),
+    status: String(req.query.status || ''),
+    limit: Number(req.query.limit || 80)
+  });
+
+  return res.json({ ok: true, members });
+});
+
+membersRouter.get('/:id/avatar', async (req, res) => {
+  return memberAvatarHandler(req, res);
 });
 
 membersRouter.get('/:id', async (req, res) => {
