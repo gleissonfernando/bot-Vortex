@@ -70,6 +70,48 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="lg:pl-72">
+        <header className="sticky top-0 z-30 border-b border-white/10 bg-surface-950/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
+              <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
+                <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold">Vortex Frequency</h1>
+                <p className="text-xs text-slate-400">Gestao de frequencia</p>
+              </div>
+            </Link>
+            <button
+              onClick={logout}
+              title="Sair"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+
+          <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {nav.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+              return (
+                <Link
+                  key={`mobile-${item.href}-${item.label}`}
+                  href={item.href}
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                    active
+                      ? 'border-blue-300/30 bg-blue-500/15 text-blue-100'
+                      : 'border-white/10 bg-white/[0.04] text-slate-300'
+                  }`}
+                >
+                  <Icon size={15} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </header>
+
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">{children}</div>
       </main>
     </div>
