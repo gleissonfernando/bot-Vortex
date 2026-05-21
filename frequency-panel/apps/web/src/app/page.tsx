@@ -1,6 +1,4 @@
 'use client';
-
-import { ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { API_URL, setToken } from '@/lib/api';
@@ -49,8 +47,8 @@ export default function LoginPage() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.025)_1px,transparent_1px)] bg-[size:36px_36px] opacity-50" />
       <section className="panel relative w-full max-w-md rounded-lg p-6">
         <div className="mb-8 flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-blue-900 text-white">
-            <ShieldCheck size={22} />
+          <div className="h-11 w-11 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
+            <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-white">Vortex Frequency</h1>

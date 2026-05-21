@@ -112,9 +112,7 @@ export default function MembersPage() {
                 <tr key={member.id} className="border-t border-white/10 text-sm text-slate-300 hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-lg bg-blue-500/15 text-sm font-semibold text-blue-200">
-                        {member.display_name.slice(0, 2).toUpperCase()}
-                      </div>
+                      <MemberAvatar member={member} size="sm" />
                       <div>
                         <div className="font-medium text-white">{member.display_name}</div>
                         <div className="text-xs text-slate-500">{member.username}</div>
@@ -145,5 +143,28 @@ export default function MembersPage() {
         </div>
       </section>
     </AppShell>
+  );
+}
+
+function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | 'lg' }) {
+  const sizeClass = size === 'lg' ? 'h-14 w-14 text-lg' : 'h-9 w-9 text-sm';
+  const initials = (member.display_name || member.username || 'VX').slice(0, 2).toUpperCase();
+
+  return (
+    <div className={`${sizeClass} relative shrink-0 overflow-hidden rounded-lg bg-blue-500/15 font-semibold text-blue-200`}>
+      {member.avatar_url ? (
+        <img
+          src={member.avatar_url}
+          alt={member.display_name}
+          className="h-full w-full object-cover"
+          referrerPolicy="no-referrer"
+          style={{ position: 'relative', zIndex: 1 }}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : null}
+      <span className="absolute inset-0 grid place-items-center">{initials}</span>
+    </div>
   );
 }

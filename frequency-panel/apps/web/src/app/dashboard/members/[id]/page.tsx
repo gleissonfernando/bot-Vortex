@@ -140,9 +140,7 @@ export default function MemberProfilePage() {
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="panel rounded-lg p-5">
             <div className="flex items-center gap-3">
-              <div className="grid h-14 w-14 place-items-center rounded-lg bg-blue-500/15 text-lg font-semibold text-blue-200">
-                {member?.display_name?.slice(0, 2).toUpperCase() || 'VX'}
-              </div>
+              <MemberAvatar member={member} />
               <div>
                 <h2 className="font-semibold text-white">{member?.display_name}</h2>
                 <p className="text-sm text-slate-400">{member?.username}</p>
@@ -185,6 +183,28 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
     <div className="flex justify-between gap-4 border-b border-white/10 pb-3">
       <dt className="text-slate-400">{label}</dt>
       <dd className={`text-right text-white ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
+function MemberAvatar({ member }: { member?: Member }) {
+  const initials = (member?.display_name || member?.username || 'VX').slice(0, 2).toUpperCase();
+
+  return (
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-blue-500/15 text-lg font-semibold text-blue-200">
+      {member?.avatar_url ? (
+        <img
+          src={member.avatar_url}
+          alt={member.display_name}
+          className="h-full w-full object-cover"
+          referrerPolicy="no-referrer"
+          style={{ position: 'relative', zIndex: 1 }}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : null}
+      <span className="absolute inset-0 grid place-items-center">{initials}</span>
     </div>
   );
 }

@@ -24,8 +24,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-surface-950 text-slate-100">
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-blue-400/10 bg-surface-900/95 p-5 lg:block">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-blue-900 font-bold">
-            V
+          <div className="h-10 w-10 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
+            <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
           <div>
             <h1 className="text-base font-semibold">Vortex Frequency</h1>
