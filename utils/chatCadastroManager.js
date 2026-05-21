@@ -22,26 +22,44 @@ function parseCadastroLine(content) {
     .map((part) => part.trim())
     .filter(Boolean);
 
-  if (parts.length < 3) {
+  if (parts.length < 2) {
     return {
       ok: false,
-      message: 'Use: `@usuario | Nome do jogo | #canal | nivel opcional | link opcional`',
+      message: 'Use: `@usuario | #canal` ou `@usuario | Nome do jogo | #canal | nivel opcional | link opcional`',
     };
   }
 
   const userId = parseSnowflake(parts[0]);
-  const callChannelId = parseSnowflake(parts[2]);
+  const shortFormat = parts.length === 2;
+  const callChannelId = parseSnowflake(shortFormat ? parts[1] : parts[2]);
   if (!userId) return { ok: false, message: 'Não encontrei o usuário. Mencione ou cole o ID do usuário.' };
   if (!callChannelId) return { ok: false, message: 'Não encontrei o canal. Mencione ou cole o ID do canal.' };
 
   return {
     ok: true,
     userId,
-    name: parts[1],
+    name: shortFormat ? null : parts[1],
     callChannelId,
-    nivelGame: parts[3] || null,
-    photoLink: parts[4] || null,
+    nivelGame: shortFormat ? null : parts[3] || null,
+    photoLink: shortFormat ? null : parts[4] || null,
   };
+}
+
+function buildCadastroHelpText(enabled = true) {
+  return [
+    enabled ? '✅ Modo cadastro ativado neste canal.' : 'ℹ️ Modo cadastro desativado.',
+    '',
+    'Envie quantas linhas quiser. Cada usuário deve estar na mesma linha do próprio canal:',
+    '',
+    '`@usuario | #canal-do-usuario`',
+    '`@usuario | Nome em game | #canal-do-usuario | nível | link`',
+    '',
+    'Exemplo:',
+    '`@Joao | #canal-do-joao`',
+    '`@Maria | Maria Vortex | #canal-da-maria | 18`',
+    '',
+    'Para desligar, envie `...`.',
+  ].join('\n');
 }
 
 function startCadastroMode({ guildId, channelId, userId }) {
@@ -76,7 +94,7 @@ async function executeCadastroCommand(interaction) {
       userId: interaction.user.id,
     });
     return safeReply(interaction, {
-      content: stopped ? '✅ Modo cadastro desligado neste canal.' : 'ℹ️ O modo cadastro já estava desligado para você neste canal.',
+      content: stopped ? buildCadastroHelpText(false) : 'ℹ️ O modo cadastro já estava desligado para você neste canal.',
       ephemeral: true,
     });
   }
@@ -88,7 +106,7 @@ async function executeCadastroCommand(interaction) {
       userId: interaction.user.id,
     });
     return safeReply(interaction, {
-      content: session ? '✅ Modo cadastro está ligado para você neste canal.' : 'ℹ️ Modo cadastro está desligado para você neste canal.',
+      content: session ? buildCadastroHelpText(true) : buildCadastroHelpText(false),
       ephemeral: true,
     });
   }
@@ -101,14 +119,8 @@ async function executeCadastroCommand(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor('#00D9FF')
-    .setTitle('Modo cadastro ligado')
-    .setDescription([
-      'Envie uma linha por usuário neste canal.',
-      '',
-      '`@usuario | Nome do jogo | #canal | nivel opcional | link opcional`',
-      '',
-      'Para desligar, envie `...`.',
-    ].join('\n'));
+    .setTitle('Modo cadastro ativado')
+    .setDescription(buildCadastroHelpText(true));
 
   return safeReply(interaction, { embeds: [embed], ephemeral: true });
 }
@@ -143,48 +155,85 @@ async function handleCadastroMessage(message) {
     return true;
   }
 
-  const parsed = parseCadastroLine(content);
-  if (!parsed.ok) {
-    await message.reply({ content: `❌ ${parsed.message}`, allowedMentions: { repliedUser: false } }).catch(() => null);
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const successes = [];
+  const failures = [];
+
+  for (const line of lines) {
+    const parsed = parseCadastroLine(line);
+    if (!parsed.ok) {
+      failures.push(`${line} - ${parsed.message}`);
+      continue;
+    }
+
+    const target = await message.client.users.fetch(parsed.userId).catch(() => null);
+    if (!target) {
+      failures.push(`${line} - usuário não encontrado`);
+      continue;
+    }
+    const member = await message.guild.members.fetch(parsed.userId).catch(() => null);
+
+    const channel = await message.guild.channels.fetch(parsed.callChannelId).catch(() => null);
+    if (!isTextChannel(channel)) {
+      failures.push(`<@${parsed.userId}> - canal inválido`);
+      continue;
+    }
+
+    await allowTextChannelAccess(channel, message.guild).catch(() => null);
+    const result = await registerManualProfile(message.guild, target, {
+      name: parsed.name || member?.displayName || target.username,
+      callChannelId: parsed.callChannelId,
+      nivelGame: parsed.nivelGame,
+      photoLink: parsed.photoLink,
+      registeredBy: message.author.id,
+    });
+
+    if (!result.ok) {
+      failures.push(`<@${parsed.userId}> - ${result.message}`);
+      continue;
+    }
+
+    successes.push({ userId: parsed.userId, profile: result.profile });
+
+    await target.send({
+      content: [
+        '✅ Você foi cadastrado no sistema Vortex.',
+        `Servidor: ${message.guild.name}`,
+        `Cadastrado por: <@${message.author.id}>`,
+        `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
+        result.profile.callChannelId ? `Canal de texto vinculado: <#${result.profile.callChannelId}>` : null,
+        '',
+        'Agora você pode usar os recursos liberados para usuários cadastrados.',
+      ].filter(Boolean).join('\n'),
+      allowedMentions: { users: [message.author.id] },
+    }).catch(() => null);
+  }
+
+  if (!successes.length) {
+    await message.reply({
+      content: [
+        '❌ Nenhum usuário foi cadastrado.',
+        failures.slice(0, 10).join('\n'),
+      ].filter(Boolean).join('\n'),
+      allowedMentions: { repliedUser: false },
+    }).catch(() => null);
     return true;
   }
 
-  const target = await message.client.users.fetch(parsed.userId).catch(() => null);
-  if (!target) {
-    await message.reply({ content: '❌ Usuário não encontrado pelo ID informado.', allowedMentions: { repliedUser: false } }).catch(() => null);
-    return true;
-  }
-
-  const channel = await message.guild.channels.fetch(parsed.callChannelId).catch(() => null);
-  if (!isTextChannel(channel)) {
-    await message.reply({ content: '❌ O canal informado precisa ser um canal de texto válido.', allowedMentions: { repliedUser: false } }).catch(() => null);
-    return true;
-  }
-
-  await allowTextChannelAccess(channel, message.guild).catch(() => null);
-  const result = await registerManualProfile(message.guild, target, {
-    name: parsed.name,
-    callChannelId: parsed.callChannelId,
-    nivelGame: parsed.nivelGame,
-    photoLink: parsed.photoLink,
-    registeredBy: message.author.id,
-  });
-
-  if (!result.ok) {
-    await message.reply({ content: `❌ ${result.message}`, allowedMentions: { repliedUser: false } }).catch(() => null);
-    return true;
-  }
-
-  await message.reply({
+  return message.reply({
     content: [
-      `✅ Perfil cadastrado: <@${parsed.userId}>`,
-      `Nome: **${result.profile.nomeGame || result.profile.displayName}**`,
-      `Canal: <#${result.profile.callChannelId}>`,
-      result.profile.nivelGame ? `Nível: **${result.profile.nivelGame}**` : null,
+      `✅ Cadastro concluído: **${successes.length}** usuário(s).`,
+      successes.slice(0, 10).map((item, index) => {
+        return `${index + 1}. <@${item.userId}> - ${item.profile.nomeGame || item.profile.displayName} - ${item.profile.callChannelId ? `<#${item.profile.callChannelId}>` : 'N/A'}`;
+      }).join('\n'),
+      failures.length ? `\n⚠️ Falhas:\n${failures.slice(0, 10).join('\n')}` : null,
     ].filter(Boolean).join('\n'),
-    allowedMentions: { users: [parsed.userId], repliedUser: false },
-  }).catch(() => null);
-  return true;
+    allowedMentions: { users: successes.map((item) => item.userId), repliedUser: false },
+  }).then(() => true).catch(() => true);
 }
 
 module.exports = {
