@@ -164,7 +164,6 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
     channelId: channel.id,
     userId: member.id,
     nomeGame: profile.nomeGame,
-    idGame: profile.idGame,
     nivelGame: profile.nivelGame,
     createdAt: new Date().toISOString(),
     createdBy: staffUserId ? String(staffUserId) : null,
@@ -224,15 +223,16 @@ async function syncApprovedSetChannel(guild, profile = {}, options = {}) {
   if (!data[guild.id][userId]) {
     data[guild.id][userId] = { channelId };
   }
-  data[guild.id][userId] = {
+  const nextRecord = {
     ...data[guild.id][userId],
     channelId,
     userId,
     nomeGame: profile.nomeGame || data[guild.id][userId].nomeGame || payload.displayName,
-    idGame: profile.idGame || data[guild.id][userId].idGame || null,
     nivelGame: payload.displayLevel || data[guild.id][userId].nivelGame || null,
     updatedAt: new Date().toISOString(),
   };
+  delete nextRecord.idGame;
+  data[guild.id][userId] = nextRecord;
   writeChannels(data);
 
   return { ok: true, channel, name: payload.channelName, topic: payload.topic };

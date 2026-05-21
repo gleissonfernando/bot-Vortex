@@ -246,6 +246,11 @@ function normalizeProfileLevel(input) {
   return value;
 }
 
+function formatProfileDisplayName(profile = {}, fallback = 'N/A') {
+  const value = String(profile.nomeGame || profile.displayName || fallback || '').trim();
+  return value.replace(/\s*\|\s*\d{1,25}\s*$/g, '').trim() || value || fallback;
+}
+
 function getSaoPauloDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('pt-BR', {
     timeZone: PROFILE_TIME_ZONE,
@@ -483,7 +488,7 @@ async function registerManualProfile(guild, user, {
     updatedBy: registeredBy,
     changes: [
       `Perfil cadastrado/atualizado por: ${registeredBy ? `<@${registeredBy}>` : 'sistema'}`,
-      `Nome salvo: ${profile.nomeGame || profile.displayName || 'N/A'}`,
+      `Nome salvo: ${formatProfileDisplayName(profile)}`,
       `Nível em game: ${profile.nivelGame || 'N/A'}`,
       `Canal de texto vinculado: ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'}`,
       profileUrl ? `Mídia salva: ${profileUrl}` : null,
@@ -529,19 +534,17 @@ function buildProfileEmbed({ guild, user, member, profile }) {
   const canPreviewImage = mediaType === 'image';
   const photoLinks = Array.isArray(profile?.photoLinks) ? profile.photoLinks : [];
   const latestPhotos = photoLinks.slice(-5).reverse().map((item, index) => `${index + 1}. ${item.url}`).join('\n') || 'N/A';
+  const displayName = formatProfileDisplayName(profile, member?.displayName || user.username);
 
   const embed = new EmbedBuilder()
     .setColor('#7000FF')
     .setAuthor({ name: 'VORTEX | Perfil', iconURL: guild.client.user?.displayAvatarURL?.() || undefined })
-    .setTitle(`Perfil de ${member?.displayName || user.username}`)
+    .setTitle(`Perfil de ${displayName}`)
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
     .addFields(
       { name: 'Usuário', value: `<@${user.id}>`, inline: true },
-      { name: 'Discord ID', value: `\`${user.id}\``, inline: true },
       { name: 'Status', value: profile ? (profile.registeredManually ? 'Cadastrado manualmente' : 'Aprovado no /set') : 'Sem perfil aprovado salvo', inline: true },
-      { name: 'Nome em game', value: profile?.nomeGame || 'N/A', inline: true },
-      { name: 'ID em game', value: profile?.idGame || 'N/A', inline: true },
-      { name: 'Número', value: profile?.numeroGame || 'N/A', inline: true },
+      { name: 'Nome em game', value: displayName, inline: true },
       { name: 'Nível em game', value: profile?.nivelGame || 'N/A', inline: true },
       { name: 'Canal de texto', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
       { name: 'Tipo', value: profile?.tipo || 'N/A', inline: true },
