@@ -136,12 +136,24 @@ if (process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL
   console.error('[shardcloud] MONGODB_URI/MONGO_URI/DATABASE_URL not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
 }
 
+if (!fs.existsSync(standaloneServer) && process.env.BUILD_WEB_ON_STARTUP !== 'false') {
+  console.log('[shardcloud] Next standalone build not found. Building web for production...');
+  run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
+    cwd: rootDir,
+    env: {
+      INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+    }
+  });
+}
+
 const web = fs.existsSync(standaloneServer)
   ? start('frequency-web', 'node', [standaloneServer], {
       cwd: webDir,
       env: {
         HOSTNAME: '0.0.0.0',
         PORT: webInternalPort,
+        NODE_ENV: 'production',
         INTERNAL_API_URL: process.env.INTERNAL_API_URL,
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
       }
