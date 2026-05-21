@@ -23,8 +23,13 @@ const TARGET_SERVER_ALIASES = [
 const POINT_AUTO_EXCLUDE_ROLE_ID = '1493989209168543846';
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
 const FIVEM_STARTUP_FETCH_PRESENCES = process.env.FIVEM_STARTUP_FETCH_PRESENCES !== 'false';
+const AUTO_POINT_CONFIRM_DELAY_MS = Math.max(
+  1000,
+  Number(process.env.FIVEM_AUTO_POINT_CONFIRM_DELAY_MS || 40 * 1000) || 40 * 1000
+);
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
+const pendingAutoPointChecks = new Map();
 
 async function syncPointOnlineChannel(client, guildId, userId, allowed) {
   const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
@@ -168,6 +173,77 @@ function buildAutoPointProfile(user, member, activity, cityName) {
   };
 }
 
+function cancelPendingAutoPointCheck(guildId, userId) {
+  const key = `${guildId}:${userId}`;
+  const pending = pendingAutoPointChecks.get(key);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingAutoPointChecks.delete(key);
+}
+
+function scheduleAutoPointCheck({ guild, user, member }) {
+  const key = `${guild.id}:${user.id}`;
+  if (pendingAutoPointChecks.has(key)) return;
+
+  const timeout = setTimeout(async () => {
+    try {
+      pendingAutoPointChecks.delete(key);
+
+      const latestPresence = guild.presences?.cache?.get(user.id) || null;
+      const latestActivity = getTargetFiveMActivity(latestPresence);
+      const point = await getUserPoint(guild.id, user.id).catch(() => null);
+
+      if (!latestActivity) {
+        await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
+        if (point?.activePointStartedAt && point.activePointSource === AUTO_POINT_SOURCE) {
+          await closePoint(guild.id, user.id, {
+            enforceMinimumDuration: false,
+            pointSource: AUTO_POINT_SOURCE,
+            pointReason: `Nao detectado no FiveM apos ${Math.round(AUTO_POINT_CONFIRM_DELAY_MS / 1000)}s: ${TARGET_SERVER_NAME}`,
+            serverName: point.activePointServerName || TARGET_SERVER_NAME,
+          }).catch(() => null);
+        }
+        return;
+      }
+
+      if (point?.activePointStartedAt) {
+        await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
+        return;
+      }
+
+      const resolvedMember = latestPresence?.member || member || await guild.members.fetch(user.id).catch(() => null);
+      if (!await hasPointRole(guild, resolvedMember, user.id)) return;
+
+      const cityName = extractCityName(latestActivity);
+      const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, resolvedMember, latestActivity, cityName));
+      if (result.action !== 'opened') return;
+      await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
+
+      const summary = await createPointActionTranscriptSummary({
+        guild,
+        target: user,
+        generatedBy: guild.client.user,
+        action: 'opened',
+        result,
+      });
+      await user.send({
+        content: [
+          `Detectei você na cidade **${cityName || TARGET_SERVER_NAME}** por ${Math.round(AUTO_POINT_CONFIRM_DELAY_MS / 1000)} segundos e abri seu ponto automaticamente.`,
+          '',
+          summary.content,
+          '',
+          'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
+        ].join('\n'),
+        allowedMentions: { users: [] },
+      }).catch(() => null);
+    } catch (error) {
+      console.warn(`[FIVEM AUTO POINT] Falha na checagem atrasada de ${user.id}: ${error.message}`);
+    }
+  }, AUTO_POINT_CONFIRM_DELAY_MS);
+
+  pendingAutoPointChecks.set(key, { timeout });
+}
+
 async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, newPresence }) {
   const oldTargetActivity = getTargetFiveMActivity(oldPresence);
   const newTargetActivity = getTargetFiveMActivity(newPresence);
@@ -175,39 +251,21 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
 
   if (newTargetActivity) {
     if (point?.activePointStartedAt) {
+      cancelPendingAutoPointCheck(guild.id, user.id);
       await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
       return;
     }
     if (!await hasPointRole(guild, member, user.id)) return;
-    const cityName = extractCityName(newTargetActivity);
-    const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, member, newTargetActivity, cityName));
-    if (result.action !== 'opened') return;
-    await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
-
-    const summary = await createPointActionTranscriptSummary({
-      guild,
-      target: user,
-      generatedBy: guild.client.user,
-      action: 'opened',
-      result,
-    });
-    await user.send({
-      content: [
-        `Detectei você na cidade **${cityName || TARGET_SERVER_NAME}** e abri seu ponto automaticamente.`,
-        '',
-        summary.content,
-        '',
-        'Quando o Discord parar de detectar essa cidade, o ponto será fechado automaticamente.',
-      ].join('\n'),
-      allowedMentions: { users: [] },
-    }).catch(() => null);
+    scheduleAutoPointCheck({ guild, user, member });
     return;
   }
 
+  cancelPendingAutoPointCheck(guild.id, user.id);
   await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
   if (!point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) return;
 
   const result = await closePoint(guild.id, user.id, {
+    enforceMinimumDuration: false,
     pointSource: AUTO_POINT_SOURCE,
     pointReason: `Saiu do FiveM: ${TARGET_SERVER_NAME}`,
     serverName: point.activePointServerName || TARGET_SERVER_NAME,
@@ -350,27 +408,8 @@ async function scanCurrentFiveMActivities(client) {
       const point = await getUserPoint(guild.id, presence.user.id).catch(() => null);
       if (point?.activePointStartedAt) continue;
 
-      const cityName = extractCityName(activity);
-      const result = await openPoint(guild.id, presence.user.id, buildAutoPointProfile(presence.user, member, activity, cityName)).catch(() => null);
-      if (result?.action === 'opened') {
-        results.push({ guildId: guild.id, userId: presence.user.id });
-        await syncPointOnlineChannel(client, guild.id, presence.user.id, true);
-        const summary = await createPointActionTranscriptSummary({
-          guild,
-          target: presence.user,
-          generatedBy: client.user,
-          action: 'opened',
-          result,
-        });
-        await presence.user.send({
-          content: [
-            `Detectei você no **${cityName || TARGET_SERVER_NAME}** quando o bot iniciou e abri seu ponto.`,
-            '',
-            summary.content,
-          ].join('\n'),
-          allowedMentions: { users: [] },
-        }).catch(() => null);
-      }
+      scheduleAutoPointCheck({ guild, user: presence.user, member });
+      results.push({ guildId: guild.id, userId: presence.user.id, action: 'pending_open_check' });
     }
 
     if (!presenceFetchOk) continue;
@@ -381,6 +420,7 @@ async function scanCurrentFiveMActivities(client) {
       if (detectedUserIds.has(String(point.userId))) continue;
 
       const result = await closePoint(guild.id, point.userId, {
+        enforceMinimumDuration: false,
         pointSource: AUTO_POINT_SOURCE,
         pointReason: `Nao detectado no FiveM apos reinicio: ${TARGET_SERVER_NAME}`,
         serverName: point.activePointServerName || TARGET_SERVER_NAME,
