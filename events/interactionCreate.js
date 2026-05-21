@@ -17,6 +17,7 @@ const { handleCallInteraction, handleModal: handleCallModal } = require('../conf
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 const { isPrimaryGuildChannel } = require('../utils/guildScope');
 const { createPointActionTranscriptSummary } = require('../utils/pointTranscriptNotifier');
+const { queuePointSnapshotSync } = require('../utils/frequencyDashboardSync');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -367,6 +368,9 @@ module.exports = {
             }
 
             await updateStatusPanel(client, guild.id);
+            if (result.action === 'opened' || result.action === 'closed') {
+                queuePointSnapshotSync(client);
+            }
 
             if (result.action === 'already_open') {
                 return safeEdit(interaction, {

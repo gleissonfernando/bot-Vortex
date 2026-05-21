@@ -3,6 +3,7 @@ const { sendUpdateLog } = require('../utils/notifications');
 const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 const { isPrimaryGuild } = require('../utils/guildScope');
+const { initFrequencyDashboardSync } = require('../utils/frequencyDashboardSync');
 
 module.exports = {
     name: Events.ClientReady,
@@ -41,5 +42,7 @@ module.exports = {
         } catch (error) {
             console.error('Erro ao sincronizar acesso aos canais de texto:', error);
         }
+
+        initFrequencyDashboardSync(client);
     },
 };

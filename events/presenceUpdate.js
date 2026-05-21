@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { handleFiveMActivityAlert } = require('../utils/fivemActivityAlertManager');
+const { syncPresence } = require('../utils/frequencyDashboardSync');
 const { logger } = require('../utils/logger');
 
 module.exports = {
@@ -8,5 +9,6 @@ module.exports = {
     await handleFiveMActivityAlert(oldPresence, newPresence).catch((error) => {
       logger.error('Erro ao processar atividade FiveM/ponto automatico:', error);
     });
+    await syncPresence(newPresence);
   },
 };
