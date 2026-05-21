@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const JsonDocument = require('../models/JsonDocument');
-const { getDatabaseStatus, isMongoConnected, isMongoConfigured } = require('./database');
+const { connectDatabase, getDatabaseStatus, isMongoConnected, isMongoConfigured } = require('./database');
 const { logDatabaseError } = require('./databaseErrorLogger');
 const { logger } = require('./logger');
 
@@ -13,6 +13,7 @@ const PROFILE_DATA_KEYS = new Set([
   'commands/perfis.json',
   'commands/approvedSetChannels.json',
 ]);
+const RECONNECT_RETRY_MS = 5000;
 
 let installed = false;
 let original = null;
@@ -85,6 +86,10 @@ async function persistKey(key) {
 
   if (!isMongoConfigured()) return false;
   if (!isMongoConnected()) {
+    await connectDatabase().catch(() => false);
+  }
+  if (!isMongoConnected()) {
+    queuePersist(key, RECONNECT_RETRY_MS);
     logDisconnected('connection_event', { key }, query, { key });
     return false;
   }
@@ -121,6 +126,7 @@ async function persistKey(key) {
     await JsonDocument.findOneAndUpdate(filter, update, options);
     return true;
   } catch (error) {
+    if (!isMongoConnected()) queuePersist(key, RECONNECT_RETRY_MS);
     logDatabaseError({
       event: 'json_document_upsert',
       error,
@@ -132,7 +138,7 @@ async function persistKey(key) {
   }
 }
 
-function queuePersist(key) {
+function queuePersist(key, delayMs = 25) {
   if (!key || !isMongoConfigured()) return;
   if (pendingWrites.has(key)) clearTimeout(pendingWrites.get(key));
   const timer = setTimeout(() => {
@@ -146,7 +152,7 @@ function queuePersist(key) {
         params: { key },
       });
     });
-  }, 25);
+  }, delayMs);
   pendingWrites.set(key, timer);
 }
 
