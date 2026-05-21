@@ -121,8 +121,12 @@ function buildPointApiPath(req, userId) {
     const params = new URLSearchParams();
     const guildId = String(req.query.guildId || '').trim();
     const token = String(req.query.token || '').trim();
+    const month = String(req.query.month || '').trim();
+    const week = String(req.query.week || '').trim();
     if (guildId) params.set('guildId', guildId);
     if (token) params.set('token', token);
+    if (month) params.set('month', month);
+    if (week) params.set('week', week);
     const query = params.toString();
     return `/api/ponto/${userId}${query ? `?${query}` : ''}`;
 }
@@ -162,7 +166,13 @@ app.get(['/api/ponto/:id', '/api/relatorio/ponto/:id'], async (req, res) => {
         return res.status(404).json({ ok: false, error: 'Servidor nao encontrado.' });
     }
 
-    const payload = await buildPointSitePayload({ client, guildId, userId }).catch((error) => {
+    const payload = await buildPointSitePayload({
+        client,
+        guildId,
+        userId,
+        month: req.query.month,
+        week: req.query.week,
+    }).catch((error) => {
         logger.error('Erro ao carregar folha de ponto do site:', error);
         return null;
     });
