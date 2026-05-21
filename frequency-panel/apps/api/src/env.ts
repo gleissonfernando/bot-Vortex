@@ -10,7 +10,7 @@ function required(name: string): string {
 }
 
 export const env = {
-  databaseUrl: required('DATABASE_URL'),
+  mongoUri: process.env.MONGODB_URI || process.env.MONGO_URI || required('MONGODB_URI'),
   jwtSecret: required('JWT_SECRET'),
   adminEmail: process.env.ADMIN_EMAIL || 'vortex@adimin.com',
   adminPassword: process.env.ADMIN_PASSWORD || 'vortex',

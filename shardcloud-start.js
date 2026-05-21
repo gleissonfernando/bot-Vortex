@@ -44,8 +44,8 @@ function start(name, command, args, options = {}) {
   return child;
 }
 
-if (!process.env.DATABASE_URL) {
-  console.error('[shardcloud] Missing DATABASE_URL. Configure PostgreSQL in ShardCloud before starting the panel.');
+if (!process.env.MONGODB_URI && !process.env.MONGO_URI) {
+  console.error('[shardcloud] Missing MONGODB_URI. Configure MongoDB in ShardCloud before starting the panel.');
   process.exit(1);
 }
 

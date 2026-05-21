@@ -1,4 +1,5 @@
-import { one, query } from '../db.js';
+import { randomUUID } from 'node:crypto';
+import { collection, serializeDoc, serializeDocs, toDate } from '../db.js';
 
 export type MemberInput = {
   guildId: string;
@@ -15,37 +16,43 @@ export type MemberInput = {
 };
 
 export async function upsertMember(input: MemberInput) {
-  return one(
-    `INSERT INTO discord_members (
-      guild_id, discord_user_id, username, display_name, avatar_url,
-      highest_role_id, highest_role_name, roles, joined_at, status, last_seen_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
-    ON CONFLICT (guild_id, discord_user_id) DO UPDATE SET
-      username = excluded.username,
-      display_name = excluded.display_name,
-      avatar_url = excluded.avatar_url,
-      highest_role_id = excluded.highest_role_id,
-      highest_role_name = excluded.highest_role_name,
-      roles = excluded.roles,
-      joined_at = COALESCE(excluded.joined_at, discord_members.joined_at),
-      status = excluded.status,
-      last_seen_at = COALESCE(excluded.last_seen_at, discord_members.last_seen_at),
-      updated_at = now()
-    RETURNING *`,
-    [
-      input.guildId,
-      input.discordUserId,
-      input.username,
-      input.displayName,
-      input.avatarUrl || null,
-      input.highestRoleId || null,
-      input.highestRoleName || null,
-      JSON.stringify(input.roles || []),
-      input.joinedAt || null,
-      input.status || 'active',
-      input.lastSeenAt || null
-    ]
+  const members = await collection('discord_members');
+  const now = new Date();
+  const existing = await members.findOne({
+    guild_id: input.guildId,
+    discord_user_id: input.discordUserId
+  });
+
+  const joinedAt = toDate(input.joinedAt) || existing?.joined_at || null;
+  const lastSeenAt = toDate(input.lastSeenAt) || existing?.last_seen_at || null;
+  const id = existing?.id || randomUUID();
+
+  await members.updateOne(
+    { guild_id: input.guildId, discord_user_id: input.discordUserId },
+    {
+      $set: {
+        id,
+        guild_id: input.guildId,
+        discord_user_id: input.discordUserId,
+        username: input.username,
+        display_name: input.displayName,
+        avatar_url: input.avatarUrl || null,
+        highest_role_id: input.highestRoleId || null,
+        highest_role_name: input.highestRoleName || null,
+        roles: input.roles || [],
+        joined_at: joinedAt,
+        status: input.status || 'active',
+        last_seen_at: lastSeenAt,
+        updated_at: now
+      },
+      $setOnInsert: {
+        created_at: now
+      }
+    },
+    { upsert: true }
   );
+
+  return getMemberByDiscord(input.guildId, input.discordUserId);
 }
 
 export async function listMembers(params: {
@@ -55,65 +62,80 @@ export async function listMembers(params: {
   status?: string;
   limit?: number;
 }) {
-  const values: unknown[] = [];
-  const where: string[] = [];
+  const members = await collection('discord_members');
+  const sessions = await collection('attendance_sessions');
+  const filter: Record<string, any> = {};
 
-  if (params.guildId) {
-    values.push(params.guildId);
-    where.push(`guild_id = $${values.length}`);
-  }
-
+  if (params.guildId) filter.guild_id = params.guildId;
+  if (params.status) filter.status = params.status;
   if (params.search) {
-    values.push(`%${params.search.toLowerCase()}%`);
-    where.push(`(lower(display_name) LIKE $${values.length} OR lower(username) LIKE $${values.length} OR discord_user_id LIKE $${values.length})`);
+    const pattern = new RegExp(params.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [
+      { display_name: pattern },
+      { username: pattern },
+      { discord_user_id: pattern }
+    ];
   }
-
   if (params.role) {
-    values.push(params.role);
-    where.push(`(highest_role_id = $${values.length} OR highest_role_name = $${values.length} OR roles @> jsonb_build_array(jsonb_build_object('id', $${values.length}::text)))`);
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [
+          { highest_role_id: params.role },
+          { highest_role_name: params.role },
+          { roles: { $elemMatch: { id: params.role } } },
+          { roles: { $elemMatch: { name: params.role } } }
+        ]
+      }
+    ];
   }
 
-  if (params.status) {
-    values.push(params.status);
-    where.push(`status = $${values.length}`);
-  }
-
-  values.push(Math.min(Math.max(Number(params.limit || 80), 1), 200));
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-  return query(
-    `SELECT
-      m.*,
-      COALESCE(SUM(s.total_seconds), 0)::int AS total_seconds,
-      COUNT(s.id)::int AS session_count,
-      MAX(COALESCE(s.closed_at, s.opened_at)) AS last_point_at
-    FROM discord_members m
-    LEFT JOIN attendance_sessions s ON s.member_id = m.id
-    ${whereSql}
-    GROUP BY m.id
-    ORDER BY m.display_name ASC
-    LIMIT $${values.length}`,
-    values
+  const limit = Math.min(Math.max(Number(params.limit || 80), 1), 200);
+  const docs = serializeDocs(
+    await members.find(filter).sort({ display_name: 1 }).limit(limit).toArray()
   );
+
+  return Promise.all(docs.map(async (member) => {
+    const related = await sessions.find({ member_id: member.id }).toArray();
+    const total_seconds = related.reduce((sum, session: any) => sum + Number(session.total_seconds || 0), 0);
+    const last = related
+      .map((session: any) => session.closed_at || session.opened_at)
+      .filter(Boolean)
+      .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0] || null;
+    return {
+      ...member,
+      total_seconds,
+      session_count: related.length,
+      last_point_at: last ? last.toISOString() : null
+    };
+  }));
 }
 
 export async function getMember(memberId: string) {
-  return one(
-    `SELECT
-      m.*,
-      COALESCE(SUM(s.total_seconds), 0)::int AS total_seconds,
-      COUNT(s.id)::int AS session_count,
-      MAX(COALESCE(s.closed_at, s.opened_at)) AS last_point_at,
-      COUNT(a.id)::int AS absence_count
-    FROM discord_members m
-    LEFT JOIN attendance_sessions s ON s.member_id = m.id
-    LEFT JOIN absence_records a ON a.member_id = m.id
-    WHERE m.id = $1
-    GROUP BY m.id`,
-    [memberId]
-  );
+  const members = await collection('discord_members');
+  const sessions = await collection('attendance_sessions');
+  const absences = await collection('absence_records');
+  const member = serializeDoc(await members.findOne({ id: memberId }));
+  if (!member) return null;
+
+  const related = await sessions.find({ member_id: memberId }).toArray();
+  const total_seconds = related.reduce((sum, session: any) => sum + Number(session.total_seconds || 0), 0);
+  const last = related
+    .map((session: any) => session.closed_at || session.opened_at)
+    .filter(Boolean)
+    .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0] || null;
+  const absence_count = await absences.countDocuments({ member_id: memberId });
+
+  return {
+    ...member,
+    total_seconds,
+    session_count: related.length,
+    last_point_at: last ? last.toISOString() : null,
+    absence_count
+  };
 }
 
 export async function getMemberByDiscord(guildId: string, discordUserId: string) {
-  return one('SELECT * FROM discord_members WHERE guild_id = $1 AND discord_user_id = $2', [guildId, discordUserId]);
+  const members = await collection('discord_members');
+  return serializeDoc(await members.findOne({ guild_id: guildId, discord_user_id: discordUserId }));
 }

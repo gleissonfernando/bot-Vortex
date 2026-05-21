@@ -1,7 +1,21 @@
-import { one, query } from '../db.js';
+import { randomUUID } from 'node:crypto';
+import { collection, dateKey, serializeDoc, serializeDocs, toDate } from '../db.js';
 import { getMemberByDiscord, upsertMember, type MemberInput } from './members.js';
 
 export type AttendanceAction = 'open' | 'close';
+
+function rangeFilter(field: string, from?: string, to?: string) {
+  const range: Record<string, Date> = {};
+  const fromDate = toDate(from);
+  const toDateValue = toDate(to);
+  if (fromDate) range.$gte = fromDate;
+  if (toDateValue) {
+    const nextDay = new Date(toDateValue);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    range.$lt = nextDay;
+  }
+  return Object.keys(range).length ? { [field]: range } : {};
+}
 
 export async function registerPoint(input: {
   action: AttendanceAction;
@@ -26,97 +40,108 @@ export async function registerPoint(input: {
       lastSeenAt: new Date().toISOString()
     });
   }
+  if (!member) throw new Error('Unable to create or load member');
+
+  const sessions = await collection('attendance_sessions');
+  const members = await collection('discord_members');
+  const now = new Date();
 
   if (input.action === 'open') {
-    const open = await one(
-      `SELECT id FROM attendance_sessions WHERE member_id = $1 AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`,
-      [member.id]
-    );
+    const open = serializeDoc(await sessions.findOne(
+      { member_id: member.id, closed_at: null },
+      { sort: { opened_at: -1 } }
+    ));
     if (open) return { action: 'already_open', session: open };
 
-    const session = await one(
-      `INSERT INTO attendance_sessions (guild_id, member_id, opened_at, source, opened_by, note)
-       VALUES ($1, $2, now(), 'discord', $3, $4)
-       RETURNING *`,
-      [input.guildId, member.id, input.actorId || input.discordUserId, input.note || null]
-    );
-    await query('UPDATE discord_members SET last_seen_at = now(), updated_at = now() WHERE id = $1', [member.id]);
-    return { action: 'opened', session };
+    const session = {
+      id: randomUUID(),
+      guild_id: input.guildId,
+      member_id: member.id,
+      opened_at: now,
+      closed_at: null,
+      total_seconds: 0,
+      source: 'discord',
+      opened_by: input.actorId || input.discordUserId,
+      closed_by: null,
+      note: input.note || null,
+      created_at: now,
+      updated_at: now
+    };
+    await sessions.insertOne(session);
+    await members.updateOne({ id: member.id }, { $set: { last_seen_at: now, updated_at: now } });
+    return { action: 'opened', session: serializeDoc(session) };
   }
 
-  const session = await one(
-    `UPDATE attendance_sessions
-     SET closed_at = now(),
-         total_seconds = GREATEST(0, EXTRACT(EPOCH FROM (now() - opened_at))::int),
-         closed_by = $2,
-         updated_at = now()
-     WHERE id = (
-       SELECT id FROM attendance_sessions
-       WHERE member_id = $1 AND closed_at IS NULL
-       ORDER BY opened_at DESC
-       LIMIT 1
-     )
-     RETURNING *`,
-    [member.id, input.actorId || input.discordUserId]
+  const open = await sessions.findOne(
+    { member_id: member.id, closed_at: null },
+    { sort: { opened_at: -1 } }
   );
-  await query('UPDATE discord_members SET last_seen_at = now(), updated_at = now() WHERE id = $1', [member.id]);
-  return session ? { action: 'closed', session } : { action: 'already_closed', session: null };
+  if (!open) {
+    await members.updateOne({ id: member.id }, { $set: { last_seen_at: now, updated_at: now } });
+    return { action: 'already_closed', session: null };
+  }
+
+  const totalSeconds = Math.max(0, Math.floor((now.getTime() - new Date(open.opened_at).getTime()) / 1000));
+  await sessions.updateOne(
+    { id: open.id },
+    {
+      $set: {
+        closed_at: now,
+        total_seconds: totalSeconds,
+        closed_by: input.actorId || input.discordUserId,
+        updated_at: now
+      }
+    }
+  );
+  await members.updateOne({ id: member.id }, { $set: { last_seen_at: now, updated_at: now } });
+  return {
+    action: 'closed',
+    session: serializeDoc({
+      ...open,
+      closed_at: now,
+      total_seconds: totalSeconds,
+      closed_by: input.actorId || input.discordUserId,
+      updated_at: now
+    })
+  };
 }
 
 export async function getMemberAttendance(memberId: string, from?: string, to?: string) {
-  const values: unknown[] = [memberId];
-  const where = ['member_id = $1'];
-  if (from) {
-    values.push(from);
-    where.push(`opened_at >= $${values.length}`);
-  }
-  if (to) {
-    values.push(to);
-    where.push(`opened_at < ($${values.length}::date + interval '1 day')`);
-  }
-  return query(
-    `SELECT * FROM attendance_sessions
-     WHERE ${where.join(' AND ')}
-     ORDER BY opened_at DESC`,
-    values
+  const sessions = await collection('attendance_sessions');
+  return serializeDocs(
+    await sessions.find({
+      member_id: memberId,
+      ...rangeFilter('opened_at', from, to)
+    }).sort({ opened_at: -1 }).toArray()
   );
 }
 
 export async function getFrequency(memberId: string, from?: string, to?: string) {
-  const values: unknown[] = [memberId];
-  const where = ['member_id = $1'];
-  if (from) {
-    values.push(from);
-    where.push(`opened_at >= $${values.length}`);
-  }
-  if (to) {
-    values.push(to);
-    where.push(`opened_at < ($${values.length}::date + interval '1 day')`);
+  const sessions = await collection('attendance_sessions');
+  const docs = await sessions.find({
+    member_id: memberId,
+    ...rangeFilter('opened_at', from, to)
+  }).sort({ opened_at: 1 }).toArray();
+  const grouped = new Map<string, { date_key: string; points: number; total_seconds: number }>();
+
+  for (const session of docs as any[]) {
+    const key = dateKey(session.opened_at);
+    const item = grouped.get(key) || { date_key: key, points: 0, total_seconds: 0 };
+    item.points += 1;
+    item.total_seconds += Number(session.total_seconds || 0);
+    grouped.set(key, item);
   }
 
-  return query(
-    `SELECT
-      opened_at::date AS date_key,
-      COUNT(*)::int AS points,
-      SUM(total_seconds)::int AS total_seconds
-    FROM attendance_sessions
-    WHERE ${where.join(' AND ')}
-    GROUP BY opened_at::date
-    ORDER BY date_key ASC`,
-    values
-  );
+  return [...grouped.values()].sort((a, b) => a.date_key.localeCompare(b.date_key));
 }
 
 export async function getAbsences(memberId: string, from?: string, to?: string) {
-  const values: unknown[] = [memberId];
-  const where = ['member_id = $1'];
-  if (from) {
-    values.push(from);
-    where.push(`date_key >= $${values.length}`);
+  const absences = await collection('absence_records');
+  const filter: Record<string, any> = { member_id: memberId };
+  if (from || to) {
+    filter.date_key = {};
+    if (from) filter.date_key.$gte = from;
+    if (to) filter.date_key.$lte = to;
   }
-  if (to) {
-    values.push(to);
-    where.push(`date_key <= $${values.length}`);
-  }
-  return query(`SELECT * FROM absence_records WHERE ${where.join(' AND ')} ORDER BY date_key DESC`, values);
+  return serializeDocs(await absences.find(filter).sort({ date_key: -1 }).toArray());
 }

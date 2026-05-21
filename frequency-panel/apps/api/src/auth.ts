@@ -1,7 +1,8 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
 import { env } from './env.js';
-import { one, query } from './db.js';
+import { collection, serializeDoc } from './db.js';
 
 export type SessionUser = {
   id: string;
@@ -12,26 +13,30 @@ export type SessionUser = {
 
 export async function ensureAdminUser() {
   const hash = await bcrypt.hash(env.adminPassword, 12);
-  await query(
-    `
-      INSERT INTO app_users (email, name, password_hash, role)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (email)
-      DO UPDATE SET
-        name = EXCLUDED.name,
-        password_hash = EXCLUDED.password_hash,
-        role = EXCLUDED.role,
-        updated_at = now()
-    `,
-    [env.adminEmail, 'Vortex Admin', hash, 'admin']
+  const users = await collection('app_users');
+  const now = new Date();
+  await users.updateOne(
+    { email: env.adminEmail.toLowerCase() },
+    {
+      $set: {
+        email: env.adminEmail.toLowerCase(),
+        name: 'Vortex Admin',
+        password_hash: hash,
+        role: 'admin',
+        updated_at: now
+      },
+      $setOnInsert: {
+        id: randomUUID(),
+        created_at: now
+      }
+    },
+    { upsert: true }
   );
 }
 
 export async function login(email: string, password: string) {
-  const user = await one<SessionUser & { password_hash: string }>(
-    'SELECT id, email, name, role, password_hash FROM app_users WHERE email = $1',
-    [email.toLowerCase()]
-  );
+  const users = await collection<SessionUser & { password_hash: string }>('app_users');
+  const user = serializeDoc(await users.findOne({ email: email.toLowerCase() }));
   if (!user) return null;
 
   const valid = await bcrypt.compare(password, user.password_hash);

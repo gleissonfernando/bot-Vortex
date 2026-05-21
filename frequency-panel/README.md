@@ -5,9 +5,9 @@ Painel web profissional para gestao de frequencia de membros do Discord.
 ## Stack
 
 - Frontend: Next.js, React, TailwindCSS, Recharts
-- Backend: Node.js, Express, JWT, PostgreSQL
+- Backend: Node.js, Express, JWT, MongoDB
 - Bot Discord: discord.js
-- Banco: PostgreSQL com schema SQL
+- Banco: MongoDB
 
 ## Estrutura
 
@@ -17,8 +17,6 @@ frequency-panel/
     api/          API Node.js com auth, membros, ponto, frequencia e exportacao
     bot/          Bot Discord que sincroniza membros e envia eventos de ponto
     web/          Frontend Next.js com dashboard administrativo
-  database/
-    schema.sql    Modelo do banco PostgreSQL
   docker-compose.yml
   .env.example
 ```
@@ -53,7 +51,7 @@ cp .env.example .env
 
 3. Ajuste as variaveis no `.env`.
 
-4. Suba o PostgreSQL:
+4. Suba o MongoDB:
 
 ```bash
 docker compose up -d
@@ -92,15 +90,15 @@ npm run dev:bot
 ## Variaveis de ambiente
 
 ```env
-DATABASE_URL=postgres://vortex:vortex@localhost:5432/vortex_frequency
+MONGODB_URI=mongodb://localhost:27017/vortex_frequency
 JWT_SECRET=change-this-long-random-secret
-ADMIN_EMAIL=admin@vortex.local
-ADMIN_PASSWORD=change-this-password
+ADMIN_EMAIL=vortex@adimin.com
+ADMIN_PASSWORD=vortex
 API_PORT=4100
-API_ORIGIN=http://localhost:3000
+API_ORIGIN=https://bot-vortex.shardweb.app
 INGEST_SECRET=change-this-bot-ingest-secret
 
-NEXT_PUBLIC_API_URL=http://localhost:4100
+NEXT_PUBLIC_API_URL=/api
 
 DISCORD_TOKEN=put-your-discord-bot-token
 DISCORD_CLIENT_ID=put-your-discord-client-id
@@ -128,7 +126,7 @@ Troque esses valores antes de colocar em producao.
 
 ## Modelo de dados
 
-O arquivo `database/schema.sql` cria:
+O MongoDB usa estas colecoes:
 
 - `app_users`: usuarios do painel.
 - `discord_members`: membros sincronizados do Discord.
@@ -138,4 +136,4 @@ O arquivo `database/schema.sql` cria:
 
 ## Producao
 
-Use senhas fortes, HTTPS, `JWT_SECRET` longo e um banco PostgreSQL gerenciado. O bot deve ter intents de membros e presenca habilitadas no portal do Discord.
+Use senhas fortes, HTTPS, `JWT_SECRET` longo e um MongoDB gerenciado. O bot deve ter intents de membros e presenca habilitadas no portal do Discord.

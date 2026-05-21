@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { query } from '../db.js';
+import { collection, toDate } from '../db.js';
 import { requireIngestSecret } from '../middleware.js';
 import { registerPoint } from '../services/attendance.js';
 import { upsertMember } from '../services/members.js';
@@ -30,7 +30,11 @@ ingestRouter.post('/members', async (req, res) => {
 
   const saved = [];
   for (const member of parsed.data.members) saved.push(await upsertMember(member));
-  await query('INSERT INTO audit_events (action, payload) VALUES ($1, $2)', ['members.synced', JSON.stringify({ count: saved.length })]);
+  await (await collection('audit_events')).insertOne({
+    action: 'members.synced',
+    payload: { count: saved.length },
+    created_at: new Date()
+  });
   return res.json({ ok: true, count: saved.length });
 });
 
@@ -47,12 +51,13 @@ ingestRouter.post('/attendance', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid attendance payload' });
 
   const result = await registerPoint(parsed.data);
-  await query('INSERT INTO audit_events (guild_id, actor_id, action, payload) VALUES ($1, $2, $3, $4)', [
-    parsed.data.guildId,
-    parsed.data.actorId || parsed.data.discordUserId,
-    `attendance.${parsed.data.action}`,
-    JSON.stringify(result)
-  ]);
+  await (await collection('audit_events')).insertOne({
+    guild_id: parsed.data.guildId,
+    actor_id: parsed.data.actorId || parsed.data.discordUserId,
+    action: `attendance.${parsed.data.action}`,
+    payload: result,
+    created_at: new Date()
+  });
   return res.json({ ok: true, result });
 });
 
@@ -64,9 +69,10 @@ ingestRouter.post('/presence', async (req, res) => {
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid presence payload' });
 
-  await query(
-    'UPDATE discord_members SET last_seen_at = COALESCE($3::timestamptz, now()), updated_at = now() WHERE guild_id = $1 AND discord_user_id = $2',
-    [parsed.data.guildId, parsed.data.discordUserId, parsed.data.seenAt || null]
+  const now = new Date();
+  await (await collection('discord_members')).updateOne(
+    { guild_id: parsed.data.guildId, discord_user_id: parsed.data.discordUserId },
+    { $set: { last_seen_at: toDate(parsed.data.seenAt) || now, updated_at: now } }
   );
   return res.json({ ok: true });
 });

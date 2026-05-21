@@ -1,70 +1,97 @@
-import { query } from '../db.js';
+import { collection, dateKey, toDate } from '../db.js';
+
+function monthStart() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function thirtyDaysAgo() {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - 30);
+  return date;
+}
+
+function rangeFilter(field: string, from?: string, to?: string) {
+  const range: Record<string, Date> = {};
+  const fromDate = toDate(from);
+  const toDateValue = toDate(to);
+  if (fromDate) range.$gte = fromDate;
+  if (toDateValue) {
+    const nextDay = new Date(toDateValue);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    range.$lt = nextDay;
+  }
+  return Object.keys(range).length ? { [field]: range } : {};
+}
 
 export async function dashboardMetrics() {
-  const rows = await query<{
-    total_members: number;
-    active_members: number;
-    open_points: number;
-    month_seconds: number;
-  }>(
-    `SELECT
-      (SELECT COUNT(*) FROM discord_members)::int AS total_members,
-      (SELECT COUNT(*) FROM discord_members WHERE status = 'active')::int AS active_members,
-      (SELECT COUNT(*) FROM attendance_sessions WHERE closed_at IS NULL)::int AS open_points,
-      (SELECT COALESCE(SUM(total_seconds), 0)::int FROM attendance_sessions WHERE opened_at >= date_trunc('month', now())) AS month_seconds`
-  );
+  const members = await collection('discord_members');
+  const sessions = await collection('attendance_sessions');
 
-  const trend = await query(
-    `SELECT
-      opened_at::date AS date_key,
-      COUNT(*)::int AS points,
-      COALESCE(SUM(total_seconds), 0)::int AS total_seconds
-    FROM attendance_sessions
-    WHERE opened_at >= (now() - interval '30 days')
-    GROUP BY opened_at::date
-    ORDER BY date_key ASC`
-  );
+  const [totalMembers, activeMembers, openPoints, monthSessions, trendSessions] = await Promise.all([
+    members.countDocuments({}),
+    members.countDocuments({ status: 'active' }),
+    sessions.countDocuments({ closed_at: null }),
+    sessions.find({ opened_at: { $gte: monthStart() } }).toArray(),
+    sessions.find({ opened_at: { $gte: thirtyDaysAgo() } }).sort({ opened_at: 1 }).toArray()
+  ]);
 
-  return { metrics: rows[0], trend };
+  const trendMap = new Map<string, { date_key: string; points: number; total_seconds: number }>();
+  for (const session of trendSessions as any[]) {
+    const key = dateKey(session.opened_at);
+    const item = trendMap.get(key) || { date_key: key, points: 0, total_seconds: 0 };
+    item.points += 1;
+    item.total_seconds += Number(session.total_seconds || 0);
+    trendMap.set(key, item);
+  }
+
+  return {
+    metrics: {
+      total_members: totalMembers,
+      active_members: activeMembers,
+      open_points: openPoints,
+      month_seconds: (monthSessions as any[]).reduce((sum, session) => sum + Number(session.total_seconds || 0), 0)
+    },
+    trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key))
+  };
 }
 
 export async function memberReport(memberId: string, from?: string, to?: string) {
-  const values: unknown[] = [memberId];
-  const where = ['member_id = $1'];
-  if (from) {
-    values.push(from);
-    where.push(`opened_at >= $${values.length}`);
+  const sessions = await collection('attendance_sessions');
+  const docs = await sessions.find({
+    member_id: memberId,
+    ...rangeFilter('opened_at', from, to)
+  }).sort({ opened_at: 1 }).toArray();
+
+  const daysMap = new Map<string, { date_key: string; sessions: number; total_seconds: number }>();
+  let lastActivity: Date | null = null;
+  let openSessions = 0;
+  let totalSeconds = 0;
+
+  for (const session of docs as any[]) {
+    const key = dateKey(session.opened_at);
+    const day = daysMap.get(key) || { date_key: key, sessions: 0, total_seconds: 0 };
+    const seconds = Number(session.total_seconds || 0);
+    day.sessions += 1;
+    day.total_seconds += seconds;
+    totalSeconds += seconds;
+    if (!session.closed_at) openSessions += 1;
+
+    const activity = session.closed_at || session.opened_at;
+    if (activity && (!lastActivity || activity > lastActivity)) lastActivity = activity;
+    daysMap.set(key, day);
   }
-  if (to) {
-    values.push(to);
-    where.push(`opened_at < ($${values.length}::date + interval '1 day')`);
-  }
 
-  const summary = await query(
-    `SELECT
-      COUNT(*)::int AS total_sessions,
-      COUNT(*) FILTER (WHERE closed_at IS NULL)::int AS open_sessions,
-      COALESCE(SUM(total_seconds), 0)::int AS total_seconds,
-      COUNT(DISTINCT opened_at::date)::int AS active_days,
-      MAX(COALESCE(closed_at, opened_at)) AS last_activity_at
-    FROM attendance_sessions
-    WHERE ${where.join(' AND ')}`,
-    values
-  );
-
-  const days = await query(
-    `SELECT
-      opened_at::date AS date_key,
-      COUNT(*)::int AS sessions,
-      COALESCE(SUM(total_seconds), 0)::int AS total_seconds
-    FROM attendance_sessions
-    WHERE ${where.join(' AND ')}
-    GROUP BY opened_at::date
-    ORDER BY date_key ASC`,
-    values
-  );
-
-  return { summary: summary[0], days };
+  return {
+    summary: {
+      total_sessions: docs.length,
+      open_sessions: openSessions,
+      total_seconds: totalSeconds,
+      active_days: daysMap.size,
+      last_activity_at: lastActivity ? lastActivity.toISOString() : null
+    },
+    days: [...daysMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key))
+  };
 }
 
 export function secondsToLabel(seconds: number) {
