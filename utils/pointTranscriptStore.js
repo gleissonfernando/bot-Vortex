@@ -7,6 +7,7 @@ const { buildDailyPointReportData, createDailyPointReportHtml } = require('./dai
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'pointTranscripts.json');
 const PUBLIC_TRANSCRIPTS_DIR = path.join(__dirname, '..', 'public', 'transcripts');
+const DEFAULT_PUBLIC_BASE_URL = 'https://vortex.shardweb.app';
 
 function ensureStore() {
   if (!fs.existsSync(STORE_PATH)) {
@@ -38,8 +39,8 @@ function buildBaseUrl() {
     || process.env.POINT_SITE_BASE_URL
     || process.env.PUBLIC_BASE_URL
     || process.env.SITE_URL
-    || 'http://localhost:3000'
-  ).trim().replace(/\/+$/, '') || 'http://localhost:3000';
+    || DEFAULT_PUBLIC_BASE_URL
+  ).trim().replace(/\/+$/, '') || DEFAULT_PUBLIC_BASE_URL;
 }
 
 function buildTranscriptUrl(transcriptId) {

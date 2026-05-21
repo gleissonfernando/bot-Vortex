@@ -10,10 +10,11 @@ const WEEKDAY_LABELS = [
   { key: 'sabado', label: 'Sábado' },
   { key: 'domingo', label: 'Domingo' },
 ];
+const DEFAULT_PUBLIC_BASE_URL = 'https://vortex.shardweb.app';
 
 function buildPointSiteUrl(guildId, userId) {
-  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.APP_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
-  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
+  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.APP_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || DEFAULT_PUBLIC_BASE_URL;
+  const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || DEFAULT_PUBLIC_BASE_URL;
   const url = new URL(`/relatorio/ponto/${userId}`, baseUrl);
   url.searchParams.set('guildId', guildId);
   if (process.env.POINT_SITE_TOKEN) url.searchParams.set('token', process.env.POINT_SITE_TOKEN);
