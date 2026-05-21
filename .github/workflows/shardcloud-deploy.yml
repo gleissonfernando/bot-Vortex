@@ -1,0 +1,64 @@
+name: Deploy to Shard Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SHARDCLOUD_API_TOKEN: ${{ secrets.SHARDCLOUD_API_TOKEN }}
+      SHARDCLOUD_APP_ID: ${{ secrets.SHARDCLOUD_APP_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          test -n "$SHARDCLOUD_API_TOKEN" || (echo "Missing SHARDCLOUD_API_TOKEN secret" && exit 1)
+          test -n "$SHARDCLOUD_APP_ID" || (echo "Missing SHARDCLOUD_APP_ID secret" && exit 1)
+
+      - name: Build deployment archive
+        run: |
+          zip -r shardcloud-project.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "node_modules/*" \
+            -x ".env" \
+            -x ".env.*" \
+            -x "logs/*" \
+            -x "commands/approvedSetChannels.json" \
+            -x "commands/ausencias.json" \
+            -x "commands/config.json" \
+            -x "commands/dailyPointTranscriptState.json" \
+            -x "commands/nicks_originais.json" \
+            -x "commands/pedidos_ativos.json" \
+            -x "commands/perfis.json" \
+            -x "commands/perfisConfig.json" \
+            -x "commands/pointAutomationState.json" \
+            -x "commands/pointTranscripts.json" \
+            -x "commands/pontoAdjustRequests.json" \
+            -x "commands/pontoPanels.json" \
+            -x "commands/pontos.json" \
+            -x "commands/queuedChannelLogs.json" \
+            -x "commands/scheduled_messages.json" \
+            -x "commands/stats.json"
+
+      - name: Upload code to Shard Cloud
+        run: |
+          curl --fail --show-error --request PUT \
+            --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/file" \
+            --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
+            --form "project=@shardcloud-project.zip"
+
+      - name: Restart Shard Cloud app
+        run: |
+          curl --fail --show-error --request POST \
+            --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/status" \
+            --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data '{"status":"restart"}'
