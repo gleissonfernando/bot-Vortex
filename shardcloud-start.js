@@ -1,6 +1,7 @@
 const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
 
 const rootDir = __dirname;
 const panelDir = path.join(rootDir, 'frequency-panel');
@@ -10,6 +11,7 @@ const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
 const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
 const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
+const webInternalPort = String(process.env.WEB_INTERNAL_PORT || 3001);
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
   || process.env.VORTEX_TRANSCRIPT_BASE_URL
@@ -57,6 +59,43 @@ process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 
+function startProxy() {
+  const server = http.createServer((req, res) => {
+    const isApi = req.url?.startsWith('/api/');
+    const target = new URL(isApi ? process.env.INTERNAL_API_URL : `http://127.0.0.1:${webInternalPort}`);
+    const targetPath = isApi ? req.url.slice(4) || '/' : req.url || '/';
+    const upstream = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      path: targetPath,
+      method: req.method,
+      headers: { ...req.headers, host: target.host }
+    }, (upstreamRes) => {
+      res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    });
+
+    upstream.on('error', (error) => {
+      console.error('[shardcloud] proxy error:', error.message);
+      if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Service unavailable' }));
+    });
+
+    req.pipe(upstream);
+  });
+
+  server.listen(Number(webPort), '0.0.0.0', () => {
+    console.log(`[shardcloud] proxy listening on 0.0.0.0:${webPort}`);
+  });
+
+  server.on('error', (error) => {
+    console.error('[shardcloud] proxy failed:', error);
+    process.exit(1);
+  });
+
+  return server;
+}
+
 if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
   start('discord-bot', 'npm', ['run', 'start:bot'], {
     env: {
@@ -89,25 +128,28 @@ const web = fs.existsSync(standaloneServer)
       cwd: webDir,
       env: {
         HOSTNAME: '0.0.0.0',
-        PORT: webPort,
+        PORT: webInternalPort,
         INTERNAL_API_URL: process.env.INTERNAL_API_URL,
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
       }
     })
-  : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webPort, '-H', '0.0.0.0'], {
+  : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
       cwd: rootDir,
       env: {
         INTERNAL_API_URL: process.env.INTERNAL_API_URL,
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
       }
     });
+const proxyServer = startProxy();
 
 process.on('SIGINT', () => {
   web.kill('SIGINT');
+  proxyServer.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   web.kill('SIGTERM');
+  proxyServer.close();
   process.exit(0);
 });
