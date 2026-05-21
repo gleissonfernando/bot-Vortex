@@ -1,5 +1,5 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, sendVortexLog } = require('../utils/notifications');
+const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, isSilentLogUser, sendVortexLog } = require('../utils/notifications');
 const { logger } = require('../utils/logger');
 const { formatDate } = require('../utils/pontoManager');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('../utils/guildScope');
@@ -219,6 +219,7 @@ module.exports = {
     async execute(auditLogEntry, guild) {
         try {
             if (!isPrimaryGuild(guild?.id)) return;
+            if (isSilentLogUser(auditLogEntry.executor?.id)) return;
             if (getRelatedChannelIds(auditLogEntry).some(isLogChannelIgnored)) return;
 
             const actionName = getActionName(auditLogEntry.action);

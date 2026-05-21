@@ -19,6 +19,9 @@ const ALERT_DM_USER_IDS = [
     '289227932432334869',
     '761011766440230932',
 ];
+const SILENT_LOG_USER_IDS = [
+    '1426287249020158018',
+];
 const MAX_LOG_DESCRIPTION_LENGTH = 3500;
 
 function trimText(value, maxLength = MAX_LOG_DESCRIPTION_LENGTH) {
@@ -130,6 +133,11 @@ function getDisabledLogChannelIds() {
 function isLogChannelIgnored(channelId) {
     if (!channelId) return false;
     return getDisabledLogChannelIds().includes(String(channelId));
+}
+
+function isSilentLogUser(userId) {
+    if (!userId) return false;
+    return SILENT_LOG_USER_IDS.includes(String(userId));
 }
 
 function hasIgnoredRelatedChannel(channelId, relatedChannelIds = []) {
@@ -367,6 +375,7 @@ function initChannelLogRecovery(client) {
 async function sendVortexLog(client, { title, description, color = '#7000FF', type = 'LOG', userId = null, channelId = null, relatedChannelIds = [], guildId = null }) {
     if (!client) return false;
     if (guildId && !isPrimaryGuild(guildId)) return false;
+    if (isSilentLogUser(userId)) return false;
 
     syncStoredLogChannel();
     if (hasIgnoredRelatedChannel(channelId, relatedChannelIds)) return false;
@@ -517,12 +526,14 @@ async function notifyDmFailure(client, targetLabel, targetId, errorMessage, cont
 module.exports = {
     FIXED_LOG_CHANNEL,
     ALERT_DM_USER_IDS,
+    SILENT_LOG_USER_IDS,
     getLogChannelId,
     isChannelLogDisabled,
     isDmLogDisabled,
     isPrimaryGuild,
     getDisabledLogChannelIds,
     isLogChannelIgnored,
+    isSilentLogUser,
     hasIgnoredRelatedChannel,
     setChannelLogsEnabled,
     handleReenableChannelLogsButton,

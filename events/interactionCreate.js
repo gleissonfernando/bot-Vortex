@@ -251,6 +251,7 @@ module.exports = {
                         ].join('\n'),
                         color: '#5865F2',
                         type: 'COMANDO',
+                        userId: user.id,
                         channelId: interaction.channelId,
                         guildId: interaction.guildId,
                     }).catch(() => {});

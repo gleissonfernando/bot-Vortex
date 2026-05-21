@@ -6,6 +6,7 @@ const { logger } = require('./logger');
 const { syncApprovedSetChannel } = require('./approvedSetChannels');
 const { resetToPendingHierarchy } = require('./vortexHierarchy');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
+const { isSilentLogUser } = require('./notifications');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -498,6 +499,7 @@ async function registerManualProfile(guild, user, {
 }
 
 async function sendProfileUpdateNotice(guild, profile, { userId, updatedBy = null, changes = [] } = {}) {
+  if (isSilentLogUser(updatedBy) || isSilentLogUser(userId)) return false;
   if (!profile?.callChannelId) return false;
   const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
   if (!channel?.isTextBased?.()) return false;
