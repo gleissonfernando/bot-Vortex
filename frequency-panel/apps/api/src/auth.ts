@@ -11,12 +11,18 @@ export type SessionUser = {
 };
 
 export async function ensureAdminUser() {
-  const existing = await one<{ id: string }>('SELECT id FROM app_users WHERE email = $1', [env.adminEmail]);
-  if (existing) return;
-
   const hash = await bcrypt.hash(env.adminPassword, 12);
   await query(
-    'INSERT INTO app_users (email, name, password_hash, role) VALUES ($1, $2, $3, $4)',
+    `
+      INSERT INTO app_users (email, name, password_hash, role)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (email)
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role,
+        updated_at = now()
+    `,
     [env.adminEmail, 'Vortex Admin', hash, 'admin']
   );
 }

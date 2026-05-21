@@ -6,6 +6,7 @@ const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 const apiPort = String(process.env.API_PORT || 4100);
 const webPort = String(process.env.PORT || 3000);
+const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.VORTEX_TRANSCRIPT_BASE_URL || process.env.APP_URL || '';
 
 function run(command, args, options = {}) {
   console.log(`[shardcloud] ${command} ${args.join(' ')}`);
@@ -45,7 +46,10 @@ if (!process.env.DATABASE_URL) {
 
 process.env.JWT_SECRET ||= 'change-this-jwt-secret-in-shardcloud';
 process.env.INGEST_SECRET ||= 'change-this-ingest-secret-in-shardcloud';
-process.env.API_ORIGIN ||= process.env.PUBLIC_BASE_URL || `http://localhost:${webPort}`;
+process.env.ADMIN_EMAIL ||= 'vortex@adimin.com';
+process.env.ADMIN_PASSWORD ||= 'vortex';
+process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
+process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 

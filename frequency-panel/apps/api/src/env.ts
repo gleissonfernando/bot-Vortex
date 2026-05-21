@@ -12,8 +12,8 @@ function required(name: string): string {
 export const env = {
   databaseUrl: required('DATABASE_URL'),
   jwtSecret: required('JWT_SECRET'),
-  adminEmail: process.env.ADMIN_EMAIL || 'admin@vortex.local',
-  adminPassword: process.env.ADMIN_PASSWORD || 'admin',
+  adminEmail: process.env.ADMIN_EMAIL || 'vortex@adimin.com',
+  adminPassword: process.env.ADMIN_PASSWORD || 'vortex',
   apiPort: Number(process.env.API_PORT || 4100),
   apiOrigin: process.env.API_ORIGIN || 'http://localhost:3000',
   ingestSecret: required('INGEST_SECRET')
