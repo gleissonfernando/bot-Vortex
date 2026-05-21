@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { Activity, Bell, Edit3, PlayCircle, Plus, Radio, Save, Trash2 } from 'lucide-react';
+import { Bell, CircleHelp, Edit3, PlayCircle, Plus, Radio, Save, Trash2, Tv } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type LiveItem = {
@@ -16,6 +16,8 @@ type LiveItem = {
   customMessage: string | null;
   status: 'online' | 'offline' | 'unknown';
   lastLiveTitle?: string | null;
+  twitchLogin?: string | null;
+  avatarUrl?: string | null;
 };
 
 type Settings = {
@@ -26,14 +28,14 @@ type Settings = {
   checkIntervalSeconds: number;
 };
 
-const platforms = [
-  { id: 'twitch', name: 'Twitch', gradient: 'from-purple-500 via-fuchsia-500 to-indigo-500', mark: 'TW' },
-  { id: 'youtube', name: 'YouTube', gradient: 'from-red-500 via-rose-500 to-orange-400', mark: 'YT' },
-  { id: 'kick', name: 'Kick', gradient: 'from-lime-400 via-emerald-400 to-cyan-400', mark: 'K' },
-  { id: 'custom', name: 'URL personalizada', gradient: 'from-sky-400 via-blue-500 to-violet-500', mark: 'URL' }
-];
-
 const defaultMessage = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+
+const platformCards = [
+  { id: 'youtube', name: 'YouTube', description: 'Videos publicados e alertas de canal.', action: 'Em breve', mark: 'YT', color: 'bg-red-500' },
+  { id: 'twitch', name: 'Twitch', description: 'Alertas ao vivo usando Twitch Helix API.', action: 'Adicionar canal', mark: 'TW', color: 'bg-violet-500' },
+  { id: 'kick', name: 'Kick', description: 'Monitoramento de lives por URL publica.', action: 'Adicionar', mark: 'K', color: 'bg-emerald-400' },
+  { id: 'custom', name: 'Personalizada', description: 'URLs externas monitoradas pelo sistema.', action: 'Adicionar', mark: 'URL', color: 'bg-sky-400' }
+];
 
 export default function LivesPage() {
   const [lives, setLives] = useState<LiveItem[]>([]);
@@ -46,6 +48,7 @@ export default function LivesPage() {
   });
   const [selectedPlatform, setSelectedPlatform] = useState('twitch');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({
@@ -58,6 +61,12 @@ export default function LivesPage() {
   });
 
   const editing = useMemo(() => lives.find((live) => live.id === editingId) || null, [lives, editingId]);
+  const byPlatform = useMemo(() => {
+    return platformCards.reduce<Record<string, LiveItem[]>>((acc, platform) => {
+      acc[platform.id] = lives.filter((live) => live.platform === platform.id);
+      return acc;
+    }, {});
+  }, [lives]);
 
   async function load() {
     setLoading(true);
@@ -76,15 +85,21 @@ export default function LivesPage() {
     load();
   }, []);
 
-  function selectPlatform(id: string) {
-    setSelectedPlatform(id);
+  function resetForm(platform = selectedPlatform) {
+    setSelectedPlatform(platform);
     setEditingId(null);
     setForm({ url: '', streamerName: '', alertChannelId: '', mentionRoleId: '', enabled: true, customMessage: '' });
+  }
+
+  function openAdd(platform: string) {
+    resetForm(platform);
+    setShowForm(true);
   }
 
   function startEdit(live: LiveItem) {
     setSelectedPlatform(live.platform);
     setEditingId(live.id);
+    setShowForm(true);
     setForm({
       url: live.url,
       streamerName: live.streamerName,
@@ -101,12 +116,13 @@ export default function LivesPage() {
     try {
       if (editing) {
         await apiFetch(`/lives/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-        setMessage('Live atualizada.');
+        setMessage('Canal atualizado na Vortex.');
       } else {
         await apiFetch('/lives', { method: 'POST', body: JSON.stringify(payload) });
-        setMessage('Live cadastrada.');
+        setMessage('Canal cadastrado para alertas da Vortex.');
       }
-      selectPlatform(selectedPlatform);
+      setShowForm(false);
+      resetForm(selectedPlatform);
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao salvar live');
@@ -122,7 +138,7 @@ export default function LivesPage() {
     setMessage('');
     try {
       await apiFetch(`/lives/${id}/test`, { method: 'POST' });
-      setMessage('Alerta de teste enviado.');
+      setMessage('Alerta de teste enviado no Discord.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao testar alerta');
     }
@@ -133,164 +149,157 @@ export default function LivesPage() {
     try {
       const data = await apiFetch<{ settings: Settings }>('/lives/settings/general', {
         method: 'PUT',
-        body: JSON.stringify({
-          ...settings,
-          checkIntervalSeconds: Number(settings.checkIntervalSeconds || 120)
-        })
+        body: JSON.stringify({ ...settings, checkIntervalSeconds: Number(settings.checkIntervalSeconds || 120) })
       });
       setSettings(data.settings);
-      setMessage('Configurações salvas.');
+      setMessage('Configuracao geral salva.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Falha ao salvar configurações');
+      setMessage(error instanceof Error ? error.message : 'Falha ao salvar configuracoes');
     }
   }
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <header className="overflow-hidden rounded-lg border border-white/10 bg-slate-950/70 p-6 shadow-2xl shadow-purple-950/20">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <header className="flex flex-col gap-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="grid h-12 w-12 place-items-center rounded-lg bg-white/[0.06] text-white">
+              <Bell size={26} />
+            </div>
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-fuchsia-300">Vortex Live Alerts</p>
-              <h1 className="mt-2 text-3xl font-semibold text-white">Lives</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-400">
-                Cadastre canais, monitore status e envie alertas automáticos no Discord sem repetir anúncio da mesma live.
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Vortex Social</p>
+              <h1 className="text-3xl font-semibold tracking-tight text-white">Live Notifications</h1>
             </div>
-            <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3">
-              <Activity className={settings.enabled ? 'text-emerald-300' : 'text-slate-500'} size={20} />
-              <div>
-                <p className="text-xs text-slate-400">Sistema</p>
-                <p className="font-semibold">{settings.enabled ? 'Ativo' : 'Desativado'}</p>
-              </div>
-            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button title="Ajuda" className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300">
+              <CircleHelp size={18} />
+            </button>
+            <button
+              onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+              className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
+                settings.enabled ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-200' : 'border-slate-300/10 bg-white/[0.04] text-slate-300'
+              }`}
+            >
+              {settings.enabled ? 'Sistema ativo' : 'Sistema pausado'}
+            </button>
           </div>
         </header>
 
-        {message ? <div className="rounded-lg border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">{message}</div> : null}
+        {message ? <div className="rounded-lg border border-sky-300/15 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">{message}</div> : null}
 
-        <section className="grid gap-4 md:grid-cols-4">
-          {platforms.map((platform) => (
-            <button
-              key={platform.id}
-              onClick={() => selectPlatform(platform.id)}
-              className={`group overflow-hidden rounded-lg border p-4 text-left transition ${
-                selectedPlatform === platform.id ? 'border-white/30 bg-white/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
-              }`}
-            >
-              <div className={`flex h-24 items-end rounded-lg bg-gradient-to-br ${platform.gradient} p-4 shadow-lg shadow-black/30`}>
-                <span className="text-2xl font-black text-white">{platform.mark}</span>
+        <section className="space-y-3">
+          {platformCards.map((platform) => (
+            <article key={platform.id} className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel backdrop-blur">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={`grid h-11 w-11 place-items-center rounded-lg ${platform.color} text-sm font-black text-white shadow-lg shadow-black/20`}>
+                    {platform.mark}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-white">{platform.name}</h2>
+                      {platform.id === 'twitch' ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-xs font-semibold text-slate-300">
+                          {(byPlatform.twitch || []).length}/5
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-slate-400">{platform.description}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openAdd(platform.id)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.12]"
+                >
+                  <Plus size={16} />
+                  {platform.action}
+                </button>
               </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="font-semibold text-white">{platform.name}</span>
-                <Plus size={18} className="text-slate-300 transition group-hover:text-white" />
-              </div>
-            </button>
+
+              {platform.id === 'twitch' ? (
+                <div className="mt-4 space-y-2">
+                  {(byPlatform.twitch || []).map((live) => (
+                    <LiveChannelRow
+                      key={live.id}
+                      live={live}
+                      settings={settings}
+                      onEdit={() => startEdit(live)}
+                      onDelete={() => deleteLive(live.id)}
+                      onTest={() => testLive(live.id)}
+                    />
+                  ))}
+                  {!loading && !(byPlatform.twitch || []).length ? (
+                    <div className="rounded-lg border border-dashed border-white/10 bg-black/10 p-4 text-sm text-slate-500">
+                      Nenhum canal da Twitch cadastrado. Clique em adicionar canal para configurar a primeira live.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </article>
           ))}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
-            <div className="mb-4 flex items-center gap-2">
-              <Radio className="text-fuchsia-300" size={20} />
-              <h2 className="text-lg font-semibold">{editing ? 'Editar live' : `Cadastrar ${platforms.find((item) => item.id === selectedPlatform)?.name}`}</h2>
+        {showForm ? (
+          <section className="rounded-lg border border-white/10 bg-white/[0.045] p-5 shadow-panel backdrop-blur">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Radio className="text-violet-300" size={20} />
+                <h2 className="text-lg font-semibold text-white">{editing ? 'Editar canal' : `Adicionar ${selectedPlatform}`}</h2>
+              </div>
+              <button onClick={() => setShowForm(false)} className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06]">Fechar</button>
             </div>
-            <div className="space-y-3">
-              <Input label="URL do canal" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://www.twitch.tv/streamer" />
-              <Input label="Nome do streamer" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Fulano" />
-              <Input label="Canal do Discord" value={form.alertChannelId} onChange={(value) => setForm({ ...form, alertChannelId: value })} placeholder="ID do canal" />
-              <Input label="Cargo mencionado" value={form.mentionRoleId} onChange={(value) => setForm({ ...form, mentionRoleId: value })} placeholder="ID do cargo" />
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input label="URL ou usuario do canal" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://www.twitch.tv/usuario ou usuario" />
+              <Input label="Nome no painel" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Preenchido automaticamente na Twitch" />
+              <Input label="Canal do Discord" value={form.alertChannelId} onChange={(value) => setForm({ ...form, alertChannelId: value })} placeholder={settings.defaultAlertChannelId || 'ID do canal'} />
+              <Input label="Cargo mencionado" value={form.mentionRoleId} onChange={(value) => setForm({ ...form, mentionRoleId: value })} placeholder={settings.defaultMentionRoleId || 'ID do cargo'} />
               <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
                 <span className="text-slate-300">Alerta ativo</span>
-                <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-fuchsia-500" />
+                <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-violet-500" />
               </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Mensagem personalizada</span>
+              <label className="block md:col-span-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Mensagem personalizada</span>
                 <textarea
                   value={form.customMessage}
                   onChange={(event) => setForm({ ...form, customMessage: event.target.value })}
                   placeholder={defaultMessage}
-                  className="mt-1 min-h-28 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-fuchsia-300/60"
+                  className="mt-1 min-h-28 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/60"
                 />
               </label>
-              <button onClick={saveLive} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-fuchsia-500 via-blue-500 to-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/30">
-                <Save size={16} />
-                {editing ? 'Salvar edição' : 'Cadastrar live'}
-              </button>
             </div>
-          </div>
+            <button onClick={saveLive} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-500 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-400">
+              <Save size={16} />
+              {editing ? 'Salvar canal' : 'Adicionar canal'}
+            </button>
+          </section>
+        ) : null}
 
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Lives cadastradas</h2>
-              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{lives.length} registro(s)</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Plataforma</th>
-                    <th className="px-3 py-2">Streamer</th>
-                    <th className="px-3 py-2">URL</th>
-                    <th className="px-3 py-2">Canal</th>
-                    <th className="px-3 py-2">Cargo</th>
-                    <th className="px-3 py-2">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">Carregando lives...</td></tr>
-                  ) : lives.length ? lives.map((live) => (
-                    <tr key={live.id} className="border-t border-white/5">
-                      <td className="px-3 py-3"><StatusBadge status={live.status} enabled={live.enabled} /></td>
-                      <td className="px-3 py-3 capitalize text-slate-200">{live.platform}</td>
-                      <td className="px-3 py-3 font-medium text-white">{live.streamerName}</td>
-                      <td className="max-w-[220px] truncate px-3 py-3 text-blue-200">{live.url}</td>
-                      <td className="px-3 py-3 text-slate-300">{live.alertChannelId || settings.defaultAlertChannelId || 'Padrão vazio'}</td>
-                      <td className="px-3 py-3 text-slate-300">{live.mentionRoleId || settings.defaultMentionRoleId || 'Padrão vazio'}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-2">
-                          <IconButton label="Editar" onClick={() => startEdit(live)}><Edit3 size={15} /></IconButton>
-                          <IconButton label="Excluir" onClick={() => deleteLive(live.id)}><Trash2 size={15} /></IconButton>
-                          <IconButton label="Testar" onClick={() => testLive(live.id)}><PlayCircle size={15} /></IconButton>
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">Nenhuma live cadastrada.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
+        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-5 backdrop-blur">
           <div className="mb-4 flex items-center gap-2">
-            <Bell className="text-blue-300" size={20} />
-            <h2 className="text-lg font-semibold">Configuração geral</h2>
+            <Tv className="text-sky-300" size={20} />
+            <h2 className="text-lg font-semibold text-white">Padroes da Vortex</h2>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Canal padrão de alertas" value={settings.defaultAlertChannelId || ''} onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value })} placeholder="ID do canal" />
-            <Input label="Cargo padrão para mencionar" value={settings.defaultMentionRoleId || ''} onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })} placeholder="ID do cargo" />
-            <Input label="Tempo de verificação das lives" value={String(settings.checkIntervalSeconds)} onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Number(value) })} placeholder="120" />
+            <Input label="Canal padrao de alertas" value={settings.defaultAlertChannelId || ''} onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value })} placeholder="ID do canal" />
+            <Input label="Cargo padrao para mencionar" value={settings.defaultMentionRoleId || ''} onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })} placeholder="ID do cargo" />
+            <Input label="Tempo de verificacao" value={String(settings.checkIntervalSeconds)} onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Number(value) })} placeholder="120" />
             <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
-              <span className="text-slate-300">Sistema ativo</span>
-              <input type="checkbox" checked={settings.enabled} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-blue-500" />
+              <span className="text-slate-300">Monitoramento ativo</span>
+              <input type="checkbox" checked={settings.enabled} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-sky-500" />
             </label>
             <label className="block md:col-span-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Mensagem padrão</span>
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Mensagem padrao</span>
               <textarea
                 value={settings.defaultMessage || defaultMessage}
                 onChange={(event) => setSettings({ ...settings, defaultMessage: event.target.value })}
-                className="mt-1 min-h-28 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none transition focus:border-blue-300/60"
+                className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-300/60"
               />
             </label>
           </div>
-          <button onClick={saveSettings} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-300/20 bg-blue-500/15 px-4 py-2 text-sm font-semibold text-blue-100 hover:bg-blue-500/25">
+          <button onClick={saveSettings} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/15">
             <Save size={16} />
-            Salvar configurações
+            Salvar padroes
           </button>
         </section>
       </div>
@@ -298,29 +307,71 @@ export default function LivesPage() {
   );
 }
 
+function LiveChannelRow({ live, settings, onEdit, onDelete, onTest }: {
+  live: LiveItem;
+  settings: Settings;
+  onEdit: () => void;
+  onDelete: () => void;
+  onTest: () => void;
+}) {
+  const initials = (live.streamerName || live.twitchLogin || 'VX').slice(0, 2).toUpperCase();
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-black/15 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-violet-500/15 text-sm font-semibold text-violet-100">
+          {live.avatarUrl ? <img src={live.avatarUrl} alt={live.streamerName} className="relative z-10 h-full w-full object-cover" /> : null}
+          <span className="absolute inset-0 grid place-items-center">{initials}</span>
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate font-semibold text-white">@{live.twitchLogin || live.streamerName}</p>
+            <StatusBadge status={live.status} enabled={live.enabled} />
+          </div>
+          <p className="truncate text-sm text-slate-500">{live.url}</p>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
+            <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.alertChannelId || settings.defaultAlertChannelId || 'Sem canal'}</span>
+            <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.mentionRoleId || settings.defaultMentionRoleId || 'Sem cargo'}</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <IconButton label="Configurar" onClick={onEdit}><Edit3 size={15} /></IconButton>
+        <IconButton label="Testar alerta" onClick={onTest}><PlayCircle size={15} /></IconButton>
+        <IconButton label="Excluir" onClick={onDelete}><Trash2 size={15} /></IconButton>
+      </div>
+    </div>
+  );
+}
+
 function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-fuchsia-300/60"
+        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/60"
       />
     </label>
   );
 }
 
 function StatusBadge({ status, enabled }: { status: string; enabled: boolean }) {
-  const label = !enabled ? 'Desativada' : status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Desconhecido';
-  const color = !enabled ? 'border-slate-500/30 bg-slate-500/10 text-slate-300' : status === 'online' ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-red-400/30 bg-red-500/10 text-red-200';
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${color}`}>{label}</span>;
+  const label = !enabled ? 'Pausado' : status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Aguardando';
+  const color = !enabled
+    ? 'border-slate-500/30 bg-slate-500/10 text-slate-300'
+    : status === 'online'
+      ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+      : status === 'offline'
+        ? 'border-rose-400/30 bg-rose-500/10 text-rose-200'
+        : 'border-sky-400/30 bg-sky-500/10 text-sky-200';
+  return <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${color}`}>{label}</span>;
 }
 
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button title={label} onClick={onClick} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">
+    <button title={label} onClick={onClick} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.1]">
       {children}
     </button>
   );

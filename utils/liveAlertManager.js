@@ -89,6 +89,9 @@ function normalizeLive(row) {
     lastAnnouncedLiveId: row.last_announced_live_id || row.lastAnnouncedLiveId || null,
     lastLiveTitle: row.last_live_title || row.lastLiveTitle || null,
     lastLiveUrl: row.last_live_url || row.lastLiveUrl || null,
+    twitchUserId: row.twitch_user_id || row.twitchUserId || null,
+    twitchLogin: row.twitch_login || row.twitchLogin || null,
+    avatarUrl: row.avatar_url || row.avatarUrl || null,
   };
 }
 
@@ -230,12 +233,32 @@ async function getTwitchToken() {
   return twitchTokenCache.token;
 }
 
+async function getTwitchUserByLogin(login) {
+  const token = await getTwitchToken();
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  if (!token || !clientId || !login) return null;
+  const response = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`, {
+    headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return Array.isArray(data.data) ? data.data[0] || null : null;
+}
+
 async function checkTwitchLive(live) {
   const token = await getTwitchToken();
   const clientId = process.env.TWITCH_CLIENT_ID;
-  const slug = extractSlug(live.url);
-  if (!token || !clientId || !slug) return { online: false };
-  const response = await fetch(`https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(slug)}`, {
+  let userId = live.twitchUserId;
+  const login = live.twitchLogin || extractSlug(live.url);
+  if (!userId && login) {
+    const user = await getTwitchUserByLogin(login);
+    userId = user?.id || null;
+  }
+  if (!token || !clientId || (!userId && !login)) return { online: false };
+  const query = userId
+    ? `user_id=${encodeURIComponent(userId)}`
+    : `user_login=${encodeURIComponent(login)}`;
+  const response = await fetch(`https://api.twitch.tv/helix/streams?${query}`, {
     headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
   });
   if (!response.ok) return { online: false };
@@ -244,8 +267,11 @@ async function checkTwitchLive(live) {
   if (!stream) return { online: false };
   return {
     online: true,
-    liveId: String(stream.id || `${slug}:${stream.started_at || ''}`),
+    liveId: String(stream.id || `${userId || login}:${stream.started_at || ''}`),
     title: stream.title || 'Live na Twitch',
+    game: stream.game_name || null,
+    viewerCount: Number(stream.viewer_count || 0),
+    thumbnailUrl: stream.thumbnail_url || null,
     url: live.url,
   };
 }
@@ -300,14 +326,20 @@ async function sendLiveAlert(client, live, settings, status, { test = false } = 
   const content = [roleId ? `<@&${roleId}>` : null, renderMessage(live.customMessage || settings.defaultMessage, live, status)].filter(Boolean).join('\n\n');
   const embed = new EmbedBuilder()
     .setColor(test ? '#7C3AED' : '#ED4245')
+    .setAuthor({ name: 'VORTEX | Live Alerts' })
     .setTitle(test ? 'Teste de alerta de live' : `${live.streamerName} está ao vivo!`)
     .setDescription(`Assista agora: ${status.url || live.url}`)
     .addFields(
       { name: 'Plataforma', value: live.platform, inline: true },
       { name: 'Streamer', value: live.streamerName, inline: true },
+      status.game ? { name: 'Categoria', value: String(status.game), inline: true } : { name: 'Status', value: test ? 'Teste' : 'Online', inline: true },
       { name: 'Titulo', value: status.title || 'Live da Vortex', inline: false }
     )
     .setTimestamp();
+  if (live.avatarUrl) embed.setThumbnail(live.avatarUrl);
+  if (status.thumbnailUrl) {
+    embed.setImage(String(status.thumbnailUrl).replace('{width}', '1280').replace('{height}', '720'));
+  }
   await channel.send({
     content,
     embeds: [embed],

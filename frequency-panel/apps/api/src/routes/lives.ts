@@ -6,6 +6,7 @@ import { requireManager } from '../middleware.js';
 
 const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
 const PLATFORMS = ['twitch', 'youtube', 'kick', 'custom'] as const;
+let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 
 const liveSchema = z.object({
   platform: z.enum(PLATFORMS).optional(),
@@ -40,6 +41,9 @@ type LiveDoc = {
   status: 'online' | 'offline' | 'unknown';
   last_live_title: string | null;
   last_live_url: string | null;
+  twitch_user_id?: string | null;
+  twitch_login?: string | null;
+  avatar_url?: string | null;
   last_announced_live_id: string | null;
   last_checked_at: Date | null;
   created_at: Date;
@@ -58,6 +62,64 @@ function detectPlatform(url: string) {
   return 'custom';
 }
 
+function extractChannelSlug(url: string) {
+  try {
+    const parsed = new URL(url.includes('://') ? url : `https://twitch.tv/${url}`);
+    return parsed.pathname.split('/').filter(Boolean)[0] || '';
+  } catch {
+    return String(url || '').replace(/^@/, '').trim();
+  }
+}
+
+async function getTwitchToken() {
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  if (twitchTokenCache && twitchTokenCache.expiresAt > Date.now() + 60_000) return twitchTokenCache.token;
+
+  const response = await fetch('https://id.twitch.tv/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials'
+    })
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  twitchTokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 3600) - 60) * 1000
+  };
+  return twitchTokenCache.token;
+}
+
+async function resolveTwitchChannel(url: string) {
+  const login = extractChannelSlug(url).toLowerCase();
+  const token = await getTwitchToken();
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  if (!login || !token || !clientId) return null;
+
+  const response = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Client-Id': clientId
+    }
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  const user = Array.isArray(data.data) ? data.data[0] : null;
+  if (!user) return null;
+  return {
+    id: String(user.id),
+    login: String(user.login || login),
+    displayName: String(user.display_name || login),
+    avatarUrl: user.profile_image_url || null,
+    url: `https://www.twitch.tv/${user.login || login}`
+  };
+}
+
 function normalizeLive(doc: LiveDoc) {
   const item = serializeDoc(doc) as any;
   item.id = String(doc._id);
@@ -68,6 +130,9 @@ function normalizeLive(doc: LiveDoc) {
   item.customMessage = doc.custom_message;
   item.lastLiveTitle = doc.last_live_title;
   item.lastLiveUrl = doc.last_live_url;
+  item.twitchUserId = doc.twitch_user_id || null;
+  item.twitchLogin = doc.twitch_login || null;
+  item.avatarUrl = doc.avatar_url || null;
   item.lastCheckedAt = doc.last_checked_at;
   delete item._id;
   delete item.guild_id;
@@ -77,6 +142,9 @@ function normalizeLive(doc: LiveDoc) {
   delete item.custom_message;
   delete item.last_live_title;
   delete item.last_live_url;
+  delete item.twitch_user_id;
+  delete item.twitch_login;
+  delete item.avatar_url;
   delete item.last_announced_live_id;
   delete item.last_checked_at;
   delete item.created_at;
@@ -158,11 +226,13 @@ livesRouter.post('/', requireManager, async (req, res) => {
   const input = liveSchema.parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const now = new Date();
+  const platform = input.platform || detectPlatform(input.url);
+  const twitch = platform === 'twitch' ? await resolveTwitchChannel(input.url) : null;
   const doc: LiveDoc = {
     guild_id: guildId,
-    platform: input.platform || detectPlatform(input.url),
-    url: input.url.trim(),
-    streamer_name: input.streamerName.trim(),
+    platform,
+    url: twitch?.url || input.url.trim(),
+    streamer_name: twitch?.displayName || input.streamerName.trim(),
     alert_channel_id: input.alertChannelId || null,
     mention_role_id: input.mentionRoleId || null,
     enabled: input.enabled !== false,
@@ -170,6 +240,9 @@ livesRouter.post('/', requireManager, async (req, res) => {
     status: 'unknown',
     last_live_title: null,
     last_live_url: null,
+    twitch_user_id: twitch?.id || null,
+    twitch_login: twitch?.login || null,
+    avatar_url: twitch?.avatarUrl || null,
     last_announced_live_id: null,
     last_checked_at: null,
     created_at: now,
@@ -186,6 +259,16 @@ livesRouter.put('/:id', requireManager, async (req, res) => {
   if (input.url) {
     update.url = input.url.trim();
     update.platform = input.platform || detectPlatform(input.url);
+    if (update.platform === 'twitch') {
+      const twitch = await resolveTwitchChannel(input.url);
+      if (twitch) {
+        update.url = twitch.url;
+        update.streamer_name = twitch.displayName;
+        update.twitch_user_id = twitch.id;
+        update.twitch_login = twitch.login;
+        update.avatar_url = twitch.avatarUrl;
+      }
+    }
   } else if (input.platform) {
     update.platform = input.platform;
   }
