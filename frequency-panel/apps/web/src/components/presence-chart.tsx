@@ -18,17 +18,17 @@ export function PresenceChart({ data }: { data: FrequencyDay[] }) {
         <AreaChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="presence" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#0b6bff" stopOpacity={0.55} />
-              <stop offset="95%" stopColor="#0b6bff" stopOpacity={0.04} />
+              <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.38} />
+              <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" vertical={false} />
+          <CartesianGrid stroke="rgba(148, 163, 184, 0.08)" vertical={false} />
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
           <Tooltip
             contentStyle={{
-              background: '#07111f',
-              border: '1px solid rgba(76,145,255,.25)',
+              background: 'rgba(8, 13, 23, .96)',
+              border: '1px solid rgba(148,163,184,.18)',
               borderRadius: 8,
               color: '#fff'
             }}
@@ -37,7 +37,7 @@ export function PresenceChart({ data }: { data: FrequencyDay[] }) {
               return [value, name];
             }}
           />
-          <Area type="monotone" dataKey="horas" stroke="#4aa3ff" fill="url(#presence)" strokeWidth={2} />
+          <Area type="monotone" dataKey="horas" stroke="#38bdf8" fill="url(#presence)" strokeWidth={2} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

@@ -23,19 +23,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface-950 text-slate-100">
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-blue-400/10 bg-surface-900/95 p-5 lg:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-white/10 bg-black/20 p-5 backdrop-blur-xl lg:block">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
+          <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/[0.06]">
             <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
           <div>
             <h1 className="text-base font-semibold">Vortex Frequency</h1>
-            <p className="text-xs text-slate-400">Gestao de frequencia</p>
+            <p className="text-xs text-slate-500">Operacao em tempo real</p>
           </div>
         </div>
 
-        <div className="mt-8 rounded-lg border border-white/5 bg-white/[0.03] p-3">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
+        <div className="mt-8 rounded-lg border border-white/10 bg-white/[0.035] p-3">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
             <Search size={16} />
             Busca por nome, ID ou cargo
           </div>
@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={`${item.href}-${item.label}`}
                 href={item.href}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                  active ? 'bg-blue-500/15 text-blue-200' : 'text-slate-400 hover:bg-white/[0.04] hover:text-white'
+                  active ? 'bg-white/[0.08] text-white shadow-sm' : 'text-slate-500 hover:bg-white/[0.04] hover:text-white'
                 }`}
               >
                 <Icon size={18} />
@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <button
           onClick={logout}
-          className="absolute bottom-5 left-5 right-5 flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.07]"
+          className="absolute bottom-5 left-5 right-5 flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white"
         >
           <LogOut size={16} />
           Sair
@@ -70,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="lg:pl-72">
-        <header className="sticky top-0 z-30 border-b border-white/10 bg-surface-950/95 px-4 py-3 backdrop-blur lg:hidden">
+        <header className="sticky top-0 z-30 border-b border-white/10 bg-surface-950/90 px-4 py-3 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
               <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
@@ -78,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold">Vortex Frequency</h1>
-                <p className="text-xs text-slate-400">Gestao de frequencia</p>
+                <p className="text-xs text-slate-500">Tempo real</p>
               </div>
             </Link>
             <button

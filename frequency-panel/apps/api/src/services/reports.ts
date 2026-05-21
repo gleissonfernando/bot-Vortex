@@ -28,12 +28,49 @@ export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
 
-  const [totalMembers, activeMembers, openPoints, monthSessions, trendSessions] = await Promise.all([
+  const [totalMembers, activeMembers, openPoints, monthSessions, trendSessions, recentSessions, recentMembers] = await Promise.all([
     members.countDocuments({}),
     members.countDocuments({ status: 'active' }),
     sessions.countDocuments({ closed_at: null }),
     sessions.find({ opened_at: { $gte: monthStart() } }).toArray(),
-    sessions.find({ opened_at: { $gte: thirtyDaysAgo() } }).sort({ opened_at: 1 }).toArray()
+    sessions.find({ opened_at: { $gte: thirtyDaysAgo() } }).sort({ opened_at: 1 }).toArray(),
+    sessions.aggregate([
+      { $sort: { opened_at: -1 } },
+      { $limit: 8 },
+      {
+        $lookup: {
+          from: 'discord_members',
+          localField: 'member_id',
+          foreignField: 'id',
+          as: 'member'
+        }
+      },
+      { $unwind: { path: '$member', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          id: 1,
+          action: { $cond: [{ $ifNull: ['$closed_at', false] }, 'closed', 'opened'] },
+          at: { $ifNull: ['$closed_at', '$opened_at'] },
+          opened_at: 1,
+          closed_at: 1,
+          total_seconds: 1,
+          source: 1,
+          member_name: '$member.display_name',
+          username: '$member.username',
+          avatar_url: '$member.avatar_url',
+          discord_user_id: '$member.discord_user_id'
+        }
+      }
+    ]).toArray(),
+    members.find({ last_seen_at: { $ne: null } }).sort({ last_seen_at: -1 }).limit(6).project({
+      id: 1,
+      display_name: 1,
+      username: 1,
+      avatar_url: 1,
+      discord_user_id: 1,
+      last_seen_at: 1,
+      highest_role_name: 1
+    }).toArray()
   ]);
 
   const trendMap = new Map<string, { date_key: string; points: number; total_seconds: number }>();
@@ -52,7 +89,35 @@ export async function dashboardMetrics() {
       open_points: openPoints,
       month_seconds: (monthSessions as any[]).reduce((sum, session) => sum + Number(session.total_seconds || 0), 0)
     },
-    trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key))
+    trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key)),
+    activity: [
+      ...(recentSessions as any[]).map((item) => ({
+        id: String(item.id || `${item.member_id || item.discord_user_id}:${item.at}`),
+        type: item.action === 'closed' ? 'point.closed' : 'point.opened',
+        title: item.action === 'closed' ? 'Ponto fechado' : 'Ponto aberto',
+        member_name: item.member_name || item.username || 'Membro',
+        username: item.username || null,
+        avatar_url: item.avatar_url || null,
+        discord_user_id: item.discord_user_id || null,
+        at: item.at ? item.at.toISOString() : null,
+        total_seconds: Number(item.total_seconds || 0),
+        source: item.source || 'bot'
+      })),
+      ...(recentMembers as any[]).map((member) => ({
+        id: `presence:${member.id}`,
+        type: 'presence.seen',
+        title: 'Presenca detectada',
+        member_name: member.display_name || member.username || 'Membro',
+        username: member.username || null,
+        avatar_url: member.avatar_url || null,
+        discord_user_id: member.discord_user_id || null,
+        at: member.last_seen_at ? member.last_seen_at.toISOString() : null,
+        role: member.highest_role_name || null
+      }))
+    ]
+      .filter((item) => item.at)
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .slice(0, 10)
   };
 }
 

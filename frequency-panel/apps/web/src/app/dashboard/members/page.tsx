@@ -47,19 +47,22 @@ export default function MembersPage() {
 
   return (
     <AppShell>
-      <header className="mb-6">
-        <p className="text-sm font-medium text-blue-300">Membros</p>
-        <h1 className="mt-1 text-2xl font-semibold text-white">Membros do Discord</h1>
-        <p className="mt-1 text-sm text-slate-400">Busque por nome, ID ou cargo e acesse o perfil individual.</p>
+      <header className="mb-6 animate-fade-up">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-slate-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+          Membros
+        </div>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">Membros do Discord</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Busque por nome, ID ou cargo e acompanhe atividade de ponto sem perder o contexto.</p>
       </header>
 
-      <section className="panel mb-4 grid gap-3 rounded-lg p-3 md:grid-cols-[1fr_220px_180px_auto]">
+      <section className="soft-panel mb-4 grid gap-3 rounded-lg p-3 md:grid-cols-[1fr_220px_180px_auto]">
         <label className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-full rounded-lg border-white/10 bg-white/[0.04] pl-10 text-white placeholder:text-slate-500 focus:border-brand-400 focus:ring-brand-400"
+            className="w-full rounded-lg border-white/10 bg-black/20 pl-10 text-white placeholder:text-slate-500 focus:border-sky-300/50 focus:ring-sky-300/30"
             placeholder="Nome, ID ou usuario"
           />
         </label>
@@ -67,21 +70,21 @@ export default function MembersPage() {
         <input
           value={role}
           onChange={(event) => setRole(event.target.value)}
-          className="rounded-lg border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus:border-brand-400 focus:ring-brand-400"
+          className="rounded-lg border-white/10 bg-black/20 text-white placeholder:text-slate-500 focus:border-sky-300/50 focus:ring-sky-300/30"
           placeholder="Cargo ou ID"
         />
 
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          className="rounded-lg border-white/10 bg-white/[0.04] text-white focus:border-brand-400 focus:ring-brand-400"
+          className="rounded-lg border-white/10 bg-black/20 text-white focus:border-sky-300/50 focus:ring-sky-300/30"
         >
           <option value="">Todos</option>
           <option value="active">Ativos</option>
           <option value="inactive">Inativos</option>
         </select>
 
-        <button onClick={load} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-400">
+        <button onClick={load} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.1]">
           <SlidersHorizontal size={16} />
           Filtrar
         </button>
@@ -89,14 +92,14 @@ export default function MembersPage() {
 
       {error ? <div className="mb-4 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
 
-      <section className="panel overflow-hidden rounded-lg">
+      <section className="panel overflow-hidden rounded-lg animate-fade-up">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h2 className="text-sm font-semibold text-white">Lista de membros</h2>
-          <span className="text-sm text-slate-400">{loading ? 'Carregando' : `${members.length} registros`}</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">{loading ? 'Carregando' : `${members.length} registros`}</span>
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[920px] border-collapse">
-            <thead className="bg-blue-500/10 text-left text-xs uppercase text-blue-200">
+            <thead className="bg-white/[0.035] text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Membro</th>
                 <th className="px-4 py-3">Discord ID</th>
@@ -109,7 +112,7 @@ export default function MembersPage() {
             </thead>
             <tbody>
               {members.map((member) => (
-                <tr key={member.id} className="border-t border-white/10 text-sm text-slate-300 hover:bg-white/[0.03]">
+                <tr key={member.id} className="border-t border-white/10 text-sm text-slate-300 transition hover:bg-white/[0.04]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <MemberAvatar member={member} size="sm" />
@@ -120,12 +123,12 @@ export default function MembersPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">{member.discord_user_id}</td>
-                  <td className="px-4 py-3">{member.highest_role_name || 'N/A'}</td>
-                  <td className="px-4 py-3">{formatSeconds(member.total_seconds || 0)}</td>
+                  <td className="px-4 py-3"><span className="rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-xs">{member.highest_role_name || 'N/A'}</span></td>
+                  <td className="px-4 py-3 font-medium text-white">{formatSeconds(member.total_seconds || 0)}</td>
                   <td className="px-4 py-3">{member.session_count || 0}</td>
                   <td className="px-4 py-3">{formatDate(member.last_point_at || member.last_seen_at)}</td>
                   <td className="px-4 py-3">
-                    <Link href={`/dashboard/members/${member.id}`} className="rounded-lg border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
+                    <Link href={`/dashboard/members/${member.id}`} className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08] hover:text-white">
                       Abrir
                     </Link>
                   </td>
