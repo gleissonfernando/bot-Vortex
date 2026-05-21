@@ -5,6 +5,7 @@ import { ensureAdminUser } from './auth.js';
 import { env } from './env.js';
 import { requireAuth } from './middleware.js';
 import { authRouter } from './routes/auth.js';
+import { botVortexRouter } from './routes/bot-vortex.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
@@ -24,6 +25,7 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRouter);
 app.use('/events', eventsRouter);
 app.use('/ingest', ingestRouter);
+app.use('/bot-vortex', requireAuth, botVortexRouter);
 app.use('/dashboard', requireAuth, dashboardRouter);
 app.use('/lives', requireAuth, livesRouter);
 app.get('/members/:id/avatar', memberAvatarHandler);
