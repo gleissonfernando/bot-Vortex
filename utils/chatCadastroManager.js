@@ -17,7 +17,22 @@ function parseSnowflake(value) {
 }
 
 function parseCadastroLine(content) {
-  const parts = String(content || '')
+  const raw = String(content || '').trim();
+  if (!raw.includes('|')) {
+    const ids = [...raw.matchAll(/\d{15,25}/g)].map((match) => match[0]);
+    if (ids.length >= 2) {
+      return {
+        ok: true,
+        userId: ids[0],
+        name: null,
+        callChannelId: ids[1],
+        nivelGame: null,
+        photoLink: null,
+      };
+    }
+  }
+
+  const parts = raw
     .split('|')
     .map((part) => part.trim())
     .filter(Boolean);
@@ -25,7 +40,7 @@ function parseCadastroLine(content) {
   if (parts.length < 2) {
     return {
       ok: false,
-      message: 'Use: `@usuario | #canal` ou `@usuario | Nome do jogo | #canal | nivel opcional | link opcional`',
+      message: 'Use: `@usuario #canal` ou `@usuario | Nome do jogo | #canal | nivel opcional | link opcional`',
     };
   }
 
@@ -51,11 +66,11 @@ function buildCadastroHelpText(enabled = true) {
     '',
     'Envie quantas linhas quiser. Cada usuário deve estar na mesma linha do próprio canal:',
     '',
-    '`@usuario | #canal-do-usuario`',
+    '`@usuario #canal-do-usuario`',
     '`@usuario | Nome em game | #canal-do-usuario | nível | link`',
     '',
     'Exemplo:',
-    '`@Joao | #canal-do-joao`',
+    '`@Joao #canal-do-joao`',
     '`@Maria | Maria Vortex | #canal-da-maria | 18`',
     '',
     'Para desligar, envie `...`.',
@@ -136,6 +151,7 @@ async function handleCadastroMessage(message) {
 
   const content = String(message.content || '').trim();
   if (content === '...') {
+    await message.delete().catch(() => null);
     stopCadastroMode({
       guildId: message.guild.id,
       channelId: message.channelId,
@@ -159,6 +175,8 @@ async function handleCadastroMessage(message) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+
+  await message.delete().catch(() => null);
 
   const successes = [];
   const failures = [];
