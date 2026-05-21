@@ -56,16 +56,24 @@ process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 
 if (!fs.existsSync(path.join(panelDir, 'apps', 'api', 'dist', 'index.js'))) {
+  console.log('[shardcloud] API build not found; building now.');
   run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api']);
 }
 
 if (!fs.existsSync(path.join(webDir, '.next'))) {
+  console.log('[shardcloud] Web build not found; building now.');
   run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
     env: {
       INTERNAL_API_URL: process.env.INTERNAL_API_URL,
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
     }
   });
+}
+
+if (!fs.existsSync(standaloneServer)) {
+  console.error(`[shardcloud] Standalone server not found: ${standaloneServer}`);
+  console.error('[shardcloud] Run npm --prefix frequency-panel run build:web before starting.');
+  process.exit(1);
 }
 
 if (process.env.MONGODB_URI || process.env.MONGO_URI) {
