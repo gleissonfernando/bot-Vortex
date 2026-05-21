@@ -34,6 +34,7 @@ function writeStore(data) {
 function buildBaseUrl() {
   return String(
     process.env.VORTEX_TRANSCRIPT_BASE_URL
+    || process.env.APP_URL
     || process.env.POINT_SITE_BASE_URL
     || process.env.PUBLIC_BASE_URL
     || process.env.SITE_URL

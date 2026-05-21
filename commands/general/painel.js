@@ -36,6 +36,7 @@ const {
   registerManualProfile,
   readProfileConfig,
   toggleProfileBilling,
+  toggleProfileUpdateNotifications,
   addBillingExemptUserId,
   deleteUserProfile,
   syncProfilesFromApprovedSetChannels,
@@ -1622,6 +1623,18 @@ module.exports = {
         return renderDashboard(interaction, 'tab_perfil', true);
     }
 
+    if (customId === 'profile_toggle_update_notifications') {
+        const next = toggleProfileUpdateNotifications();
+        sendVortexLog(interaction.client, {
+            title: 'Notificacao de Perfil Alterada',
+            description: `Notificações de atualização de perfil foram **${next.profileUpdateNotificationsEnabled ? 'LIGADAS' : 'DESLIGADAS'}** por <@${interaction.user.id}>.\nData/hora real: ${formatDate(new Date())}`,
+            color: next.profileUpdateNotificationsEnabled ? '#57F287' : '#FFA500',
+            type: 'PERFIL',
+            userId: interaction.user.id
+        }).catch(() => {});
+        return renderDashboard(interaction, 'tab_perfil', true);
+    }
+
     if (customId === 'profile_list_registered') {
         await safeDeferReply(interaction, { ephemeral: true });
         const profiles = getGuildProfiles(interaction.guild.id);
@@ -3032,6 +3045,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Perfis devem ser atualizados pelo `/perfil` com mídia e nível em game.',
         `Cadastrados: **${profileList.length}** | aprovados no /set: **${setProfileCount}** | manuais: **${manualProfileCount}**`,
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
+        `Notificação de atualização: **${profileConfig.profileUpdateNotificationsEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
         `Selecionado: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhum canal de texto`'}`,
@@ -3050,6 +3064,12 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
     extraRows = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('profile_toggle_update_notifications')
+          .setLabel(profileConfig.profileUpdateNotificationsEnabled ? 'Desligar notificacao' : 'Ligar notificacao')
+          .setStyle(profileConfig.profileUpdateNotificationsEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      ),
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_profile_register_user')

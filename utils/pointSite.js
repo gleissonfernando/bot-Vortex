@@ -12,7 +12,7 @@ const WEEKDAY_LABELS = [
 ];
 
 function buildPointSiteUrl(guildId, userId) {
-  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
+  const configuredBaseUrl = process.env.POINT_SITE_BASE_URL || process.env.APP_URL || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || 'http://localhost:3000';
   const baseUrl = String(configuredBaseUrl).trim().replace(/\/+$/, '') || 'http://localhost:3000';
   const url = new URL(`/relatorio/ponto/${userId}`, baseUrl);
   url.searchParams.set('guildId', guildId);

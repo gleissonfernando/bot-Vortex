@@ -59,16 +59,17 @@ function readApprovedSetChannels() {
 
 function readProfileConfig() {
   if (!fs.existsSync(PROFILE_CONFIG_PATH)) {
-    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: true, billingExemptUserIds: [] }, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: true, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] }, null, 2)}\n`, 'utf8');
   }
   try {
     return {
       billingDmEnabled: true,
+      profileUpdateNotificationsEnabled: true,
       billingExemptUserIds: [],
       ...(JSON.parse(fs.readFileSync(PROFILE_CONFIG_PATH, 'utf8') || '{}')),
     };
   } catch {
-    return { billingDmEnabled: true, billingExemptUserIds: [] };
+    return { billingDmEnabled: true, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] };
   }
 }
 
@@ -136,6 +137,17 @@ function setProfileBillingEnabled(enabled) {
 function toggleProfileBilling() {
   const current = readProfileConfig();
   return setProfileBillingEnabled(!current.billingDmEnabled);
+}
+
+function setProfileUpdateNotificationsEnabled(enabled) {
+  const next = { ...readProfileConfig(), profileUpdateNotificationsEnabled: Boolean(enabled), updatedAt: new Date().toISOString() };
+  writeProfileConfig(next);
+  return next;
+}
+
+function toggleProfileUpdateNotifications() {
+  const current = readProfileConfig();
+  return setProfileUpdateNotificationsEnabled(!current.profileUpdateNotificationsEnabled);
 }
 
 function normalizeUserIds(userIds) {
@@ -511,6 +523,8 @@ async function registerManualProfile(guild, user, {
 }
 
 async function sendProfileUpdateNotice(guild, profile, { userId, updatedBy = null, changes = [] } = {}) {
+  const config = readProfileConfig();
+  if (!config.profileUpdateNotificationsEnabled) return false;
   if (isSilentLogUser(updatedBy) || isSilentLogUser(userId)) return false;
   if (!profile?.callChannelId) return false;
   const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
@@ -1035,6 +1049,8 @@ module.exports = {
   readProfileConfig,
   setProfileBillingEnabled,
   toggleProfileBilling,
+  setProfileUpdateNotificationsEnabled,
+  toggleProfileUpdateNotifications,
   getBillingExemptUserIds,
   addBillingExemptUserId,
   getUserProfile,
