@@ -121,9 +121,10 @@ if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
 }
 
 if (process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL) {
-  const apiArgs = fs.existsSync(apiDist)
-    ? ['--prefix', 'frequency-panel', 'run', 'start:api']
-    : ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts'];
+  const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
+  const apiArgs = fs.existsSync(apiSource)
+    ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
+    : ['--prefix', 'frequency-panel', 'run', 'start:api'];
   start('frequency-api', 'npm', apiArgs, {
     env: {
       API_PORT: apiPort,

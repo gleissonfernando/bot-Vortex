@@ -6,9 +6,11 @@ let database: Db | null = null;
 let indexesReady: Promise<void> | null = null;
 
 function databaseNameFromUri(uri: string) {
-  const parsed = new URL(uri);
-  const pathname = parsed.pathname.replace(/^\/+/, '').trim();
-  return pathname || 'vortex_frequency';
+  const withoutQuery = uri.split('?')[0] || '';
+  const withoutScheme = withoutQuery.replace(/^mongodb(?:\+srv)?:\/\//i, '');
+  const slashIndex = withoutScheme.indexOf('/');
+  const pathname = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1).trim() : '';
+  return decodeURIComponent(pathname) || 'vortex_frequency';
 }
 
 export async function getDb() {
