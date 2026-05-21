@@ -128,7 +128,7 @@ function buildPointApiPath(req, userId) {
 }
 
 function isTranscriptSiteAuthorized(req) {
-    const configuredToken = String(process.env.TRANSCRIPT_SITE_TOKEN || process.env.POINT_SITE_TOKEN || '').trim();
+    const configuredToken = String(process.env.TRANSCRIPT_SITE_TOKEN || '').trim();
     if (!configuredToken) return true;
     const receivedToken = String(
         req.query.token
