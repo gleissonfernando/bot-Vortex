@@ -11,6 +11,7 @@ const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
 const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
 const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
+const standaloneWebDir = path.dirname(standaloneServer);
 const webInternalPort = String(process.env.WEB_INTERNAL_PORT || 3001);
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
@@ -97,6 +98,28 @@ function startProxy() {
   return server;
 }
 
+function copyIfExists(source, target) {
+  if (!fs.existsSync(source)) return false;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.cpSync(source, target, { recursive: true, force: true });
+  return true;
+}
+
+function ensureStandaloneWebAssets() {
+  if (!fs.existsSync(standaloneServer)) return;
+
+  const copiedStatic = copyIfExists(
+    path.join(webDir, '.next', 'static'),
+    path.join(standaloneWebDir, '.next', 'static')
+  );
+  const copiedPublic = copyIfExists(
+    path.join(webDir, 'public'),
+    path.join(standaloneWebDir, 'public')
+  );
+
+  console.log(`[shardcloud] standalone assets ready: static=${copiedStatic ? 'yes' : 'no'}, public=${copiedPublic ? 'yes' : 'no'}`);
+}
+
 if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
   start('discord-bot', 'npm', ['run', 'start:bot'], {
     env: {
@@ -146,6 +169,8 @@ if (!fs.existsSync(standaloneServer) && process.env.BUILD_WEB_ON_STARTUP !== 'fa
     }
   });
 }
+
+ensureStandaloneWebAssets();
 
 const web = fs.existsSync(standaloneServer)
   ? start('frequency-web', 'node', [standaloneServer], {
