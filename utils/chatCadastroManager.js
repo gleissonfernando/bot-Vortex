@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { registerManualProfile } = require('./profileManager');
-const { getDatabaseStatus } = require('./database');
+const { connectDatabase, getDatabaseStatus } = require('./database');
 const { flushMongoJsonStore } = require('./mongoJsonStore');
 const { allowTextChannelAccess, isTextChannel } = require('./textChannelAccess');
 const { hasVortexLevel } = require('./permissions');
@@ -106,6 +106,33 @@ async function sendCadastroFeedback(message, payload) {
     ...payload,
     allowedMentions: payload.allowedMentions || { parse: [] },
   }).then(() => true).catch(() => false);
+}
+
+function buildDatabaseMessage(status) {
+  if (!status.configured) {
+    return 'Banco de dados: MongoDB não configurado; cadastro salvo no backup local.';
+  }
+
+  if (status.connected) {
+    return 'Banco de dados: sincronizado.';
+  }
+
+  const detail = status.lastError?.hint || status.lastError?.message || null;
+  return [
+    'Banco de dados: MongoDB desconectado; cadastro salvo localmente.',
+    detail ? `Motivo provável: ${detail}` : 'Confira os logs da hospedagem para ver o erro de conexão do MongoDB.',
+  ].join('\n');
+}
+
+async function syncCadastroDatabase() {
+  let status = getDatabaseStatus();
+  if (status.configured && !status.connected) {
+    await connectDatabase().catch(() => false);
+  }
+
+  await flushMongoJsonStore();
+  status = getDatabaseStatus();
+  return buildDatabaseMessage(status);
 }
 
 async function executeCadastroCommand(interaction) {
@@ -256,13 +283,7 @@ async function handleCadastroMessage(message) {
 
   let databaseMessage = 'Banco de dados: sincronizado.';
   try {
-    await flushMongoJsonStore();
-    const status = getDatabaseStatus();
-    if (!status.configured) {
-      databaseMessage = 'Banco de dados: MongoDB não configurado; cadastro salvo no backup local.';
-    } else if (!status.connected) {
-      databaseMessage = 'Banco de dados: MongoDB desconectado; cadastro salvo localmente e será sincronizado quando conectar.';
-    }
+    databaseMessage = await syncCadastroDatabase();
   } catch (error) {
     databaseMessage = `Banco de dados: falha ao sincronizar agora (${error.message}). Cadastro salvo localmente.`;
   }

@@ -108,16 +108,19 @@ function installMongoEventLogs() {
   listenersInstalled = true;
 
   mongoose.connection.on('connected', () => {
+    connectPromise = null;
     lastError = null;
     logger.info('MongoDB conectado.', { host: getMongoHost() });
   });
 
   mongoose.connection.on('reconnected', () => {
+    connectPromise = null;
     lastError = null;
     logger.info('MongoDB reconectado.', { host: getMongoHost() });
   });
 
   mongoose.connection.on('disconnected', () => {
+    connectPromise = null;
     logger.warn('MongoDB desconectado.', { host: getMongoHost() });
   });
 
@@ -163,6 +166,7 @@ async function connectDatabase() {
     serverSelectionTimeoutMS: 10000,
   })
     .then(() => {
+      connectPromise = null;
       logger.info('MongoDB conectado com sucesso.');
       return true;
     })
