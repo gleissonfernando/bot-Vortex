@@ -7,6 +7,7 @@ const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 const apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
 const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
+const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
 const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
 const publicBaseUrl = (
@@ -55,6 +56,18 @@ process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
 process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
+
+if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
+  start('discord-bot', 'npm', ['run', 'start:bot'], {
+    env: {
+      API_PORT: botApiPort,
+      API_HOST: '0.0.0.0'
+    },
+    fatal: false
+  });
+} else {
+  console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN not configured. Discord bot will not start.');
+}
 
 if (process.env.MONGODB_URI || process.env.MONGO_URI) {
   const apiArgs = fs.existsSync(apiDist)
