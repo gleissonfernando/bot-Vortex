@@ -233,14 +233,47 @@ function renderMessage(template: string, live: any, settings: any) {
     .replaceAll('{guild}', settings.guild_id || settings.guildId || '');
 }
 
+function liveAlertContent(roleId: string | null, live: any, settings: any) {
+  const template = live.custom_message || settings.default_message;
+  if (template && template !== DEFAULT_MESSAGE) {
+    return [roleId ? `<@&${roleId}>` : null, renderMessage(template, live, settings)].filter(Boolean).join('\n\n');
+  }
+  return [
+    `${live.streamer_name || live.streamerName || 'Streamer'} vem pra live familia`,
+    roleId ? `<@&${roleId}>` : null
+  ].filter(Boolean).join(' ');
+}
+
 async function sendDiscordAlert(live: any, settings: any) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
   if (!token) return { ok: false, error: 'DISCORD_TOKEN/DISCORD_BOT_TOKEN ausente na API.' };
   const channelId = live.alert_channel_id || settings.default_alert_channel_id;
   if (!channelId) return { ok: false, error: 'Canal de alerta nao configurado.' };
   const roleId = live.mention_role_id || settings.default_mention_role_id;
-  const message = renderMessage(live.custom_message || settings.default_message, live, settings);
-  const content = [roleId ? `<@&${roleId}>` : null, message].filter(Boolean).join('\n\n');
+  const streamUrl = live.last_live_url || live.url;
+  const streamerName = live.streamer_name || live.streamerName || 'Streamer';
+  const content = liveAlertContent(roleId, live, settings);
+  const preview = live.thumbnail_url || live.preview_url || null;
+  const embed: any = {
+    color: 0x9146ff,
+    author: {
+      name: `${streamerName} is now live on Twitch!`,
+      icon_url: live.avatar_url || undefined,
+      url: streamUrl
+    },
+    title: live.last_live_title || 'Teste de alerta de live da Vortex',
+    url: streamUrl,
+    fields: [
+      { name: 'Game', value: String(live.game_name || 'Grand Theft Auto V'), inline: true },
+      { name: 'Viewers', value: String(live.viewer_count || 0), inline: true }
+    ],
+    footer: {
+      text: `vortex lives • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    },
+    timestamp: new Date().toISOString()
+  };
+  if (preview) embed.image = { url: String(preview).replace('{width}', '1280').replace('{height}', '720') };
+
   const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: {
@@ -249,6 +282,16 @@ async function sendDiscordAlert(live: any, settings: any) {
     },
     body: JSON.stringify({
       content,
+      embeds: [embed],
+      components: [{
+        type: 1,
+        components: [{
+          type: 2,
+          style: 5,
+          label: 'Watch Stream',
+          url: streamUrl
+        }]
+      }],
       allowed_mentions: { roles: roleId ? [roleId] : [] }
     })
   });
