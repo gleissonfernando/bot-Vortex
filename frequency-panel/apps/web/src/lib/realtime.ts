@@ -18,7 +18,7 @@ export function subscribeDashboardEvents(onEvent: () => void) {
   source.addEventListener('dashboard', (event) => {
     try {
       const data = JSON.parse((event as MessageEvent).data);
-      if (data?.type && data.type !== 'connected') schedule();
+      if (data?.type && data.type !== 'connected' && data.type !== 'presence.updated') schedule();
     } catch {
       schedule();
     }

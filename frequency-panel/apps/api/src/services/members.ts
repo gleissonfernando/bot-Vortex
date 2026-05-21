@@ -94,21 +94,31 @@ export async function listMembers(params: {
   const docs = serializeDocs(
     await members.find(filter).sort({ display_name: 1 }).limit(limit).toArray()
   );
+  const memberIds = docs.map((member) => member.id).filter(Boolean);
+  const sessionStats = memberIds.length
+    ? await sessions.aggregate([
+      { $match: { member_id: { $in: memberIds } } },
+      {
+        $group: {
+          _id: '$member_id',
+          total_seconds: { $sum: '$total_seconds' },
+          session_count: { $sum: 1 },
+          last_point_at: { $max: { $ifNull: ['$closed_at', '$opened_at'] } }
+        }
+      }
+    ]).toArray()
+    : [];
+  const statsByMemberId = new Map(sessionStats.map((item: any) => [item._id, item]));
 
-  return Promise.all(docs.map(async (member) => {
-    const related = await sessions.find({ member_id: member.id }).toArray();
-    const total_seconds = related.reduce((sum, session: any) => sum + Number(session.total_seconds || 0), 0);
-    const last = related
-      .map((session: any) => session.closed_at || session.opened_at)
-      .filter(Boolean)
-      .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0] || null;
+  return docs.map((member) => {
+    const stats = statsByMemberId.get(member.id) as any;
     return {
       ...member,
-      total_seconds,
-      session_count: related.length,
-      last_point_at: last ? last.toISOString() : null
+      total_seconds: Number(stats?.total_seconds || 0),
+      session_count: Number(stats?.session_count || 0),
+      last_point_at: stats?.last_point_at ? stats.last_point_at.toISOString() : null
     };
-  }));
+  });
 }
 
 export async function getMember(memberId: string) {

@@ -22,12 +22,28 @@ jobs:
           test -n "$SHARDCLOUD_API_TOKEN" || (echo "Missing SHARDCLOUD_API_TOKEN secret" && exit 1)
           test -n "$SHARDCLOUD_APP_ID" || (echo "Missing SHARDCLOUD_APP_ID secret" && exit 1)
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frequency-panel/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --include=dev --no-audit --no-fund
+
+      - name: Build production assets
+        run: npm --prefix frequency-panel run build
+
       - name: Build deployment archive
         run: |
           zip -r shardcloud-project.zip . \
             -x ".git/*" \
             -x ".github/*" \
             -x "node_modules/*" \
+            -x "frequency-panel/apps/web/.next/cache/*" \
             -x ".env" \
             -x ".env.*" \
             -x "logs/*" \
