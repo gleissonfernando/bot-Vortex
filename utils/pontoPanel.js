@@ -17,7 +17,7 @@ let statusPanelInterval = null;
 const transientPanelFailures = new Map();
 const lastVisibilitySyncByGuild = new Map();
 const TRANSIENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
-const VISIBILITY_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+const VISIBILITY_SYNC_INTERVAL_MS = 15 * 1000;
 
 function pad(value, size) {
   const text = String(value || '');
@@ -184,35 +184,34 @@ async function getOnlinePlayers(guild) {
 
 async function createStatusEmbed(guild) {
   const allPoints = await listGuildPoints(guild.id);
-  const active = allPoints.filter((item) => item.activePointStartedAt);
+  const pointByUserId = new Map(allPoints.map((item) => [String(item.userId), item]));
   const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
   const onlineCount = onlinePlayers.length;
 
-  const rows = await Promise.all(active.map(async (item) => {
-    const member = await guild.members.fetch(item.userId).catch(() => null);
-    const name = member?.displayName || item.userName || `ID ${item.userId}`;
+  const rows = onlinePlayers.map((player) => {
+    const item = pointByUserId.get(String(player.id)) || {};
+    const name = player.name || item.userName || `ID ${player.id}`;
     const registro = item.registro || item.idRegistro || item.userId;
-    const openedAt = formatPanelDate(item.activePointStartedAt);
+    const openedAt = item.activePointStartedAt ? formatPanelDate(item.activePointStartedAt) : 'Ponto manual nao aberto';
     return {
-      mention: item.userMention || `<@${item.userId}>`,
-      line: `${pad(name, 18)} | ${pad(registro, 18)} | ${openedAt}`,
+      mention: player.mention || `<@${player.id}>`,
+      line: `${pad(name, 18)} | ${pad(registro || player.id, 18)} | ${pad(player.cityName, 24)} | ${openedAt}`,
     };
-  }));
+  });
 
   const table = rows.length
     ? [
         '```',
-        `${pad('USUARIO', 18)} | ${pad('REGISTRO', 18)} | DATA HORA`,
-        `${'-'.repeat(18)}-+-${'-'.repeat(18)}-+----------------`,
+        `${pad('USUARIO', 18)} | ${pad('REGISTRO', 18)} | ${pad('CIDADE', 24)} | PONTO`,
+        `${'-'.repeat(18)}-+-${'-'.repeat(18)}-+-${'-'.repeat(24)}-+----------------`,
         ...rows.map((row) => row.line),
         '```',
         rows.map((row) => row.mention).join(' '),
       ].join('\n')
-    : 'Nenhum membro em serviço no momento.';
+    : 'Nenhum membro logado na cidade no momento.';
 
   const description = [
-    `Membros em serviço: **${active.length}**`,
-    `Detectados na cidade: **${onlineCount}**`,
+    `Players logados na cidade: **${onlineCount}**`,
     onlinePlayers.length
       ? `Na cidade: ${onlinePlayers.slice(0, 25).map((player) => `${player.mention} (${player.cityName})`).join(' ')}${onlinePlayers.length > 25 ? ` (+${onlinePlayers.length - 25})` : ''}`
       : 'Na cidade: nenhum membro detectado agora.',
@@ -287,7 +286,10 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
     if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.permissionOverwrites?.edit) return false;
 
-    if (allowed) {
+    const onlinePlayers = allowed ? await getOnlinePlayers(guild).catch(() => []) : [];
+    const isInCity = onlinePlayers.some((player) => String(player.id) === String(userId));
+
+    if (allowed && isInCity) {
       await channel.permissionOverwrites.edit(userId, {
         ViewChannel: true,
         ReadMessageHistory: true,
@@ -306,14 +308,14 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 }
 
 async function syncOnlineChannelVisibility(guild, channel) {
-  const allPoints = await listGuildPoints(guild.id);
-  const activeUserIds = new Set(allPoints.filter((item) => item.activePointStartedAt).map((item) => String(item.userId)));
+  const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
+  const onlineUserIds = new Set(onlinePlayers.map((player) => String(player.id)));
 
   await channel.permissionOverwrites.edit(guild.id, {
     ViewChannel: false,
   }).catch(() => null);
 
-  for (const userId of activeUserIds) {
+  for (const userId of onlineUserIds) {
     await channel.permissionOverwrites.edit(userId, {
       ViewChannel: true,
       ReadMessageHistory: true,
@@ -323,7 +325,7 @@ async function syncOnlineChannelVisibility(guild, channel) {
   for (const [targetId, overwrite] of channel.permissionOverwrites.cache) {
     if (targetId === guild.id) continue;
     if (overwrite.type !== 1) continue;
-    if (!activeUserIds.has(targetId)) {
+    if (!onlineUserIds.has(targetId)) {
       await channel.permissionOverwrites.delete(targetId).catch(() => null);
     }
   }
@@ -346,7 +348,7 @@ function initStatusPanel(client) {
     updateAllStatusPanels(client).catch((error) => {
       logger.error('Erro ao atualizar painel de ponto automaticamente:', error);
     });
-  }, 30_000);
+  }, 10_000);
 }
 
 module.exports = {

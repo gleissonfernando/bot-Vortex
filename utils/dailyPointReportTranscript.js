@@ -75,7 +75,7 @@ function normalizeRow(data, member, dateKey) {
   };
 }
 
-async function buildDailyPointReportData(guild, { dateKey = getLocalDateKey(), includeAllMembers = true } = {}) {
+async function buildDailyPointReportData(guild, { dateKey = getLocalDateKey(), includeAllMembers = true, includeOnlyActive = true } = {}) {
   const points = await listGuildPoints(guild.id);
   const pointByUserId = new Map(points.map((data) => [String(data.userId), data]));
   let members = new Map();
@@ -94,7 +94,7 @@ async function buildDailyPointReportData(guild, { dateKey = getLocalDateKey(), i
     ? Array.from(members.keys())
     : Array.from(pointByUserId.keys());
 
-  const rows = userIds
+  const allRows = userIds
     .map((userId) => {
       const member = members.get(userId) || null;
       if (member?.user?.bot) return null;
@@ -109,9 +109,10 @@ async function buildDailyPointReportData(guild, { dateKey = getLocalDateKey(), i
     .filter(Boolean)
     .sort((a, b) => b.totalMs - a.totalMs || a.name.localeCompare(b.name));
 
-  const activeRows = rows.filter((row) => row.totalMs > 0 || row.pointCount > 0);
-  const totalMs = rows.reduce((sum, row) => sum + row.totalMs, 0);
-  const totalPoints = rows.reduce((sum, row) => sum + row.pointCount, 0);
+  const activeRows = allRows.filter((row) => row.totalMs > 0 || row.pointCount > 0);
+  const rows = includeOnlyActive ? activeRows : allRows;
+  const totalMs = activeRows.reduce((sum, row) => sum + row.totalMs, 0);
+  const totalPoints = activeRows.reduce((sum, row) => sum + row.pointCount, 0);
   const topUser = activeRows[0] || null;
   const averageMs = activeRows.length ? Math.round(totalMs / activeRows.length) : 0;
 
@@ -126,7 +127,8 @@ async function buildDailyPointReportData(guild, { dateKey = getLocalDateKey(), i
     dateLabel: formatLocalDate(`${dateKey}T12:00:00.000Z`),
     rows,
     summary: {
-      totalRegisteredUsers: rows.length,
+      totalRegisteredUsers: allRows.length,
+      listedUsers: rows.length,
       activeUsers: activeRows.length,
       totalPoints,
       totalMs,
@@ -223,8 +225,8 @@ function createDailyPointReportHtml(report) {
   </header>
   <main class="wrap">
     <section class="grid">
-      <div class="card"><span>Total de usuarios registrados</span><strong>${escapeHtml(String(report.summary.totalRegisteredUsers))}</strong></div>
-      <div class="card"><span>Total de usuarios ativos</span><strong>${escapeHtml(String(report.summary.activeUsers))}</strong></div>
+      <div class="card"><span>Pessoas no relatorio</span><strong>${escapeHtml(String(report.summary.listedUsers))}</strong></div>
+      <div class="card"><span>Pessoas que logaram no dia</span><strong>${escapeHtml(String(report.summary.activeUsers))}</strong></div>
       <div class="card"><span>Total de pontos criados</span><strong>${escapeHtml(String(report.summary.totalPoints))}</strong></div>
       <div class="card"><span>Tempo total registrado</span><strong>${escapeHtml(report.summary.totalFormatted)}</strong></div>
       <div class="card"><span>Media por usuario</span><strong>${escapeHtml(report.summary.averageFormatted)}</strong></div>
@@ -237,8 +239,8 @@ function createDailyPointReportHtml(report) {
     </section>
     <section class="panel">
       <div class="panel-head">
-        <h2>Ranking diario</h2>
-        <span class="pill">${escapeHtml(String(report.rows.length))} usuarios</span>
+        <h2>Ranking diario de quem logou</h2>
+        <span class="pill">${escapeHtml(String(report.rows.length))} usuarios com ponto no dia</span>
       </div>
       <div class="table-wrap">
         <table>

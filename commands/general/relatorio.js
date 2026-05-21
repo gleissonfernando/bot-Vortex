@@ -12,7 +12,7 @@ const {
   formatDuration,
   formatDate,
 } = require('../../utils/pontoManager');
-const { buildPointSiteUrl } = require('../../utils/pointSite');
+const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 const { safeDeferReply, safeEdit, safeReply } = require('../../utils/safeReply');
 const { buildThemedPanelPayload } = require('../../utils/panelTheme');
@@ -40,7 +40,13 @@ module.exports = {
 
     const data = await getUserPoint(interaction.guild.id, target.id);
     const activeMs = data.activePointStartedAt ? Math.max(0, Date.now() - new Date(data.activePointStartedAt).getTime()) : 0;
-    const reportUrl = buildPointSiteUrl(interaction.guild.id, target.id);
+    const transcript = await createPointTranscriptRecord({
+      guild: interaction.guild,
+      target,
+      generatedBy: interaction.user,
+    });
+    const reportUrl = transcript.url;
+    const record = transcript.record;
 
     const embed = new EmbedBuilder()
       .setColor('#005DFF')
@@ -48,7 +54,7 @@ module.exports = {
       .setTitle('Relatório individual de pontos')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
       .setDescription([
-        'Relatório web premium gerado por link.',
+        'Transcript web de ponto gerado e salvo pelo sistema.',
         '',
         `Usuário: <@${target.id}>`,
         `Status: **${data.activePointStartedAt ? 'Online / Em ponto' : 'Offline / Ponto fechado'}**`,
@@ -60,6 +66,8 @@ module.exports = {
         { name: 'Tempo total', value: formatDuration(getEffectiveTotalMs(data)), inline: true },
         { name: 'Ponto atual', value: data.activePointStartedAt ? formatDuration(activeMs) : 'Fechado', inline: true },
         { name: 'Último login', value: formatDate(data.lastPointOpenAt), inline: true },
+        { name: 'Período', value: record.periodLabel || 'Semana atual', inline: true },
+        { name: 'Expira em', value: formatDate(record.expiresAt), inline: true },
         { name: 'Link web', value: reportUrl, inline: false }
       )
       .setTimestamp()

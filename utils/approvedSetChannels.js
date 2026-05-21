@@ -40,8 +40,15 @@ function sanitizeChannelName(value) {
     .slice(0, 70) || 'usuario';
 }
 
+function stripGameIdFromName(value) {
+  return String(value || '')
+    .replace(/\s*\|\s*\d{1,25}\s*$/g, '')
+    .trim();
+}
+
 function formatApprovedSetDisplayName(profile = {}) {
-  return String(profile.nomeGame || profile.displayName || profile.userName || profile.discordTag || 'usuario').trim() || 'usuario';
+  const displayName = String(profile.nomeGame || profile.displayName || profile.userName || profile.discordTag || 'usuario').trim();
+  return stripGameIdFromName(displayName) || displayName || 'usuario';
 }
 
 function formatApprovedSetLevel(profile = {}) {
@@ -63,9 +70,8 @@ function buildApprovedSetChannelPayload(profile = {}) {
     channelName: channelNameParts.join('-').slice(0, 100),
     topic: [
       displayName,
-      displayLevel ? `Nível ${displayLevel}` : null,
-      profile.idGame ? `ID ${profile.idGame}` : null,
-      `Discord: ${profile.userId || 'N/A'}`,
+      displayLevel ? `Nível ${displayLevel}` : 'Nível N/A',
+      'Canal privado de perfil Vortex',
     ].filter(Boolean).join(' | '),
   };
 }
@@ -222,7 +228,8 @@ async function syncApprovedSetChannel(guild, profile = {}, options = {}) {
     ...data[guild.id][userId],
     channelId,
     userId,
-    nomeGame: payload.displayName,
+    nomeGame: profile.nomeGame || data[guild.id][userId].nomeGame || payload.displayName,
+    idGame: profile.idGame || data[guild.id][userId].idGame || null,
     nivelGame: payload.displayLevel || data[guild.id][userId].nivelGame || null,
     updatedAt: new Date().toISOString(),
   };

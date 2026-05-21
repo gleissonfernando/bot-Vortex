@@ -1,6 +1,7 @@
 
 console.log("🔥 VORTEX LOCAL ATIVO 🔥");
 const { Client, GatewayIntentBits, Collection, Events, REST, Routes } = require('discord.js');
+const { DefaultWebSocketManagerOptions } = require('@discordjs/ws');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -36,6 +37,11 @@ const {
 const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
+const DISCORD_HANDSHAKE_TIMEOUT_MS = Number(process.env.DISCORD_HANDSHAKE_TIMEOUT_MS || 120_000);
+
+if (Number.isFinite(DISCORD_HANDSHAKE_TIMEOUT_MS) && DISCORD_HANDSHAKE_TIMEOUT_MS > 0) {
+    DefaultWebSocketManagerOptions.handshakeTimeout = DISCORD_HANDSHAKE_TIMEOUT_MS;
+}
 
 app.use(helmet());
 app.use(cors());
@@ -242,8 +248,14 @@ if (fs.existsSync(eventsPath)) {
     for (const file of eventFiles) {
         try {
             const event = require(path.join(eventsPath, file));
-            if (event.once) client.once(event.name, (...args) => event.execute(...args));
-            else client.on(event.name, (...args) => event.execute(...args));
+            const runEvent = (...args) => {
+                Promise.resolve(event.execute(...args)).catch((error) => {
+                    logger.error(`Erro nao tratado no evento ${event.name || file}:`, error);
+                    notifyError(client, error, `Evento ${event.name || file}`).catch(() => null);
+                });
+            };
+            if (event.once) client.once(event.name, runEvent);
+            else client.on(event.name, runEvent);
         } catch (error) { console.error(`Erro evento ${file}:`, error.message); }
     }
 }
@@ -359,6 +371,14 @@ client.on('shardDisconnect', (event, shardId) => {
     notifyBotDown(client, reason, 'Shard Disconnect');
 });
 
+client.on('shardError', (error, shardId) => {
+    logger.warn(`Erro temporario no gateway Discord da shard ${shardId}: ${error?.message || error}`);
+});
+
+client.on('shardReconnecting', (shardId) => {
+    logger.warn(`Reconectando shard ${shardId} ao gateway Discord...`);
+});
+
 async function start() {
     const connected = await connectDatabase();
     if (!connected && isMongoRequired()) {
@@ -369,6 +389,7 @@ async function start() {
     await client.login(config.token).catch(err => {
         console.error('[VORTEX] Falha no Login:', err.message);
         notifyBotDown(client, err, 'Falha no Login');
+        throw err;
     });
 
     app.listen(API_PORT, API_HOST, () => console.log(`API Vortex Online: ${API_PORT}`));

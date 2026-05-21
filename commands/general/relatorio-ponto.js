@@ -95,9 +95,12 @@ module.exports = {
         { name: 'Total mensal', value: record.summary.monthlyTotal, inline: true },
         { name: 'Dias trabalhados', value: String(record.summary.daysWithPoints), inline: true },
         { name: 'Dias sem ponto', value: String(record.summary.daysWithoutPoint), inline: true },
+        { name: 'Dias sem atividade', value: String(record.summary.daysWithoutActivity), inline: true },
         { name: 'Aberturas', value: String(record.summary.openedCount), inline: true },
         { name: 'Fechamentos', value: String(record.summary.closedCount), inline: true },
         { name: 'Ajustes manuais', value: String(record.summary.manualAdjustments), inline: true },
+        { name: 'Última abertura', value: record.summary.latestOpenAtFormatted || 'N/A', inline: true },
+        { name: 'Último fechamento', value: record.summary.latestCloseAtFormatted || 'N/A', inline: true },
         { name: 'Expira em', value: formatDate(record.expiresAt), inline: true },
       )
       .setTimestamp()

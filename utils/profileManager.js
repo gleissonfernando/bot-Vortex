@@ -903,6 +903,7 @@ function initProfileManager(client) {
   checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no início:', error));
   sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   interval = setInterval(() => {
+    ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
     checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis:', error));
     sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   }, PROFILE_CHECK_INTERVAL_MS);

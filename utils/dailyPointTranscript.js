@@ -71,7 +71,8 @@ async function sendDailyPointTranscriptForGuild(client, guild) {
     guild,
     generatedBy: client.user,
     dateKey: reportDateKey,
-    includeAllMembers: true,
+    includeAllMembers: false,
+    includeOnlyActive: true,
   });
 
   const content = [

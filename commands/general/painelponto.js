@@ -1,7 +1,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getUserPoint, getEffectiveTotalMs, getPointDays, formatDuration, formatDate } = require('../../utils/pontoManager');
 const { isGerencia } = require('../../utils/permissions');
-const { buildPointSiteUrl } = require('../../utils/pointSite');
+const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
 const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 const { buildThemedPanelPayload } = require('../../utils/panelTheme');
 
@@ -28,13 +28,19 @@ module.exports = {
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const data = await getUserPoint(interaction.guild.id, target.id);
     const activeMs = data.activePointStartedAt ? Date.now() - new Date(data.activePointStartedAt).getTime() : 0;
-    const pointSiteUrl = buildPointSiteUrl(interaction.guild.id, target.id);
+    const transcript = await createPointTranscriptRecord({
+      guild: interaction.guild,
+      target,
+      generatedBy: interaction.user,
+    });
+    const pointSiteUrl = transcript.url;
+    const record = transcript.record;
 
     const embed = new EmbedBuilder()
       .setColor('#5865F2')
       .setTitle('🕒 Folha de Ponto')
       .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setDescription('A folha individual foi gerada. Use o botão abaixo para abrir o relatório no navegador.')
+      .setDescription('A folha individual foi salva como transcript web. Use o botão abaixo para abrir no navegador.')
       .addFields(
         { name: 'Usuário Discord', value: `<@${target.id}>`, inline: true },
         { name: 'Discord ID', value: `\`${target.id}\``, inline: true },
@@ -45,6 +51,8 @@ module.exports = {
         { name: 'Dias com ponto', value: String(getPointDays(data)), inline: true },
         { name: 'Total de horas', value: formatDuration(getEffectiveTotalMs(data)), inline: true },
         { name: 'Ponto atual', value: data.activePointStartedAt ? `Aberto há ${formatDuration(activeMs)}` : 'Fechado', inline: true },
+        { name: 'Período', value: record.periodLabel || 'Semana atual', inline: true },
+        { name: 'Expira em', value: formatDate(record.expiresAt), inline: true },
         { name: 'Link direto', value: pointSiteUrl, inline: false }
       )
       .setTimestamp()

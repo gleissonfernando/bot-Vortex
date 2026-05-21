@@ -4,6 +4,7 @@ const { logger } = require('./logger');
 
 const PONTOS_PATH = path.join(__dirname, '..', 'commands', 'pontos.json');
 const POINT_TIME_ZONE = 'America/Sao_Paulo';
+let pointFileQueue = Promise.resolve();
 const DATE_TIME_FORMAT = {
   timeZone: POINT_TIME_ZONE,
   day: '2-digit',
@@ -49,6 +50,12 @@ function readLocal() {
 function writeLocal(data) {
   ensureFile();
   fs.writeFileSync(PONTOS_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+function withPointFileLock(operation) {
+  const run = pointFileQueue.then(operation, operation);
+  pointFileQueue = run.catch(() => {});
+  return run;
 }
 
 function emptyUser(guildId, userId) {
@@ -259,7 +266,7 @@ async function listGuildPoints(guildId) {
   }));
 }
 
-async function saveUserPoint(guildId, userId, userData) {
+async function saveUserPointUnlocked(guildId, userId, userData) {
   const next = {
     ...emptyUser(guildId, userId),
     ...userData,
@@ -275,7 +282,11 @@ async function saveUserPoint(guildId, userId, userData) {
   return next;
 }
 
-async function deleteUserPoint(guildId, userId) {
+async function saveUserPoint(guildId, userId, userData) {
+  return withPointFileLock(() => saveUserPointUnlocked(guildId, userId, userData));
+}
+
+async function deleteUserPointUnlocked(guildId, userId) {
   const data = readLocal();
   const existed = Boolean(data[guildId]?.[userId]);
 
@@ -290,12 +301,20 @@ async function deleteUserPoint(guildId, userId) {
   return existed;
 }
 
-async function resetGuildPoints(guildId) {
+async function deleteUserPoint(guildId, userId) {
+  return withPointFileLock(() => deleteUserPointUnlocked(guildId, userId));
+}
+
+async function resetGuildPointsUnlocked(guildId) {
   const data = readLocal();
   const existed = Boolean(data[guildId] && Object.keys(data[guildId]).length > 0);
   data[guildId] = {};
   writeLocal(data);
   return existed;
+}
+
+async function resetGuildPoints(guildId) {
+  return withPointFileLock(() => resetGuildPointsUnlocked(guildId));
 }
 
 function parseBrazilDateTime(input, now = new Date()) {
@@ -706,6 +725,10 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
 }
 
 async function togglePoint(guildId, userId) {
+  return withPointFileLock(() => togglePointUnlocked(guildId, userId));
+}
+
+async function togglePointUnlocked(guildId, userId) {
   const current = await getUserPoint(guildId, userId);
   const now = new Date();
 
@@ -726,7 +749,7 @@ async function togglePoint(guildId, userId) {
       }),
     };
 
-    const next = await saveUserPoint(guildId, userId, {
+    const next = await saveUserPointUnlocked(guildId, userId, {
       ...current,
       ...clearActivePointFields(),
       lastPointCloseAt: now.toISOString(),
@@ -737,7 +760,7 @@ async function togglePoint(guildId, userId) {
     return { action: 'closed', durationMs, data: next };
   }
 
-  const next = await saveUserPoint(guildId, userId, {
+  const next = await saveUserPointUnlocked(guildId, userId, {
     ...current,
     firstPointAt: current.firstPointAt || now.toISOString(),
     lastPointOpenAt: now.toISOString(),
@@ -755,6 +778,10 @@ async function togglePoint(guildId, userId) {
 }
 
 async function openPoint(guildId, userId, profile = {}) {
+  return withPointFileLock(() => openPointUnlocked(guildId, userId, profile));
+}
+
+async function openPointUnlocked(guildId, userId, profile = {}) {
   const current = await getUserPoint(guildId, userId);
   if (current.activePointStartedAt) {
     return { action: 'already_open', durationMs: 0, data: current };
@@ -763,7 +790,7 @@ async function openPoint(guildId, userId, profile = {}) {
   const now = new Date();
   const moment = buildPointMoment(now);
   const activePointId = createPointId(guildId, userId, now.toISOString(), 'open');
-  const next = await saveUserPoint(guildId, userId, {
+  const next = await saveUserPointUnlocked(guildId, userId, {
     ...current,
     userName: profile.userName || current.userName || null,
     userMention: profile.userMention || current.userMention || `<@${userId}>`,
@@ -787,6 +814,10 @@ async function openPoint(guildId, userId, profile = {}) {
 }
 
 async function closePoint(guildId, userId, options = {}) {
+  return withPointFileLock(() => closePointUnlocked(guildId, userId, options));
+}
+
+async function closePointUnlocked(guildId, userId, options = {}) {
   const current = await getUserPoint(guildId, userId);
   if (!current.activePointStartedAt) {
     return { action: 'already_closed', durationMs: 0, data: current };
@@ -812,7 +843,7 @@ async function closePoint(guildId, userId, options = {}) {
     }),
   };
 
-  const next = await saveUserPoint(guildId, userId, {
+  const next = await saveUserPointUnlocked(guildId, userId, {
     ...current,
     ...clearActivePointFields(),
     lastPointCloseAt: now.toISOString(),

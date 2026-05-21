@@ -401,13 +401,19 @@ function buildDayText(dayKey, sessions, adjustments) {
 
 function buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekStartKey, weekEndKey }) {
   const daysWithPoints = new Set(sessions.map((session) => session.dayKey).filter(Boolean));
+  const daysWithActivity = new Set([
+    ...sessions.map((session) => session.dayKey).filter(Boolean),
+    ...adjustments.map((adjustment) => adjustment.dayKey).filter(Boolean),
+  ]);
   const weekSessions = sessions.filter((session) => weekKeys.includes(session.dayKey));
   const totalMs = weekSessions.reduce((sum, session) => sum + Number(session.durationMs || 0), 0);
   const totalAdjustments = adjustments.length;
   const lastSession = weekSessions[weekSessions.length - 1] || null;
   const daysWithoutPoint = weekKeys.filter((key) => !daysWithPoints.has(key)).length;
+  const daysWithoutActivity = weekKeys.filter((key) => !daysWithActivity.has(key)).length;
   const keysUntilToday = weekKeys.filter((key) => key <= currentKey);
   const daysWithoutPointUntilToday = keysUntilToday.filter((key) => !daysWithPoints.has(key)).length;
+  const closedCount = weekSessions.filter((session) => session.closedAt).length;
   const weekdaysWithPoints = weekKeys
     .filter((key) => daysWithPoints.has(key))
     .map((key) => formatWeekdayLabel(key));
@@ -419,7 +425,10 @@ function buildWeeklySummary({ sessions, adjustments, currentKey, weekKeys, weekS
     totalAdjustments,
     daysWithPoints: daysWithPoints.size,
     daysWithoutPoint,
+    daysWithoutActivity,
     totalPoints: weekSessions.length,
+    openedCount: weekSessions.length,
+    closedCount,
     lastSession,
     daysWithoutPointUntilToday,
     weekdaysWithPoints,
@@ -531,7 +540,9 @@ function buildTextBody(report) {
   lines.push('Resumo da semana:');
   lines.push(formatPointLine('Dias que abriu ponto', String(summary.daysWithPoints)));
   lines.push(formatPointLine('Dias sem abrir ponto', String(summary.daysWithoutPoint)));
+  lines.push(formatPointLine('Dias sem atividade', String(summary.daysWithoutActivity)));
   lines.push(formatPointLine('Total de pontos abertos', String(summary.totalPoints)));
+  lines.push(formatPointLine('Total de pontos fechados', String(summary.closedCount)));
   lines.push(formatPointLine('Total de horas na semana', formatDuration(summary.totalMs)));
   lines.push(formatPointLine('Total de ajustes feitos', String(summary.totalAdjustments)));
   lines.push(formatPointLine('Ultimo ponto aberto', summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A'));
@@ -598,6 +609,10 @@ function buildHtmlBody(report) {
                 <div><span>Abriu as</span><strong>${escapeHtml(session.startedAtTime)}</strong></div>
                 <div><span>Fechou as</span><strong>${escapeHtml(session.closedAtTime)}</strong></div>
                 <div><span>Tempo total</span><strong>${escapeHtml(session.durationFormatted)}</strong></div>
+                <div><span>Status</span><strong>${escapeHtml(session.status)}</strong></div>
+                <div><span>Origem</span><strong>${escapeHtml(session.origin || 'Ponto manual')}</strong></div>
+                <div><span>Servidor/Cidade</span><strong>${escapeHtml(session.serverName || 'N/A')}</strong></div>
+                <div><span>Responsavel</span><strong>${escapeHtml(session.adjustedByDisplayName || session.adjustedByTag || session.adjustedBy || 'Sistema')}</strong></div>
                 <div><span>Ajustes no ponto</span><strong>${escapeHtml(String(sessionAdjustments.length))}</strong></div>
                 <div><span>ID do ponto</span><strong>${escapeHtml(session.pointId || 'N/A')}</strong></div>
               </div>
@@ -776,7 +791,9 @@ function buildHtmlBody(report) {
         <div class="summary-item"><span>Total acumulado</span><strong>${escapeHtml(formatDuration(statistics.totalAccumulatedMs))}</strong></div>
         <div class="summary-item"><span>Dias que abriu ponto</span><strong>${escapeHtml(String(summary.daysWithPoints))}</strong></div>
         <div class="summary-item"><span>Dias sem abrir ponto</span><strong>${escapeHtml(String(summary.daysWithoutPoint))}</strong></div>
+        <div class="summary-item"><span>Dias sem atividade</span><strong>${escapeHtml(String(summary.daysWithoutActivity))}</strong></div>
         <div class="summary-item"><span>Total de pontos abertos</span><strong>${escapeHtml(String(summary.totalPoints))}</strong></div>
+        <div class="summary-item"><span>Total de pontos fechados</span><strong>${escapeHtml(String(summary.closedCount))}</strong></div>
         <div class="summary-item"><span>Total de horas na semana</span><strong>${escapeHtml(formatDuration(summary.totalMs))}</strong></div>
         <div class="summary-item"><span>Total de ajustes feitos</span><strong>${escapeHtml(String(summary.totalAdjustments))}</strong></div>
         <div class="summary-item"><span>Ultimo ponto aberto</span><strong>${escapeHtml(summary.lastSession ? `${summary.lastSession.dayLabel} as ${summary.lastSession.startedAtTime}` : 'N/A')}</strong></div>

@@ -173,7 +173,10 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
   const point = await getUserPoint(guild.id, user.id).catch(() => null);
 
   if (newTargetActivity) {
-    if (point?.activePointStartedAt) return;
+    if (point?.activePointStartedAt) {
+      await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
+      return;
+    }
     if (!await hasPointRole(guild, member, user.id)) return;
     const cityName = extractCityName(newTargetActivity);
     const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, member, newTargetActivity, cityName));
@@ -200,6 +203,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
     return;
   }
 
+  await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
   if (!point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) return;
 
   const result = await closePoint(guild.id, user.id, {

@@ -124,14 +124,18 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
     summary: {
       daysWithPoints: report.summary.daysWithPoints,
       daysWithoutPoint: report.summary.daysWithoutPoint,
-      daysWithoutActivity: report.summary.daysWithoutPoint,
+      daysWithoutActivity: report.summary.daysWithoutActivity,
       weeklyTotalMs: report.summary.totalMs,
       weeklyTotal: formatDuration(report.summary.totalMs),
       monthlyTotalMs,
       monthlyTotal: formatDuration(monthlyTotalMs),
-      openedCount: report.summary.totalPoints,
-      closedCount: report.sessions.filter((session) => session.closedAt).length,
+      openedCount: report.summary.openedCount,
+      closedCount: report.summary.closedCount,
       manualAdjustments: report.summary.totalAdjustments,
+      latestOpenAt: report.latestSession?.startedAt || null,
+      latestOpenAtFormatted: report.latestSession?.startedAt ? formatDate(report.latestSession.startedAt) : 'N/A',
+      latestCloseAt: report.latestSession?.closedAt || null,
+      latestCloseAtFormatted: report.latestSession?.closedAt ? formatDate(report.latestSession.closedAt) : 'Em andamento',
     },
     publicPath: `/ponto/${transcriptId}`,
     htmlFileName,
@@ -152,9 +156,9 @@ async function createPointTranscriptRecord({ guild, target, generatedBy, monthKe
   };
 }
 
-async function createDailyPointReportRecord({ guild, generatedBy, dateKey = null, includeAllMembers = true } = {}) {
+async function createDailyPointReportRecord({ guild, generatedBy, dateKey = null, includeAllMembers = true, includeOnlyActive = true } = {}) {
   ensureStore();
-  const report = await buildDailyPointReportData(guild, { dateKey: dateKey || undefined, includeAllMembers });
+  const report = await buildDailyPointReportData(guild, { dateKey: dateKey || undefined, includeAllMembers, includeOnlyActive });
   const html = createDailyPointReportHtml(report);
   const token = crypto.randomBytes(24).toString('hex');
   const transcriptId = `vtx-${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}`;
