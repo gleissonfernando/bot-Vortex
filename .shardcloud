@@ -1,8 +1,8 @@
 DISPLAY_NAME=bot-Vortex
-DESCRIPTION=Vortex Discord bot
-MAIN=index.js
+DESCRIPTION=Vortex Frequency Panel
+MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=512
 VERSION=recommended
 SUBDOMAIN=bot-vortex
-CUSTOM_COMMAND=API_PORT=80 npm start
+CUSTOM_COMMAND=PORT=80 npm start

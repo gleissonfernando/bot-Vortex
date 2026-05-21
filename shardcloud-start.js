@@ -4,8 +4,8 @@ const path = require('node:path');
 const rootDir = __dirname;
 const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
-const apiPort = String(process.env.API_PORT || 4100);
-const webPort = String(process.env.PORT || 3000);
+const apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
+const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
   || process.env.VORTEX_TRANSCRIPT_BASE_URL
@@ -73,7 +73,7 @@ start('frequency-api', 'npm', ['--prefix', 'frequency-panel', 'run', 'start:api'
   }
 });
 
-start('frequency-web', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'start', '--', '-p', webPort], {
+start('frequency-web', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'start', '--', '-p', webPort, '-H', '0.0.0.0'], {
   cwd: rootDir,
   env: {
     INTERNAL_API_URL: process.env.INTERNAL_API_URL,
