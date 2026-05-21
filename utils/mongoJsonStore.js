@@ -9,6 +9,10 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const cache = new Map();
 const pendingWrites = new Map();
 const skippedEmptyImports = new Set();
+const PROFILE_DATA_KEYS = new Set([
+  'commands/perfis.json',
+  'commands/approvedSetChannels.json',
+]);
 
 let installed = false;
 let original = null;
@@ -206,6 +210,33 @@ function isEmptyJsonData(data) {
   return Object.keys(data).length === 0;
 }
 
+function countNestedJsonRecords(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return 0;
+  let count = 0;
+  for (const value of Object.values(data)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const childValues = Object.values(value);
+    const looksNested = childValues.some((item) => item && typeof item === 'object' && !Array.isArray(item));
+    count += looksNested ? childValues.length : 1;
+  }
+  return count;
+}
+
+function chooseJsonDataForHydration(key, mongoData, diskData) {
+  if (!PROFILE_DATA_KEYS.has(key) || diskData === null) {
+    return { data: mongoData ?? {}, source: 'mongo' };
+  }
+
+  const mongoCount = countNestedJsonRecords(mongoData);
+  const diskCount = countNestedJsonRecords(diskData);
+  if (diskCount > mongoCount) {
+    logger.warn(`Mongo JSON Store preservou ${key} local com ${diskCount} registro(s); Mongo tinha ${mongoCount}.`);
+    return { data: diskData, source: 'disk' };
+  }
+
+  return { data: mongoData ?? {}, source: 'mongo' };
+}
+
 function shouldImportLocalJson(key, data) {
   if (!isEmptyJsonData(data)) return true;
   skippedEmptyImports.add(key);
@@ -366,10 +397,13 @@ async function hydrateMongoJsonStore() {
     const key = toStoreKey(path.join(ROOT_DIR, document.key));
     if (!key) continue;
     const sourcePath = document.sourcePath || path.join(ROOT_DIR, key);
-    cacheJson(key, sourcePath, document.data ?? {}, false);
+    const diskData = readJsonFromDisk(sourcePath);
+    const selected = chooseJsonDataForHydration(key, document.data ?? {}, diskData);
+    cacheJson(key, sourcePath, selected.data, false);
 
     try {
-      writeJsonToDisk(sourcePath, document.data ?? {});
+      writeJsonToDisk(sourcePath, selected.data);
+      if (selected.source === 'disk') await persistKey(key);
     } catch (error) {
       logger.warn(`Nao foi possivel atualizar backup local de ${key}: ${error.message}`);
     }
@@ -405,11 +439,13 @@ async function refreshMongoJsonKeys(keys = []) {
     if (!key) continue;
 
     const sourcePath = document.sourcePath || path.join(ROOT_DIR, key);
-    const data = document.data ?? {};
-    cacheJson(key, sourcePath, data, false);
+    const diskData = readJsonFromDisk(sourcePath);
+    const selected = chooseJsonDataForHydration(key, document.data ?? {}, diskData);
+    cacheJson(key, sourcePath, selected.data, false);
 
     try {
-      writeJsonToDisk(sourcePath, data);
+      writeJsonToDisk(sourcePath, selected.data);
+      if (selected.source === 'disk') await persistKey(key);
       refreshed.push(key);
     } catch (error) {
       logDatabaseError({
