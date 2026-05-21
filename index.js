@@ -1,6 +1,6 @@
 
 console.log("🔥 VORTEX LOCAL ATIVO 🔥");
-const { Client, GatewayIntentBits, Collection, Events, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events, REST, Routes, Options } = require('discord.js');
 const { DefaultWebSocketManagerOptions } = require('@discordjs/ws');
 const express = require('express');
 const cors = require('cors');
@@ -43,6 +43,15 @@ const REGISTER_COMMANDS_ON_STARTUP = process.env.REGISTER_COMMANDS_ON_STARTUP !=
 const FIVEM_STARTUP_SCAN_ENABLED = process.env.FIVEM_STARTUP_SCAN_ENABLED === 'true';
 const ENABLE_PRESENCE_FEATURES = process.env.ENABLE_PRESENCE_FEATURES !== 'false';
 
+function readCacheLimit(name, fallback) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+const DISCORD_CACHE_MAX_MESSAGES = readCacheLimit('DISCORD_CACHE_MAX_MESSAGES', 50);
+const DISCORD_CACHE_MAX_GUILD_MEMBERS = readCacheLimit('DISCORD_CACHE_MAX_GUILD_MEMBERS', 200);
+const DISCORD_CACHE_MAX_PRESENCES = readCacheLimit('DISCORD_CACHE_MAX_PRESENCES', 100);
+
 if (Number.isFinite(DISCORD_HANDSHAKE_TIMEOUT_MS) && DISCORD_HANDSHAKE_TIMEOUT_MS > 0) {
     DefaultWebSocketManagerOptions.handshakeTimeout = DISCORD_HANDSHAKE_TIMEOUT_MS;
 }
@@ -67,7 +76,33 @@ if (ENABLE_PRESENCE_FEATURES) {
     clientIntents.push(GatewayIntentBits.GuildPresences);
 }
 
-const client = new Client({ intents: clientIntents });
+const client = new Client({
+    intents: clientIntents,
+    makeCache: Options.cacheWithLimits({
+        ...Options.DefaultMakeCacheSettings,
+        MessageManager: DISCORD_CACHE_MAX_MESSAGES,
+        GuildMemberManager: DISCORD_CACHE_MAX_GUILD_MEMBERS,
+        PresenceManager: ENABLE_PRESENCE_FEATURES ? DISCORD_CACHE_MAX_PRESENCES : 0,
+        ReactionManager: 0,
+        GuildInviteManager: 0,
+        GuildScheduledEventManager: 0,
+        StageInstanceManager: 0,
+        ThreadManager: 25,
+        ThreadMemberManager: 0,
+        VoiceStateManager: 100,
+    }),
+    sweepers: {
+        ...Options.DefaultSweeperSettings,
+        messages: {
+            interval: 300,
+            lifetime: 600,
+        },
+    },
+    ws: {
+        large_threshold: 50,
+        version: 10,
+    },
+});
 
 client.commands = new Collection();
 setDiscordClient(client);
