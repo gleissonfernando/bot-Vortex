@@ -189,24 +189,29 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 
 function MemberAvatar({ member }: { member?: Member }) {
   const initials = (member?.display_name || member?.username || 'VX').slice(0, 2).toUpperCase();
+  const avatarUrl = normalizeDiscordAvatar(member?.avatar_url);
 
   return (
     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-blue-500/15 text-lg font-semibold text-blue-200">
-      {member?.avatar_url ? (
+      {avatarUrl ? (
         <img
-          src={member.avatar_url}
-          alt={member.display_name}
-          className="h-full w-full object-cover"
+          src={avatarUrl}
+          alt={member?.display_name || 'Avatar'}
+          className="relative z-10 block h-full w-full object-cover"
           referrerPolicy="no-referrer"
-          style={{ position: 'relative', zIndex: 1 }}
           onError={(event) => {
             event.currentTarget.style.display = 'none';
           }}
         />
       ) : null}
-      <span className="absolute inset-0 grid place-items-center">{initials}</span>
+      <span className="absolute inset-0 z-0 grid place-items-center">{initials}</span>
     </div>
   );
+}
+
+function normalizeDiscordAvatar(url?: string | null) {
+  if (!url) return '';
+  return url.replace(/\.webp(\?size=\d+)?$/i, '.png$1');
 }
 
 function SessionsTable({ sessions }: { sessions: AttendanceSession[] }) {

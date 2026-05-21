@@ -10,7 +10,7 @@ export function mapMember(member: GuildMember) {
     discordUserId: member.user.id,
     username: member.user.username,
     displayName: member.displayName || member.user.username,
-    avatarUrl: member.user.displayAvatarURL({ size: 128 }),
+    avatarUrl: member.user.displayAvatarURL({ size: 128, extension: 'png', forceStatic: true }),
     highestRoleId: member.roles.highest?.id || null,
     highestRoleName: member.roles.highest?.name || null,
     roles,
