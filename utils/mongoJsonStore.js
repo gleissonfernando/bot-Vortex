@@ -378,6 +378,53 @@ async function hydrateMongoJsonStore() {
   logger.info(`Mongo JSON Store hidratado: ${cache.size} documento(s) em cache.`);
 }
 
+async function refreshMongoJsonKeys(keys = []) {
+  const normalizedKeys = Array.from(new Set((Array.isArray(keys) ? keys : [keys])
+    .map((key) => String(key || '').replace(/\\/g, '/').trim())
+    .filter(Boolean)));
+
+  if (!normalizedKeys.length || !isMongoConfigured() || !isMongoConnected()) return [];
+
+  let documents = [];
+  try {
+    documents = await JsonDocument.find({ key: { $in: normalizedKeys } }).lean();
+  } catch (error) {
+    logDatabaseError({
+      event: 'json_document_refresh',
+      error,
+      payload: { keys: normalizedKeys },
+      query: 'JsonDocument.find({ key: { $in: keys } }).lean',
+      params: { keys: normalizedKeys },
+    });
+    return [];
+  }
+
+  const refreshed = [];
+  for (const document of documents) {
+    const key = toStoreKey(path.join(ROOT_DIR, document.key));
+    if (!key) continue;
+
+    const sourcePath = document.sourcePath || path.join(ROOT_DIR, key);
+    const data = document.data ?? {};
+    cacheJson(key, sourcePath, data, false);
+
+    try {
+      writeJsonToDisk(sourcePath, data);
+      refreshed.push(key);
+    } catch (error) {
+      logDatabaseError({
+        event: 'json_document_refresh_write',
+        error,
+        payload: { key, sourcePath },
+        query: 'writeJsonToDisk',
+        params: { key, sourcePath },
+      });
+    }
+  }
+
+  return refreshed;
+}
+
 async function initializeMongoJsonStore() {
   installMongoJsonStoreBridge();
   if (!isMongoConfigured() || !isMongoConnected()) return;
@@ -410,5 +457,6 @@ module.exports = {
   initializeMongoJsonStore,
   flushMongoJsonStore,
   getMongoJsonStoreStatus,
+  refreshMongoJsonKeys,
   toStoreKey,
 };

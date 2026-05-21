@@ -7,10 +7,12 @@ const { syncApprovedSetChannel } = require('./approvedSetChannels');
 const { resetToPendingHierarchy } = require('./vortexHierarchy');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { isSilentLogUser } = require('./notifications');
+const { flushMongoJsonStore, refreshMongoJsonKeys } = require('./mongoJsonStore');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
 const PANEL_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
+const APPROVED_SET_CHANNELS_PATH = path.join(__dirname, '..', 'commands', 'approvedSetChannels.json');
 const PROFILE_UPDATE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const PROFILE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const PROFILE_REMINDER_HOUR = 19;
@@ -43,6 +45,16 @@ function readProfiles() {
 function writeProfiles(data) {
   ensureFile();
   fs.writeFileSync(PROFILES_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+function readApprovedSetChannels() {
+  if (!fs.existsSync(APPROVED_SET_CHANNELS_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(APPROVED_SET_CHANNELS_PATH, 'utf8') || '{}');
+  } catch (error) {
+    logger.error('Erro ao ler approvedSetChannels.json para sincronizar perfis:', error);
+    return {};
+  }
 }
 
 function readProfileConfig() {
@@ -813,6 +825,108 @@ async function ensureAllProfileChannelAccess(client) {
   }
 }
 
+async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = false, syncChannels = false, refreshFromMongo = false } = {}) {
+  if (refreshFromMongo) {
+    await flushMongoJsonStore().catch((error) => {
+      logger.error('Erro ao gravar cache JSON antes de atualizar perfis pelo Mongo:', error);
+    });
+    await refreshMongoJsonKeys([
+      'commands/perfis.json',
+      'commands/approvedSetChannels.json',
+    ]).catch((error) => {
+      logger.error('Erro ao atualizar perfis pelo Mongo:', error);
+    });
+  }
+
+  const profiles = readProfiles();
+  const approvedChannels = readApprovedSetChannels();
+  const now = new Date().toISOString();
+  const results = {
+    created: [],
+    updated: [],
+    unchanged: [],
+    skipped: [],
+  };
+
+  for (const [guildId, records] of Object.entries(approvedChannels)) {
+    if (!records || typeof records !== 'object') continue;
+    if (!profiles[guildId]) profiles[guildId] = {};
+    const guild = client ? await client.guilds.fetch(guildId).catch(() => null) : null;
+
+    for (const [recordUserId, record] of Object.entries(records)) {
+      const userId = String(record?.userId || recordUserId || '').trim();
+      const callChannelId = String(record?.channelId || record?.callChannelId || '').trim();
+      if (!/^\d{15,25}$/.test(userId) || !callChannelId) {
+        results.skipped.push({ guildId, userId: userId || recordUserId, reason: 'invalid_record' });
+        continue;
+      }
+
+      const existing = profiles[guildId][userId] || {};
+      const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+      const user = member?.user || null;
+      const images = user ? await getUserImages(user).catch(() => ({})) : {};
+      const nomeGame = record.nomeGame || existing.nomeGame || member?.displayName || user?.username || existing.displayName || 'usuario';
+      const nivelGame = record.nivelGame || existing.nivelGame || null;
+      const nextProfile = {
+        ...existing,
+        guildId,
+        userId,
+        discordTag: existing.discordTag || user?.tag || null,
+        displayName: existing.displayName || member?.displayName || user?.username || nomeGame,
+        tipo: existing.tipo || null,
+        nomeGame,
+        idGame: existing.idGame || null,
+        numeroGame: existing.numeroGame || null,
+        nivelGame,
+        avatarUrl: existing.avatarUrl || images.avatarUrl || null,
+        bannerUrl: existing.bannerUrl || images.bannerUrl || null,
+        profileImageUrl: existing.profileImageUrl || images.avatarUrl || null,
+        profileMediaType: existing.profileMediaType || null,
+        photoLinks: existing.photoLinks || [],
+        callChannelId,
+        approvedBy: existing.approvedBy || record.createdBy || null,
+        approvedAt: existing.approvedAt || record.createdAt || record.updatedAt || now,
+        registeredManually: existing.registeredManually !== undefined ? existing.registeredManually : true,
+        registeredBy: existing.registeredBy || record.createdBy || 'sistema',
+        lastProfileUpdateAt: existing.lastProfileUpdateAt || record.updatedAt || now,
+        lastReminderAt: existing.lastReminderAt || null,
+        updatedAt: now,
+      };
+
+      const existed = Boolean(profiles[guildId][userId]);
+      const changed = !existed
+        || String(existing.callChannelId || '') !== callChannelId
+        || String(existing.nivelGame || '') !== String(nivelGame || '')
+        || String(existing.nomeGame || '') !== String(nomeGame || '');
+
+      if (!changed) {
+        results.unchanged.push({ guildId, userId, callChannelId });
+        continue;
+      }
+
+      if (!dryRun) {
+        profiles[guildId][userId] = nextProfile;
+        if (guild && syncChannels) {
+          await ensureProfileChannelAccess(guild, callChannelId, userId).catch((error) => {
+            logger.error('Erro ao garantir acesso ao canal privado durante sync de perfis:', error);
+          });
+          await syncApprovedSetChannel(guild, nextProfile, { reason: 'syncProfilesFromApprovedSetChannels' }).catch((error) => {
+            logger.error('Erro ao sincronizar canal durante sync de perfis:', error);
+          });
+        }
+      }
+
+      results[existed ? 'updated' : 'created'].push({ guildId, userId, callChannelId, nomeGame, nivelGame });
+    }
+  }
+
+  if (!dryRun && (results.created.length || results.updated.length)) {
+    writeProfiles(profiles);
+  }
+
+  return results;
+}
+
 function removeUserProfileData(guildId, userId) {
   const normalizedUserId = String(userId || '').trim();
   const data = readProfiles();
@@ -904,6 +1018,7 @@ function parseTestPeriod(amountInput, unitInput) {
 
 function initProfileManager(client) {
   if (interval) clearInterval(interval);
+  syncProfilesFromApprovedSetChannels(client, { syncChannels: true }).catch((error) => logger.error('Erro ao sincronizar perfis pelos canais aprovados:', error));
   ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
   checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no início:', error));
   sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
@@ -934,6 +1049,7 @@ module.exports = {
   checkProfileUpdates,
   sendMissingProfileDailyAlert,
   parseTestPeriod,
+  syncProfilesFromApprovedSetChannels,
   ensureProfileChannelAccess,
   ensureAllProfileChannelAccess,
   initProfileManager,

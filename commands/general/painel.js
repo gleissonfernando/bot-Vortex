@@ -38,6 +38,7 @@ const {
   toggleProfileBilling,
   addBillingExemptUserId,
   deleteUserProfile,
+  syncProfilesFromApprovedSetChannels,
 } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
@@ -2300,6 +2301,12 @@ async function renderDashboard(interaction, tab, edit = false) {
   const conf = loadJSON(CONFIG_PATH);
   const guild = interaction.guild;
   const client = interaction.client;
+  if (tab === 'tab_stats' || tab === 'tab_perfil') {
+    await syncProfilesFromApprovedSetChannels(client, {
+      syncChannels: true,
+      refreshFromMongo: true,
+    }).catch((error) => reportPanelError(client, error, 'Sincronizar perfis do painel'));
+  }
   const tabMeta = getPanelTabMeta(tab);
   
   const embed = createPanelView(tabMeta)

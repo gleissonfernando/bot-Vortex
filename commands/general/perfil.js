@@ -5,6 +5,7 @@ const {
   updateProfileLink,
   updateProfileLevel,
   buildProfileEmbed,
+  syncProfilesFromApprovedSetChannels,
 } = require('../../utils/profileManager');
 const { getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../../utils/approvedSetChannels');
 const { hasVortexLevel } = require('../../utils/permissions');
@@ -74,6 +75,10 @@ module.exports = {
 
   async execute(interaction) {
     await safeDeferReply(interaction, { ephemeral: true });
+    await syncProfilesFromApprovedSetChannels(interaction.client, {
+      syncChannels: true,
+      refreshFromMongo: true,
+    }).catch(() => null);
 
     const target = interaction.options.getUser('usuario') || interaction.user;
     const link = interaction.options.getString('link');
