@@ -28,6 +28,13 @@ type Settings = {
   checkIntervalSeconds: number;
 };
 
+type DiscordOption = {
+  id: string;
+  name: string;
+  color?: number;
+  mentionable?: boolean;
+};
+
 const defaultMessage = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
 
 const platformCards = [
@@ -51,6 +58,10 @@ export default function LivesPage() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [discordOptions, setDiscordOptions] = useState<{ channels: DiscordOption[]; roles: DiscordOption[]; error?: string | null }>({
+    channels: [],
+    roles: []
+  });
   const [form, setForm] = useState({
     url: '',
     streamerName: '',
@@ -74,6 +85,8 @@ export default function LivesPage() {
       const data = await apiFetch<{ lives: LiveItem[]; settings: Settings }>('/lives');
       setLives(data.lives);
       setSettings(data.settings);
+      const options = await apiFetch<{ channels: DiscordOption[]; roles: DiscordOption[]; error?: string | null }>('/lives/discord-options').catch(() => null);
+      if (options) setDiscordOptions({ channels: options.channels || [], roles: options.roles || [], error: options.error });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao carregar lives');
     } finally {
@@ -252,8 +265,20 @@ export default function LivesPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <Input label="URL ou usuario do canal" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://www.twitch.tv/usuario ou usuario" />
               <Input label="Nome no painel" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Preenchido automaticamente na Twitch" />
-              <Input label="Canal do Discord" value={form.alertChannelId} onChange={(value) => setForm({ ...form, alertChannelId: value })} placeholder={settings.defaultAlertChannelId || 'ID do canal'} />
-              <Input label="Cargo mencionado" value={form.mentionRoleId} onChange={(value) => setForm({ ...form, mentionRoleId: value })} placeholder={settings.defaultMentionRoleId || 'ID do cargo'} />
+              <Select
+                label="Canal do Discord"
+                value={form.alertChannelId}
+                onChange={(value) => setForm({ ...form, alertChannelId: value })}
+                placeholder={settings.defaultAlertChannelId ? `Padrao: #${channelName(discordOptions.channels, settings.defaultAlertChannelId)}` : 'Usar canal padrao'}
+                options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
+              />
+              <Select
+                label="Cargo mencionado"
+                value={form.mentionRoleId}
+                onChange={(value) => setForm({ ...form, mentionRoleId: value })}
+                placeholder={settings.defaultMentionRoleId ? `Padrao: @${roleName(discordOptions.roles, settings.defaultMentionRoleId)}` : 'Usar cargo padrao'}
+                options={discordOptions.roles.map((role) => ({ value: role.id, label: `@ ${role.name}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+              />
               <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
                 <span className="text-slate-300">Alerta ativo</span>
                 <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-violet-500" />
@@ -281,8 +306,20 @@ export default function LivesPage() {
             <h2 className="text-lg font-semibold text-white">Padroes da Vortex</h2>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Canal padrao de alertas" value={settings.defaultAlertChannelId || ''} onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value })} placeholder="ID do canal" />
-            <Input label="Cargo padrao para mencionar" value={settings.defaultMentionRoleId || ''} onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })} placeholder="ID do cargo" />
+            <Select
+              label="Canal padrao de alertas"
+              value={settings.defaultAlertChannelId || ''}
+              onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value })}
+              placeholder="Selecione o canal"
+              options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
+            />
+            <Select
+              label="Cargo padrao para mencionar"
+              value={settings.defaultMentionRoleId || ''}
+              onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })}
+              placeholder="Selecione o cargo"
+              options={discordOptions.roles.map((role) => ({ value: role.id, label: `@ ${role.name}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+            />
             <Input label="Tempo de verificacao" value={String(settings.checkIntervalSeconds)} onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Number(value) })} placeholder="120" />
             <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
               <span className="text-slate-300">Monitoramento ativo</span>
@@ -297,6 +334,9 @@ export default function LivesPage() {
               />
             </label>
           </div>
+          {discordOptions.error ? (
+            <p className="mt-3 text-xs text-amber-200">Nao consegui carregar canais/cargos do Discord: {discordOptions.error}</p>
+          ) : null}
           <button onClick={saveSettings} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/15">
             <Save size={16} />
             Salvar padroes
@@ -305,6 +345,14 @@ export default function LivesPage() {
       </div>
     </AppShell>
   );
+}
+
+function channelName(channels: DiscordOption[], id: string) {
+  return channels.find((channel) => channel.id === id)?.name || id;
+}
+
+function roleName(roles: DiscordOption[], id: string) {
+  return roles.find((role) => role.id === id)?.name || id;
 }
 
 function LiveChannelRow({ live, settings, onEdit, onDelete, onTest }: {
@@ -340,6 +388,36 @@ function LiveChannelRow({ live, settings, onEdit, onDelete, onTest }: {
         <IconButton label="Excluir" onClick={onDelete}><Trash2 size={15} /></IconButton>
       </div>
     </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  placeholder,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-violet-300/60"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

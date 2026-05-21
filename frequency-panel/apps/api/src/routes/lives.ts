@@ -180,6 +180,50 @@ function objectId(value: unknown) {
   return new ObjectId(String(value || ''));
 }
 
+async function fetchDiscordGuildOptions(guildId: string) {
+  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+  if (!token) return { channels: [], roles: [], error: 'DISCORD_TOKEN/DISCORD_BOT_TOKEN ausente.' };
+
+  const headers = { Authorization: `Bot ${token}` };
+  const [channelsResponse, rolesResponse] = await Promise.all([
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, { headers }),
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, { headers })
+  ]);
+
+  if (!channelsResponse.ok || !rolesResponse.ok) {
+    return {
+      channels: [],
+      roles: [],
+      error: `Discord HTTP canais=${channelsResponse.status} cargos=${rolesResponse.status}`
+    };
+  }
+
+  const channels = await channelsResponse.json();
+  const roles = await rolesResponse.json();
+
+  return {
+    channels: (Array.isArray(channels) ? channels : [])
+      .filter((channel: any) => channel.type === 0 || channel.type === 5)
+      .sort((a: any, b: any) => Number(a.position || 0) - Number(b.position || 0))
+      .map((channel: any) => ({
+        id: String(channel.id),
+        name: String(channel.name || 'canal'),
+        type: Number(channel.type || 0),
+        parentId: channel.parent_id ? String(channel.parent_id) : null
+      })),
+    roles: (Array.isArray(roles) ? roles : [])
+      .filter((role: any) => !role.managed && role.name !== '@everyone')
+      .sort((a: any, b: any) => Number(b.position || 0) - Number(a.position || 0))
+      .map((role: any) => ({
+        id: String(role.id),
+        name: String(role.name || 'cargo'),
+        color: Number(role.color || 0),
+        mentionable: Boolean(role.mentionable)
+      })),
+    error: null
+  };
+}
+
 function renderMessage(template: string, live: any, settings: any) {
   return String(template || DEFAULT_MESSAGE)
     .replaceAll('{streamer}', live.streamer_name || live.streamerName || 'Streamer')
@@ -220,6 +264,12 @@ livesRouter.get('/', async (req, res) => {
   const rows = await lives.find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
   const settings = await getSettings(guildId);
   res.json({ ok: true, lives: rows.map(normalizeLive), settings: normalizeSettings(settings) });
+});
+
+livesRouter.get('/discord-options', requireManager, async (req, res) => {
+  const guildId = defaultGuildId(req);
+  const options = await fetchDiscordGuildOptions(guildId);
+  res.json({ ok: true, guildId, ...options });
 });
 
 livesRouter.post('/', requireManager, async (req, res) => {
