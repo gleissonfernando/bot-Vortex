@@ -6,7 +6,12 @@ const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 const apiPort = String(process.env.API_PORT || 4100);
 const webPort = String(process.env.PORT || 3000);
-const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.VORTEX_TRANSCRIPT_BASE_URL || process.env.APP_URL || '';
+const publicBaseUrl = (
+  process.env.PUBLIC_BASE_URL
+  || process.env.VORTEX_TRANSCRIPT_BASE_URL
+  || process.env.APP_URL
+  || 'https://bot-vortex.shardweb.app'
+).replace(/\/+$/, '');
 
 function run(command, args, options = {}) {
   console.log(`[shardcloud] ${command} ${args.join(' ')}`);
