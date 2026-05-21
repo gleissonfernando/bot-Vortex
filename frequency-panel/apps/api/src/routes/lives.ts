@@ -212,13 +212,13 @@ async function fetchDiscordGuildOptions(guildId: string) {
         parentId: channel.parent_id ? String(channel.parent_id) : null
       })),
     roles: (Array.isArray(roles) ? roles : [])
-      .filter((role: any) => !role.managed && role.name !== '@everyone')
+      .filter((role: any) => !role.managed)
       .sort((a: any, b: any) => Number(b.position || 0) - Number(a.position || 0))
       .map((role: any) => ({
         id: String(role.id),
-        name: String(role.name || 'cargo'),
+        name: role.name === '@everyone' ? '@everyone' : String(role.name || 'cargo'),
         color: Number(role.color || 0),
-        mentionable: Boolean(role.mentionable)
+        mentionable: role.name === '@everyone' ? true : Boolean(role.mentionable)
       })),
     error: null
   };

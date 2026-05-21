@@ -277,7 +277,7 @@ export default function LivesPage() {
                 value={form.mentionRoleId}
                 onChange={(value) => setForm({ ...form, mentionRoleId: value })}
                 placeholder={settings.defaultMentionRoleId ? `Padrao: @${roleName(discordOptions.roles, settings.defaultMentionRoleId)}` : 'Usar cargo padrao'}
-                options={discordOptions.roles.map((role) => ({ value: role.id, label: `@ ${role.name}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+                options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
               />
               <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
                 <span className="text-slate-300">Alerta ativo</span>
@@ -318,7 +318,7 @@ export default function LivesPage() {
               value={settings.defaultMentionRoleId || ''}
               onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })}
               placeholder="Selecione o cargo"
-              options={discordOptions.roles.map((role) => ({ value: role.id, label: `@ ${role.name}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+              options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
             />
             <Input label="Tempo de verificacao" value={String(settings.checkIntervalSeconds)} onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Number(value) })} placeholder="120" />
             <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
