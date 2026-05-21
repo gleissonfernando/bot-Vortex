@@ -384,6 +384,12 @@ module.exports = {
                 });
             }
 
+            if (result.action === 'too_soon') {
+                return safeEdit(interaction, {
+                    content: `⏳ O ponto só pode ser fechado depois de **60 segundos** aberto. Tempo atual: **${formatDuration(result.durationMs)}**. Aguarde mais **${formatDuration(result.waitMs)}**.`,
+                });
+            }
+
             sendVortexLog(client, {
                 title: opening ? 'Ponto Aberto' : 'Ponto Fechado',
                 description: opening
@@ -411,6 +417,20 @@ module.exports = {
 
         if (interaction.isButton() && interaction.customId.startsWith('point_presence_confirm_')) {
             return confirmPointPresence(interaction);
+        }
+
+        if (interaction.isButton() && String(interaction.customId || '').startsWith('live_')) {
+            const lives = client.commands.get('lives');
+            if (lives?.handleButton) {
+                return runInteractionHandler(interaction, `Lives botão: ${interaction.customId}`, () => lives.handleButton(interaction));
+            }
+        }
+
+        if (interaction.isModalSubmit() && String(interaction.customId || '').startsWith('live_modal_')) {
+            const lives = client.commands.get('lives');
+            if (lives?.handleModal) {
+                return runInteractionHandler(interaction, `Lives modal: ${interaction.customId}`, () => lives.handleModal(interaction));
+            }
         }
 
         if (interaction.isButton() && (interaction.customId.startsWith('point_penalty_accept_') || interaction.customId.startsWith('point_penalty_reject_'))) {

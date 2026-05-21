@@ -25,6 +25,7 @@ const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
 const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
+const { initLiveAlertMonitor } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 const {
@@ -370,6 +371,7 @@ client.once(Events.ClientReady, async () => {
     initProfileManager(client);
     initDailyPointTranscript(client);
     initPointAutomation(client);
+    initLiveAlertMonitor(client);
     initChannelLogRecovery(client);
     if (FIVEM_STARTUP_SCAN_ENABLED) {
         scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao verificar atividades FiveM no startup:', error));

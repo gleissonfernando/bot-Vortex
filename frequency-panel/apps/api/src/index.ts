@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
+import { livesRouter } from './routes/lives.js';
 import { memberAvatarHandler, membersRouter } from './routes/members.js';
 
 const app = express();
@@ -24,6 +25,7 @@ app.use('/auth', authRouter);
 app.use('/events', eventsRouter);
 app.use('/ingest', ingestRouter);
 app.use('/dashboard', requireAuth, dashboardRouter);
+app.use('/lives', requireAuth, livesRouter);
 app.get('/members/:id/avatar', memberAvatarHandler);
 app.use('/members', requireAuth, membersRouter);
 
