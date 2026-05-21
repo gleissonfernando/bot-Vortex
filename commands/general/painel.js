@@ -106,6 +106,7 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatório de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
+    { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
 ];
 const PANEL_TOOL_OPTIONS = [
@@ -331,6 +332,54 @@ function buildAdjustCallIdModal() {
         );
 }
 
+function splitProfileBatchLines(value) {
+    return String(value || '')
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function buildSelectedProfileRegisterModal(selected = {}) {
+    const userIds = Array.isArray(selected.userIds) && selected.userIds.length
+        ? selected.userIds.map(String)
+        : [String(selected.userId || '').trim()].filter(Boolean);
+    const modal = new ModalBuilder()
+        .setCustomId('modal_profile_register_selected')
+        .setTitle(userIds.length > 1 ? 'Cadastrar Perfis em Lote' : 'Cadastrar Perfil');
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('names')
+                .setLabel(userIds.length > 1 ? 'NOMES EM GAME - UM POR LINHA' : 'NOME EM GAME')
+                .setPlaceholder(userIds.length > 1 ? 'Nome do usuário 1\nNome do usuário 2\nNome do usuário 3' : 'Ex: João Vortex | 1234')
+                .setStyle(userIds.length > 1 ? TextInputStyle.Paragraph : TextInputStyle.Short)
+                .setRequired(true)
+                .setMaxLength(1800)
+        ),
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('levels')
+                .setLabel(userIds.length > 1 ? 'NÍVEIS - UM POR LINHA' : 'NÍVEL EM GAME')
+                .setPlaceholder(userIds.length > 1 ? '15\n22\n8' : 'Ex: 15')
+                .setStyle(userIds.length > 1 ? TextInputStyle.Paragraph : TextInputStyle.Short)
+                .setRequired(false)
+                .setMaxLength(800)
+        ),
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('photo_links')
+                .setLabel(userIds.length > 1 ? 'LINKS DE FOTO - UM POR LINHA' : 'LINK DA FOTO')
+                .setPlaceholder(userIds.length > 1 ? 'https://link1\nhttps://link2\nhttps://link3' : 'https://...')
+                .setStyle(userIds.length > 1 ? TextInputStyle.Paragraph : TextInputStyle.Short)
+                .setRequired(false)
+                .setMaxLength(1800)
+        )
+    );
+
+    return modal;
+}
+
 function formatAdjustCallOption(channel, activeIds = [], selectedChannelId = null) {
     const isStage = channel.type === ChannelType.GuildStageVoice;
     const parentName = channel.parent?.name || 'Sem categoria';
@@ -361,68 +410,114 @@ async function getAdjustCallSelectData(guild, activeIds = [], selectedChannelId 
     };
 }
 
-async function registerSelectedProfileFromPanel(interaction, selected = {}) {
-    const userId = String(selected.userId || '').trim();
-    if (!/^\d{15,25}$/.test(userId)) {
+async function registerSelectedProfileFromPanel(interaction, selected = {}, form = {}) {
+    const userIds = Array.isArray(selected.userIds) && selected.userIds.length
+        ? selected.userIds.map(String)
+        : [String(selected.userId || '').trim()].filter(Boolean);
+    const channelIds = Array.isArray(selected.channelIds) && selected.channelIds.length
+        ? selected.channelIds.map(String)
+        : [String(selected.channelId || '').trim()].filter(Boolean);
+
+    if (!userIds.length || userIds.some((userId) => !/^\d{15,25}$/.test(userId))) {
         return safeReply(interaction, { content: '❌ Selecione um usuário primeiro.', ephemeral: true });
+    }
+    if (channelIds.length > 0 && channelIds.length !== userIds.length) {
+        return safeReply(interaction, {
+            content: `❌ Selecione a mesma quantidade de usuários e canais. Usuários: **${userIds.length}** | Canais: **${channelIds.length}**.`,
+            ephemeral: true,
+        });
+    }
+    const names = Array.isArray(form.names) ? form.names.map((name) => String(name || '').trim()) : [];
+    const levels = Array.isArray(form.levels) ? form.levels.map((level) => String(level || '').trim()) : [];
+    const photoLinks = Array.isArray(form.photoLinks) ? form.photoLinks.map((link) => String(link || '').trim()) : [];
+    if (names.length !== userIds.length || names.some((name) => !name)) {
+        return safeReply(interaction, {
+            content: `❌ Informe **${userIds.length}** nome(s) em game, um por linha, na mesma ordem dos usuários selecionados.`,
+            ephemeral: true,
+        });
     }
 
     await safeDeferReply(interaction, { ephemeral: true });
 
-    const member = await interaction.guild.members.fetch(userId).catch(() => null);
-    const target = member?.user || await interaction.client.users.fetch(userId).catch(() => null);
-    if (!target) {
-        return safeEdit(interaction, { content: '❌ Usuário não encontrado no servidor.' });
-    }
+    const results = [];
+    const failures = [];
 
-    const callChannelId = selected.channelId ? String(selected.channelId) : null;
-    if (callChannelId) {
-        const channel = await interaction.guild.channels.fetch(callChannelId).catch(() => null);
-        if (!isTextChannel(channel)) {
-            return safeEdit(interaction, { content: '❌ O canal selecionado não é um canal de texto válido. Selecione outro canal.' });
+    for (let index = 0; index < userIds.length; index += 1) {
+        const userId = userIds[index];
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        const target = member?.user || await interaction.client.users.fetch(userId).catch(() => null);
+        if (!target) {
+            failures.push(`<@${userId}> - usuário não encontrado`);
+            continue;
         }
-        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
-    }
 
-    const result = await registerManualProfile(interaction.guild, target, {
-        name: member?.displayName || target.username,
-        callChannelId,
-        registeredBy: interaction.user.id,
-    });
+        const callChannelId = channelIds[index] || null;
+        if (callChannelId) {
+            const channel = await interaction.guild.channels.fetch(callChannelId).catch(() => null);
+            if (!isTextChannel(channel)) {
+                failures.push(`<@${userId}> - canal inválido`);
+                continue;
+            }
+            await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
+        }
 
-    if (!result.ok) {
-        return safeEdit(interaction, { content: `❌ ${result.message}` });
+        const result = await registerManualProfile(interaction.guild, target, {
+            name: names[index],
+            callChannelId,
+            nivelGame: levels[index] || null,
+            photoLink: photoLinks[index] || null,
+            registeredBy: interaction.user.id,
+        });
+
+        if (!result.ok) {
+            failures.push(`<@${userId}> - ${result.message}`);
+            continue;
+        }
+
+        results.push({ userId, target, profile: result.profile });
+
+        await target.send({
+            content: [
+                '✅ Você foi cadastrado no sistema Vortex.',
+                `Servidor: ${interaction.guild.name}`,
+                `Cadastrado por: <@${interaction.user.id}>`,
+                `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
+                result.profile.callChannelId ? `Canal de texto vinculado: <#${result.profile.callChannelId}>` : null,
+                '',
+                'Agora você pode usar os recursos liberados para usuários cadastrados.',
+            ].filter(Boolean).join('\n'),
+            allowedMentions: { users: [interaction.user.id] },
+        }).catch(() => null);
     }
 
     profileRegisterSelections.set(getSelectionKey(interaction), {
         ...selected,
-        userId,
-        channelId: result.profile.callChannelId || selected.channelId || null,
+        userId: userIds[0] || null,
+        userIds,
+        channelId: channelIds[0] || null,
+        channelIds,
     });
 
-    await target.send({
-        content: [
-            '✅ Você foi cadastrado no sistema Vortex.',
-            `Servidor: ${interaction.guild.name}`,
-            `Cadastrado por: <@${interaction.user.id}>`,
-            `Nome salvo: ${result.profile.nomeGame || result.profile.displayName}`,
-            result.profile.callChannelId ? `Canal de texto vinculado: <#${result.profile.callChannelId}>` : null,
-            '',
-            'Agora você pode usar os recursos liberados para usuários cadastrados.',
-        ].filter(Boolean).join('\n'),
-        allowedMentions: { users: [interaction.user.id] },
-    }).catch(() => null);
+    if (!results.length) {
+        return safeEdit(interaction, {
+            content: [
+                '❌ Nenhum perfil foi cadastrado.',
+                failures.length ? failures.slice(0, 10).join('\n') : null,
+            ].filter(Boolean).join('\n'),
+        });
+    }
 
     return safeEdit(interaction, {
         content: [
-            '✅ Perfil cadastrado no sistema.',
-            `Usuário: <@${userId}>`,
-            `Nome: ${result.profile.nomeGame || result.profile.displayName}`,
-            `Canal de texto: ${result.profile.callChannelId ? `<#${result.profile.callChannelId}>` : 'N/A'}`,
-            `Data/hora real: ${formatDate(new Date())}`,
+            `✅ Perfil${results.length > 1 ? 's' : ''} cadastrado${results.length > 1 ? 's' : ''}: **${results.length}**`,
+            results.slice(0, 10).map((item, index) => {
+                return `${index + 1}. <@${item.userId}> - ${item.profile.nomeGame || item.profile.displayName} - ${item.profile.callChannelId ? `<#${item.profile.callChannelId}>` : 'N/A'}`;
+            }).join('\n'),
+            failures.length ? `\n⚠️ Falhas:\n${failures.slice(0, 10).join('\n')}` : null,
             '',
             'Abra o painel novamente ou volte para a aba de perfil para ver a lista atualizada.',
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
+        allowedMentions: { users: results.map((item) => item.userId) },
     });
 }
 
@@ -1512,7 +1607,7 @@ module.exports = {
     if (customId === 'profile_register') {
         const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
         if (selected.userId) {
-            return registerSelectedProfileFromPanel(interaction, selected);
+            return safeShowModal(interaction, buildSelectedProfileRegisterModal(selected));
         }
 
         const modal = new ModalBuilder()
@@ -1924,25 +2019,30 @@ module.exports = {
 
     if (interaction.customId === 'select_profile_register_user') {
         const key = getSelectionKey(interaction);
+        const userIds = interaction.values.map(String);
         profileRegisterSelections.set(key, {
             ...(profileRegisterSelections.get(key) || {}),
-            userId: interaction.values[0],
+            userId: userIds[0] || null,
+            userIds,
         });
         return renderDashboard(interaction, 'tab_perfil', true);
     }
 
     if (interaction.customId === 'select_profile_register_channel') {
         const key = getSelectionKey(interaction);
-        const channelId = String(interaction.values[0]);
-        const channel = interaction.channels?.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
-        if (!isTextChannel(channel)) {
-            return safeReply(interaction, { content: '❌ Selecione um canal de texto válido.', ephemeral: true });
+        const channelIds = interaction.values.map(String);
+        for (const channelId of channelIds) {
+            const channel = interaction.channels?.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+            if (!isTextChannel(channel)) {
+                return safeReply(interaction, { content: '❌ Selecione apenas canais de texto válidos.', ephemeral: true });
+            }
+            await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
         }
 
-        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
         profileRegisterSelections.set(key, {
             ...(profileRegisterSelections.get(key) || {}),
-            channelId,
+            channelId: channelIds[0] || null,
+            channelIds,
         });
         return renderDashboard(interaction, 'tab_perfil', true);
     }
@@ -2303,6 +2403,14 @@ module.exports = {
             ].join('\n'),
             ephemeral: true,
         });
+    }
+
+    if (interaction.customId === 'modal_profile_register_selected') {
+        const selected = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+        const names = splitProfileBatchLines(interaction.fields.getTextInputValue('names'));
+        const levels = splitProfileBatchLines(interaction.fields.getTextInputValue('levels'));
+        const photoLinks = splitProfileBatchLines(interaction.fields.getTextInputValue('photo_links'));
+        return registerSelectedProfileFromPanel(interaction, selected, { names, levels, photoLinks });
     }
 
   }
@@ -3022,6 +3130,18 @@ async function renderDashboard(interaction, tab, edit = false) {
     const profiles = getGuildProfiles(guild.id);
     const profileConfig = readProfileConfig();
     const selectedProfile = profileRegisterSelections.get(getSelectionKey(interaction)) || {};
+    const selectedUserIds = Array.isArray(selectedProfile.userIds) && selectedProfile.userIds.length
+      ? selectedProfile.userIds
+      : (selectedProfile.userId ? [selectedProfile.userId] : []);
+    const selectedChannelIds = Array.isArray(selectedProfile.channelIds) && selectedProfile.channelIds.length
+      ? selectedProfile.channelIds
+      : (selectedProfile.channelId ? [selectedProfile.channelId] : []);
+    const selectedUsersLabel = selectedUserIds.length
+      ? selectedUserIds.slice(0, 5).map((userId) => `<@${userId}>`).join(' ') + (selectedUserIds.length > 5 ? ` ... +${selectedUserIds.length - 5}` : '')
+      : '`Nenhum usuário`';
+    const selectedChannelsLabel = selectedChannelIds.length
+      ? selectedChannelIds.slice(0, 5).map((channelId) => `<#${channelId}>`).join(' ') + (selectedChannelIds.length > 5 ? ` ... +${selectedChannelIds.length - 5}` : '')
+      : '`Nenhum canal de texto`';
     const profileList = Object.values(profiles);
     const setProfileCount = profileList.filter((profile) => !profile.registeredManually).length;
     const manualProfileCount = profileList.filter((profile) => profile.registeredManually).length;
@@ -3041,7 +3161,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         `Notificação de atualização: **${profileConfig.profileUpdateNotificationsEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
-        `Selecionado: ${selectedProfile.userId ? `<@${selectedProfile.userId}>` : '`Nenhum usuário`'} | ${selectedProfile.channelId ? `<#${selectedProfile.channelId}>` : '`Nenhum canal de texto`'}`,
+        `Selecionado: ${selectedUsersLabel} | ${selectedChannelsLabel}`,
+        selectedUserIds.length || selectedChannelIds.length ? `Lote: **${selectedUserIds.length}** usuário(s) e **${selectedChannelIds.length}** canal(is). O cadastro usa a mesma ordem selecionada.` : null,
         '',
         '**Perfis salvos**',
         profileRows.length ? profileRows.join('\n') : 'Nenhum perfil salvo ainda.',
@@ -3066,22 +3187,22 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('select_profile_register_user')
-          .setPlaceholder('Selecionar usuário do perfil')
+          .setPlaceholder('Selecionar usuário(s) do perfil')
           .setMinValues(1)
-          .setMaxValues(1)
+          .setMaxValues(25)
       ),
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('select_profile_register_channel')
-          .setPlaceholder('Selecionar canal de texto vinculado')
+          .setPlaceholder('Selecionar canal(is) de texto vinculado(s)')
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
           .setMinValues(1)
-          .setMaxValues(1)
+          .setMaxValues(25)
       ),
     ];
   }
 
-  const backRow = tab === 'tab_stats' ? null : buildPanelBackRow(tab);
+  const backRow = (tab === 'tab_stats' || tab === 'tab_perfil') ? null : buildPanelBackRow(tab);
   let components = [toolSelectRow];
   if (actionRow.components.length > 0) components.push(actionRow);
   if (extraRows.length > 0) components.push(...extraRows);
