@@ -7,6 +7,7 @@ import { PresenceChart } from '@/components/presence-chart';
 import { StatCard } from '@/components/stat-card';
 import { apiFetch } from '@/lib/api';
 import { formatSeconds } from '@/lib/format';
+import { subscribeDashboardEvents } from '@/lib/realtime';
 import type { FrequencyDay } from '@/lib/types';
 
 type Metrics = {
@@ -34,6 +35,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load();
+    return subscribeDashboardEvents(load);
   }, []);
 
   return (

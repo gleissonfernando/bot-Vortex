@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
 import { formatDate, formatSeconds } from '@/lib/format';
+import { subscribeDashboardEvents } from '@/lib/realtime';
 import type { Member } from '@/lib/types';
 
 export default function MembersPage() {
@@ -41,6 +42,8 @@ export default function MembersPage() {
     const timer = setTimeout(load, 180);
     return () => clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => subscribeDashboardEvents(load), [query]);
 
   return (
     <AppShell>

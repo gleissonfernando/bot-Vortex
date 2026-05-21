@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { collection, toDate } from '../db.js';
 import { requireIngestSecret } from '../middleware.js';
+import { publishDashboardEvent } from '../events.js';
 import { registerPoint } from '../services/attendance.js';
 import { getMemberByDiscord, upsertMember } from '../services/members.js';
 
@@ -36,6 +37,7 @@ ingestRouter.post('/members', async (req, res) => {
     payload: { count: saved.length },
     created_at: new Date()
   });
+  publishDashboardEvent({ type: 'members.synced', payload: { count: saved.length } });
   return res.json({ ok: true, count: saved.length });
 });
 
@@ -59,6 +61,14 @@ ingestRouter.post('/attendance', async (req, res) => {
     payload: result,
     created_at: new Date()
   });
+  publishDashboardEvent({
+    type: `attendance.${parsed.data.action}`,
+    payload: {
+      guildId: parsed.data.guildId,
+      discordUserId: parsed.data.discordUserId,
+      action: result.action
+    }
+  });
   return res.json({ ok: true, result });
 });
 
@@ -75,6 +85,13 @@ ingestRouter.post('/presence', async (req, res) => {
     { guild_id: parsed.data.guildId, discord_user_id: parsed.data.discordUserId },
     { $set: { last_seen_at: toDate(parsed.data.seenAt) || now, updated_at: now } }
   );
+  publishDashboardEvent({
+    type: 'presence.updated',
+    payload: {
+      guildId: parsed.data.guildId,
+      discordUserId: parsed.data.discordUserId
+    }
+  });
   return res.json({ ok: true });
 });
 
@@ -179,5 +196,6 @@ ingestRouter.post('/point-snapshot', async (req, res) => {
     savedCount += 1;
   }
 
+  publishDashboardEvent({ type: 'points.snapshot', payload: { count: savedCount } });
   return res.json({ ok: true, count: savedCount });
 });

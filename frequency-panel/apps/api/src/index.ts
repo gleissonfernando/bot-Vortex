@@ -6,6 +6,7 @@ import { env } from './env.js';
 import { requireAuth } from './middleware.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
+import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
 import { membersRouter } from './routes/members.js';
 
@@ -20,6 +21,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/auth', authRouter);
+app.use('/events', eventsRouter);
 app.use('/ingest', ingestRouter);
 app.use('/dashboard', requireAuth, dashboardRouter);
 app.use('/members', requireAuth, membersRouter);

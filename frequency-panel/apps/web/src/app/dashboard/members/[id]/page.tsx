@@ -9,6 +9,7 @@ import { PresenceChart } from '@/components/presence-chart';
 import { StatCard } from '@/components/stat-card';
 import { apiFetch, downloadFile } from '@/lib/api';
 import { formatDate, formatDay, formatSeconds } from '@/lib/format';
+import { subscribeDashboardEvents } from '@/lib/realtime';
 import type { AttendanceSession, FrequencyDay, Member } from '@/lib/types';
 
 const tabs = ['Visao geral', 'Ponto', 'Frequencia', 'Ausencias', 'Relatorios', 'Graficos'];
@@ -71,6 +72,8 @@ export default function MemberProfilePage() {
   useEffect(() => {
     load();
   }, [id, query]);
+
+  useEffect(() => subscribeDashboardEvents(load), [id, query]);
 
   const member = payload?.member;
   const summary = payload?.report.summary;
