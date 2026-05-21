@@ -22,6 +22,7 @@ const TARGET_SERVER_ALIASES = [
 ];
 const POINT_AUTO_EXCLUDE_ROLE_ID = '1493989209168543846';
 const AUTO_POINT_SOURCE = 'fivem_metropole_auto';
+const FIVEM_STARTUP_FETCH_PRESENCES = process.env.FIVEM_STARTUP_FETCH_PRESENCES === 'true';
 const activeFiveMPlayers = new Map();
 const loggedFiveMPlayers = new Set();
 
@@ -327,9 +328,11 @@ async function scanCurrentFiveMActivities(client) {
 
   for (const guild of client.guilds.cache.values()) {
     if (!isPrimaryGuild(guild.id)) continue;
-    const presenceFetchOk = await guild.members.fetch({ withPresences: true })
-      .then(() => true)
-      .catch(() => false);
+    const presenceFetchOk = FIVEM_STARTUP_FETCH_PRESENCES
+      ? await guild.members.fetch({ withPresences: true })
+        .then(() => true)
+        .catch(() => false)
+      : false;
     const presences = guild.presences?.cache;
     if (!presenceFetchOk && !presences?.size) continue;
 

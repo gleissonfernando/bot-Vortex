@@ -100,7 +100,14 @@ if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
   start('discord-bot', 'npm', ['run', 'start:bot'], {
     env: {
       API_PORT: botApiPort,
-      API_HOST: '0.0.0.0'
+      API_HOST: '0.0.0.0',
+      REGISTER_COMMANDS_ON_STARTUP: process.env.REGISTER_COMMANDS_ON_STARTUP || 'false',
+      FIVEM_STARTUP_SCAN_ENABLED: process.env.FIVEM_STARTUP_SCAN_ENABLED || 'false',
+      FIVEM_STARTUP_FETCH_PRESENCES: process.env.FIVEM_STARTUP_FETCH_PRESENCES || 'false',
+      POINT_AUTOMATION_FETCH_PRESENCES: process.env.POINT_AUTOMATION_FETCH_PRESENCES || 'false',
+      POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(30 * 60 * 1000),
+      PONTO_PANEL_FETCH_PRESENCES: process.env.PONTO_PANEL_FETCH_PRESENCES || 'false',
+      PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(60 * 1000)
     },
     fatal: false
   });

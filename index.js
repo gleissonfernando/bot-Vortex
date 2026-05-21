@@ -39,6 +39,9 @@ const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
 const API_HOST = process.env.API_HOST || '0.0.0.0';
 const DISCORD_HANDSHAKE_TIMEOUT_MS = Number(process.env.DISCORD_HANDSHAKE_TIMEOUT_MS || 120_000);
+const REGISTER_COMMANDS_ON_STARTUP = process.env.REGISTER_COMMANDS_ON_STARTUP !== 'false';
+const FIVEM_STARTUP_SCAN_ENABLED = process.env.FIVEM_STARTUP_SCAN_ENABLED === 'true';
+const ENABLE_PRESENCE_FEATURES = process.env.ENABLE_PRESENCE_FEATURES !== 'false';
 
 if (Number.isFinite(DISCORD_HANDSHAKE_TIMEOUT_MS) && DISCORD_HANDSHAKE_TIMEOUT_MS > 0) {
     DefaultWebSocketManagerOptions.handshakeTimeout = DISCORD_HANDSHAKE_TIMEOUT_MS;
@@ -50,18 +53,21 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/assets', express.static(path.join(__dirname, 'foto')));
 app.use('/vendor/fontawesome', express.static(path.join(__dirname, 'node_modules', '@fortawesome', 'fontawesome-free')));
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.MessageContent
-    ]
-});
+const clientIntents = [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.MessageContent
+];
+
+if (ENABLE_PRESENCE_FEATURES) {
+    clientIntents.push(GatewayIntentBits.GuildPresences);
+}
+
+const client = new Client({ intents: clientIntents });
 
 client.commands = new Collection();
 setDiscordClient(client);
@@ -319,14 +325,22 @@ client.on(Events.GuildCreate, async (guild) => {
 
 client.once(Events.ClientReady, async () => {
     console.log(`Vortex Online: ${client.user.tag}`);
-    await registerCommands();
+    if (REGISTER_COMMANDS_ON_STARTUP) {
+        await registerCommands();
+    } else {
+        console.log('[VORTEX] Registro de comandos no startup desativado.');
+    }
     initStatusPanel(client);
     initAbsenceManager(client);
     initProfileManager(client);
     initDailyPointTranscript(client);
     initPointAutomation(client);
     initChannelLogRecovery(client);
-    scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao verificar atividades FiveM no startup:', error));
+    if (FIVEM_STARTUP_SCAN_ENABLED) {
+        scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao verificar atividades FiveM no startup:', error));
+    } else {
+        logger.info('Scan inicial FiveM desativado para reduzir uso de CPU/RAM no startup.');
+    }
     
     await sendVortexLog(client, {
         title: 'Bot Inicializado',

@@ -18,6 +18,11 @@ const transientPanelFailures = new Map();
 const lastVisibilitySyncByGuild = new Map();
 const TRANSIENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
 const VISIBILITY_SYNC_INTERVAL_MS = 15 * 1000;
+const STATUS_PANEL_INTERVAL_MS = Math.max(
+  30 * 1000,
+  Number(process.env.PONTO_PANEL_INTERVAL_MS || 60 * 1000) || 60 * 1000
+);
+const PONTO_PANEL_FETCH_PRESENCES = process.env.PONTO_PANEL_FETCH_PRESENCES === 'true';
 
 function pad(value, size) {
   const text = String(value || '');
@@ -158,7 +163,9 @@ function hasAnyRole(member, roleIds) {
 
 async function getOnlinePlayers(guild) {
   const pointRoleIds = getPointAllowedRoleIds();
-  await guild.members.fetch({ withPresences: true }).catch(() => null);
+  if (PONTO_PANEL_FETCH_PRESENCES) {
+    await guild.members.fetch({ withPresences: true }).catch(() => null);
+  }
   const presences = guild.presences?.cache;
   const onlinePlayers = [];
 
@@ -348,7 +355,7 @@ function initStatusPanel(client) {
     updateAllStatusPanels(client).catch((error) => {
       logger.error('Erro ao atualizar painel de ponto automaticamente:', error);
     });
-  }, 10_000);
+  }, STATUS_PANEL_INTERVAL_MS);
 }
 
 module.exports = {

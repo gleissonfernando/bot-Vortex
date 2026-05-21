@@ -25,7 +25,12 @@ const DEFAULT_POINT_CORRECTION_CATEGORY_ID = '1498087442304073870';
 const DEFAULT_PENALTY_CHANNEL_ID = '1499178753207701677';
 const DEFAULT_MANAGER_DM_USER_IDS = ['730925532958425240', '289227932432334869'];
 const MASTER_ROLE_ID = '1497703127074345040';
-const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const DEFAULT_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const CHECK_INTERVAL_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.POINT_AUTOMATION_INTERVAL_MS || DEFAULT_CHECK_INTERVAL_MS) || DEFAULT_CHECK_INTERVAL_MS
+);
+const POINT_AUTOMATION_FETCH_PRESENCES = process.env.POINT_AUTOMATION_FETCH_PRESENCES === 'true';
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
 let interval = null;
@@ -473,15 +478,29 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
   if (!config.availabilityReminderEnabled) return;
   if (!force && getAutomationHour() !== config.availabilityReminderHour) return;
 
-  const fetchedPresences = await guild.members.fetch({ withPresences: true })
-    .then(() => true)
-    .catch(() => false);
-  if (!fetchedPresences && !guild.presences?.cache?.size) return;
+  const today = getAutomationDateKey();
+  const scanKey = `${guild.id}:availability-scan:${today}`;
+  if (!force && state[scanKey]?.completed) return;
+
+  const shouldFetchPresences = force || POINT_AUTOMATION_FETCH_PRESENCES;
+  const fetchedPresences = shouldFetchPresences
+    ? await guild.members.fetch({ withPresences: true })
+      .then(() => true)
+      .catch(() => false)
+    : false;
+  if (!fetchedPresences && !guild.presences?.cache?.size) {
+    state[scanKey] = {
+      completed: true,
+      completedAt: new Date().toISOString(),
+      fetchedPresences,
+      skippedReason: 'presence_cache_empty',
+    };
+    return;
+  }
 
   const onlineCount = Array.from(guild.members.cache.values()).filter((member) => (
     member && !member.user?.bot && member.presence?.status === 'online'
   )).length;
-  const today = getAutomationDateKey();
   const pointRoleIds = getPointAllowedRoleIds();
   const profiles = getGuildProfiles(guild.id);
   const billingExemptUserIds = new Set(getBillingExemptUserIds());
@@ -516,6 +535,12 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
       lastKnownStatus: member.presence?.status || 'offline',
     };
   }
+
+  state[scanKey] = {
+    completed: true,
+    completedAt: new Date().toISOString(),
+    fetchedPresences,
+  };
 }
 
 async function runPointAutomationCheck(client, { force = false } = {}) {
