@@ -5,6 +5,17 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { API_URL, setToken } from '@/lib/api';
 
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(response.status === 502
+      ? 'API indisponivel no ShardCloud. Verifique o MongoDB e reinicie a hospedagem.'
+      : 'A API retornou uma pagina HTML em vez de JSON. Verifique o roteamento /api no ShardCloud.');
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('admin@vortex.local');
@@ -22,7 +33,7 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok || !data.ok) throw new Error(data.error || 'Login invalido');
       setToken(data.token);
       router.push('/dashboard');

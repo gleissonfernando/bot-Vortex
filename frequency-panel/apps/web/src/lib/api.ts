@@ -26,7 +26,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     cache: 'no-store'
   });
 
-  const data = await response.json().catch(() => ({ ok: false, error: 'Resposta invalida' }));
+  const data = await response.json().catch(() => ({
+    ok: false,
+    error: response.status === 502
+      ? 'API indisponivel no ShardCloud'
+      : 'A API retornou uma resposta invalida'
+  }));
   if (!response.ok || !data.ok) {
     throw new Error(data.error || `HTTP ${response.status}`);
   }

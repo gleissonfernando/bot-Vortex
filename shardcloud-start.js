@@ -58,6 +58,7 @@ process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
 process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
+process.env.MONGODB_URI ||= process.env.MONGO_URI || process.env.DATABASE_URL;
 
 function startProxy() {
   const server = http.createServer((req, res) => {
@@ -115,7 +116,7 @@ if (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN) {
   console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN not configured. Discord bot will not start.');
 }
 
-if (process.env.MONGODB_URI || process.env.MONGO_URI) {
+if (process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL) {
   const apiArgs = fs.existsSync(apiDist)
     ? ['--prefix', 'frequency-panel', 'run', 'start:api']
     : ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts'];
@@ -127,7 +128,7 @@ if (process.env.MONGODB_URI || process.env.MONGO_URI) {
     fatal: false
   });
 } else {
-  console.error('[shardcloud] MONGODB_URI not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
+  console.error('[shardcloud] MONGODB_URI/MONGO_URI/DATABASE_URL not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
 }
 
 const web = fs.existsSync(standaloneServer)
