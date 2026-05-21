@@ -32,11 +32,8 @@ const {
     validateTranscriptAccess,
     registerTranscriptAccess,
     buildTranscriptShell,
-    listPointTranscriptRecords,
-    getTranscriptStoreStats,
     normalizeTranscriptId,
 } = require('./utils/pointTranscriptStore');
-const { buildTranscriptSiteHtml } = require('./utils/transcriptSite');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
@@ -70,15 +67,6 @@ client.commands = new Collection();
 setDiscordClient(client);
 setupErrorHandlers(client, { notifyError, notifyBotDown });
 
-app.get('/health', (req, res) => {
-    res.json({
-        ok: true,
-        service: 'vortex-bot',
-        mongo: getDatabaseStatus(),
-        jsonStore: getMongoJsonStoreStatus(),
-    });
-});
-
 app.get(['/api/database/status', '/api/db/status'], (req, res) => {
     const status = getDatabaseStatus();
     res.status(status.required && !status.connected ? 503 : 200).json({
@@ -86,20 +74,6 @@ app.get(['/api/database/status', '/api/db/status'], (req, res) => {
         service: 'vortex-database',
         mongo: status,
         jsonStore: getMongoJsonStoreStatus(),
-    });
-});
-
-app.get('/api/site/status', (req, res) => {
-    res.json({
-        ok: true,
-        service: 'vortex-site',
-        bot: client.user ? {
-            id: client.user.id,
-            tag: client.user.tag,
-        } : null,
-        guilds: client.guilds?.cache?.size || 0,
-        uptimeSeconds: Math.floor(process.uptime()),
-        mongo: getDatabaseStatus(),
     });
 });
 
@@ -129,26 +103,6 @@ function buildPointApiPath(req, userId) {
     if (week) params.set('week', week);
     const query = params.toString();
     return `/api/ponto/${userId}${query ? `?${query}` : ''}`;
-}
-
-function isTranscriptSiteAuthorized(req) {
-    const configuredToken = String(process.env.TRANSCRIPT_SITE_TOKEN || '').trim();
-    if (!configuredToken) return true;
-    const receivedToken = String(
-        req.query.token
-        || req.headers['x-transcript-site-token']
-        || req.headers['x-point-site-token']
-        || ''
-    ).trim();
-    return Boolean(receivedToken && receivedToken === configuredToken);
-}
-
-function buildTranscriptApiPath(req) {
-    const params = new URLSearchParams();
-    const token = String(req.query.token || '').trim();
-    if (token) params.set('token', token);
-    const query = params.toString();
-    return `/api/transcripts${query ? `?${query}` : ''}`;
 }
 
 app.get(['/api/ponto/:id', '/api/relatorio/ponto/:id'], async (req, res) => {
@@ -248,57 +202,12 @@ app.get(['/ponto/:id', '/relatorio/ponto/:id'], (req, res) => {
     return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
 });
 
-app.get(['/transcripts/:id', '/vortex/transcript/ponto/:id'], (req, res) => {
+app.get('/vortex/transcript/ponto/:id', (req, res) => {
     return sendTranscriptPage(req, res, req.params.id);
-});
-
-app.get(['/api/transcripts', '/api/vortex/transcripts'], (req, res) => {
-    if (!isTranscriptSiteAuthorized(req)) {
-        return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
-    }
-
-    const items = listPointTranscriptRecords({
-        search: req.query.q,
-        kind: req.query.kind,
-        limit: req.query.limit,
-    });
-
-    return res.json({
-        ok: true,
-        items,
-        stats: getTranscriptStoreStats(),
-        generatedAt: new Date().toISOString(),
-    });
-});
-
-app.get(['/transcripts', '/transcript', '/vortex/transcripts'], (req, res) => {
-    if (!isTranscriptSiteAuthorized(req)) {
-        return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
-    }
-
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader(
-        'Content-Security-Policy',
-        [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' https: data:",
-            "font-src 'self'",
-            "connect-src 'self'",
-            "base-uri 'self'",
-            "frame-ancestors 'none'",
-        ].join('; ')
-    );
-    return res.type('html').send(buildTranscriptSiteHtml({ apiPath: buildTranscriptApiPath(req) }));
 });
 
 app.get('/relatorio/:id', (req, res) => {
     return sendTranscriptPage(req, res, req.params.id);
-});
-
-app.get(['/', '/termos', '/privacidade'], (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'vortex-site.html'));
 });
 
 // Carregar Comandos

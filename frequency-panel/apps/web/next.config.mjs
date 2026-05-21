@@ -6,7 +6,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  outputFileTracingRoot: path.join(__dirname, '../..')
+  outputFileTracingRoot: path.join(__dirname, '../..'),
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${process.env.INTERNAL_API_URL || 'http://127.0.0.1:4100'}/:path*`
+      }
+    ];
+  }
 };
 
 export default nextConfig;

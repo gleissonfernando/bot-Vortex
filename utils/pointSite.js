@@ -509,7 +509,6 @@ function buildPointSiteHtml({ userId, apiPath }) {
       </div>
       <div class="nav-actions">
         <button type="button" id="backButton"><i class="fa-solid fa-arrow-left"></i> Voltar</button>
-        <a class="nav-link primary" href="/transcripts"><i class="fa-solid fa-table-list"></i> Arquivo</a>
       </div>
     </div>
   </header>
@@ -523,7 +522,6 @@ function buildPointSiteHtml({ userId, apiPath }) {
     const cell = (v) => esc(v || 'N/A');
     document.getElementById('backButton').addEventListener('click', () => {
       if (history.length > 1) history.back();
-      else location.href = '/transcripts';
     });
     function buildApiUrl() {
       const url = new URL(apiPath, location.origin);

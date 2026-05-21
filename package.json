@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node shardcloud-start.js",
+    "start:bot": "node index.js",
+    "postinstall": "npm --prefix frequency-panel install --include=dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

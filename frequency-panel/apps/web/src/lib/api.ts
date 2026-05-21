@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4100';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export type ApiResult<T> = T & { ok: boolean; error?: string };
 
