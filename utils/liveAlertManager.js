@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const { logger } = require('./logger');
 const { isMongoConnected } = require('./database');
 
@@ -317,32 +317,64 @@ function renderMessage(template, live, status) {
     .replaceAll('{url}', status.url || live.url);
 }
 
+function liveAlertContent(roleId, live, status, template) {
+  if (template && template !== DEFAULT_MESSAGE) {
+    return [roleId ? `<@&${roleId}>` : null, renderMessage(template, live, status)].filter(Boolean).join('\n\n');
+  }
+  return [
+    `${live.streamerName} vem pra live familia`,
+    roleId ? `<@&${roleId}>` : null,
+  ].filter(Boolean).join(' ');
+}
+
+function twitchPreviewUrl(status) {
+  const raw = status.thumbnailUrl || status.thumbnail_url;
+  if (!raw) return null;
+  const base = String(raw).replace('{width}', '1280').replace('{height}', '720');
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}v=${Date.now()}`;
+}
+
 async function sendLiveAlert(client, live, settings, status, { test = false } = {}) {
   const channelId = live.alertChannelId || settings.defaultAlertChannelId;
   if (!channelId) return { ok: false, error: 'Canal nao configurado.' };
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (!channel?.isTextBased?.()) return { ok: false, error: 'Canal invalido.' };
   const roleId = live.mentionRoleId || settings.defaultMentionRoleId;
-  const content = [roleId ? `<@&${roleId}>` : null, renderMessage(live.customMessage || settings.defaultMessage, live, status)].filter(Boolean).join('\n\n');
+  const streamUrl = status.url || live.url;
+  const content = liveAlertContent(roleId, live, status, live.customMessage || settings.defaultMessage);
+  const title = status.title || `${live.streamerName} está ao vivo!`;
+  const game = status.game || 'Grand Theft Auto V';
+  const viewers = Number(status.viewerCount || 0);
   const embed = new EmbedBuilder()
-    .setColor(test ? '#7C3AED' : '#ED4245')
-    .setAuthor({ name: 'VORTEX | Live Alerts' })
-    .setTitle(test ? 'Teste de alerta de live' : `${live.streamerName} está ao vivo!`)
-    .setDescription(`Assista agora: ${status.url || live.url}`)
+    .setColor(test ? '#7C3AED' : '#9146FF')
+    .setAuthor({
+      name: `${live.streamerName} is now live on Twitch!`,
+      iconURL: live.avatarUrl || undefined,
+      url: streamUrl,
+    })
+    .setTitle(test ? 'Teste de alerta de live da Vortex' : title)
+    .setURL(streamUrl)
     .addFields(
-      { name: 'Plataforma', value: live.platform, inline: true },
-      { name: 'Streamer', value: live.streamerName, inline: true },
-      status.game ? { name: 'Categoria', value: String(status.game), inline: true } : { name: 'Status', value: test ? 'Teste' : 'Online', inline: true },
-      { name: 'Titulo', value: status.title || 'Live da Vortex', inline: false }
+      { name: 'Game', value: String(game), inline: true },
+      { name: 'Viewers', value: String(viewers), inline: true }
     )
+    .setFooter({ text: `vortex lives • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` })
     .setTimestamp();
-  if (live.avatarUrl) embed.setThumbnail(live.avatarUrl);
-  if (status.thumbnailUrl) {
-    embed.setImage(String(status.thumbnailUrl).replace('{width}', '1280').replace('{height}', '720'));
-  }
+  const previewUrl = twitchPreviewUrl(status);
+  if (previewUrl) embed.setImage(previewUrl);
+  const components = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Watch Stream')
+        .setStyle(ButtonStyle.Link)
+        .setURL(streamUrl)
+    ),
+  ];
   await channel.send({
     content,
     embeds: [embed],
+    components,
     allowedMentions: { roles: roleId ? [roleId] : [] },
   });
   return { ok: true };
