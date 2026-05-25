@@ -24,6 +24,16 @@ function isEnabled() {
   return process.env.FREQUENCY_DASHBOARD_SYNC !== 'false' && Boolean(getIngestSecret());
 }
 
+function getDisabledReason() {
+  if (process.env.FREQUENCY_DASHBOARD_SYNC === 'false') {
+    return 'FREQUENCY_DASHBOARD_SYNC=false';
+  }
+  if (!getIngestSecret()) {
+    return 'INGEST_SECRET/BOT_INGEST_SECRET ausente';
+  }
+  return 'configuracao incompleta';
+}
+
 function mapMember(member) {
   const roles = member.roles?.cache
     ? Array.from(member.roles.cache.values())
@@ -204,7 +214,7 @@ function runPointSyncScheduled(client) {
 
 function initFrequencyDashboardSync(client) {
   if (!isEnabled()) {
-    logger.warn('Frequency dashboard sync desativado: INGEST_SECRET/BOT_INGEST_SECRET ausente.');
+    logger.warn(`Frequency dashboard sync desativado: ${getDisabledReason()}.`);
     return;
   }
   if (intervalsStarted) return;
