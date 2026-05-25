@@ -10,8 +10,17 @@ const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {pla
 const DEFAULT_INTERVAL_SECONDS = 120;
 const MIN_INTERVAL_MS = 30 * 1000;
 let monitorInterval = null;
+let liveAlertCheckRunning = false;
 let twitchTokenCache = null;
 const lastGuildCheckAt = new Map();
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 function databaseNameFromUri(uri) {
   const withoutQuery = String(uri || '').split('?')[0] || '';
@@ -72,6 +81,10 @@ function extractSlug(url) {
   } catch {
     return '';
   }
+}
+
+function normalizeTwitchLogin(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
 
 function normalizeLive(row) {
@@ -276,6 +289,67 @@ async function checkTwitchLive(live) {
   };
 }
 
+function twitchLookupForLive(live) {
+  return {
+    live,
+    userId: live.twitchUserId ? String(live.twitchUserId).trim() : '',
+    login: normalizeTwitchLogin(live.twitchLogin || extractSlug(live.url)),
+  };
+}
+
+function twitchStatusFromStream(live, stream) {
+  const login = normalizeTwitchLogin(stream.user_login || live.twitchLogin || extractSlug(live.url));
+  return {
+    online: true,
+    liveId: String(stream.id || `${stream.user_id || login}:${stream.started_at || ''}`),
+    title: stream.title || 'Live na Twitch',
+    game: stream.game_name || null,
+    viewerCount: Number(stream.viewer_count || 0),
+    thumbnailUrl: stream.thumbnail_url || null,
+    url: live.url || (login ? `https://www.twitch.tv/${login}` : null),
+  };
+}
+
+async function checkTwitchLivesBatch(lives) {
+  const token = await getTwitchToken();
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const result = new Map(lives.map((live) => [live.id, { online: false }]));
+  if (!token || !clientId || !lives.length) return result;
+
+  const lookups = lives
+    .map(twitchLookupForLive)
+    .filter((item) => item.userId || item.login);
+  if (!lookups.length) return result;
+
+  const streamsByKey = new Map();
+  for (const chunk of chunkArray(lookups, 100)) {
+    const params = new URLSearchParams();
+    for (const item of chunk) {
+      if (item.userId) params.append('user_id', item.userId);
+      else params.append('user_login', item.login);
+    }
+
+    const response = await fetch(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
+      headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) continue;
+
+    const data = await response.json().catch(() => ({}));
+    for (const stream of Array.isArray(data.data) ? data.data : []) {
+      if (stream.user_id) streamsByKey.set(`id:${stream.user_id}`, stream);
+      if (stream.user_login) streamsByKey.set(`login:${normalizeTwitchLogin(stream.user_login)}`, stream);
+    }
+  }
+
+  for (const item of lookups) {
+    const stream = (item.userId && streamsByKey.get(`id:${item.userId}`))
+      || (item.login && streamsByKey.get(`login:${item.login}`));
+    if (stream) result.set(item.live.id, twitchStatusFromStream(item.live, stream));
+  }
+
+  return result;
+}
+
 async function checkKickLive(live) {
   const slug = extractSlug(live.url);
   if (!slug) return { online: false };
@@ -381,9 +455,14 @@ async function sendLiveAlert(client, live, settings, status, { test = false } = 
 }
 
 async function runLiveAlertCheck(client) {
+  if (liveAlertCheckRunning) return;
+  liveAlertCheckRunning = true;
+  try {
   const lives = await listLiveAlerts();
   const settingsCache = new Map();
   const dueGuilds = new Map();
+  const dueChecks = [];
+
   for (const live of lives) {
     if (!live.enabled) continue;
     const settings = settingsCache.get(live.guildId) || await getLiveSettings(live.guildId);
@@ -397,17 +476,44 @@ async function runLiveAlertCheck(client) {
       if (due) lastGuildCheckAt.set(live.guildId, Date.now());
     }
     if (!dueGuilds.get(live.guildId)) continue;
+    dueChecks.push({ live, settings });
+  }
+
+  const statusByLiveId = new Map();
+  const twitchChecks = dueChecks.filter((item) => item.live.platform === 'twitch');
+  if (twitchChecks.length) {
+    const twitchStatuses = await checkTwitchLivesBatch(twitchChecks.map((item) => item.live)).catch((error) => {
+      logger.warn(`Lives: falha ao verificar Twitch em lote: ${error.message}`);
+      return new Map();
+    });
+    for (const item of twitchChecks) {
+      statusByLiveId.set(item.live.id, twitchStatuses.get(item.live.id) || { online: false });
+    }
+  }
+
+  for (const { live } of dueChecks.filter((item) => item.live.platform !== 'twitch')) {
     const status = await checkLiveStatus(live).catch((error) => {
       logger.warn(`Lives: falha ao verificar ${live.url}: ${error.message}`);
       return { online: false };
     });
+    statusByLiveId.set(live.id, status);
+  }
+
+  for (const { live, settings } of dueChecks) {
+    const status = statusByLiveId.get(live.id) || { online: false };
     if (!status.online) {
-      await updateLiveAlertStatus(live, {
-        status: 'offline',
-        lastLiveTitle: null,
-        lastLiveUrl: null,
-        lastAnnouncedLiveId: null,
-      });
+      const alreadyOffline = live.status === 'offline'
+        && !live.lastLiveTitle
+        && !live.lastLiveUrl
+        && !live.lastAnnouncedLiveId;
+      if (!alreadyOffline || process.env.LIVE_ALERT_WRITE_OFFLINE_HEARTBEAT === 'true') {
+        await updateLiveAlertStatus(live, {
+          status: 'offline',
+          lastLiveTitle: null,
+          lastLiveUrl: null,
+          lastAnnouncedLiveId: null,
+        });
+      }
       continue;
     }
     const liveId = status.liveId || `${live.url}:${status.title || 'online'}`;
@@ -422,6 +528,9 @@ async function runLiveAlertCheck(client) {
       lastLiveUrl: status.url || live.url,
       lastAnnouncedLiveId: liveId,
     });
+  }
+  } finally {
+    liveAlertCheckRunning = false;
   }
 }
 

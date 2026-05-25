@@ -4,6 +4,7 @@ const { logMemberLeave } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
 const { deleteApprovedSetChannel } = require('../utils/approvedSetChannels');
 const { deleteUserProfile } = require('../utils/profileManager');
+const { memberHasFactionHierarchyRole, updateFactionHierarchyPanel } = require('../utils/factionHierarchy');
 
 const SUPPORT_USER_ID = '289227932432334869';
 
@@ -41,6 +42,12 @@ module.exports = {
             await deleteUserProfile(guild, member.id, `Usuário ${member.id} saiu do servidor; perfil e call removidos.`).catch((error) => {
                 logger.error('Erro ao remover perfil/call de usuário que saiu:', error);
             });
+
+            if (memberHasFactionHierarchyRole(member)) {
+                await updateFactionHierarchyPanel(guild.client, guild.id).catch((error) => {
+                    logger.error('Erro ao atualizar hierarquia da fac apos saida de membro:', error);
+                });
+            }
         } catch (error) {
             logger.error('Erro no evento guildMemberRemove:', error);
         }

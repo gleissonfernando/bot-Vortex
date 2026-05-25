@@ -3,7 +3,9 @@ const config = require('../config/config');
 const { logger } = require('../utils/logger');
 const { logMemberJoin } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
-const { applyPendingHierarchy, getVortexAutoRoles } = require('../utils/vortexHierarchy');
+const { getUserProfile } = require('../utils/profileManager');
+const { applyApprovedHierarchy, applyPendingHierarchy, getVortexAutoRoles } = require('../utils/vortexHierarchy');
+const { memberHasFactionHierarchyRole, updateFactionHierarchyPanel } = require('../utils/factionHierarchy');
 
 module.exports = {
     name: Events.GuildMemberAdd,
@@ -11,33 +13,46 @@ module.exports = {
         try {
             const guild = member.guild;
             const client = guild.client;
-            
-            // Adicionar cargos automáticos de entrada configurados no /painel.
+            const existingProfile = getUserProfile(guild.id, member.id);
+            let hierarchyText = '';
+
             try {
-                const result = await applyPendingHierarchy(member);
-                if (!result.added.length && !result.failed.length && config.pendingRoleId) {
-                    const pendingRole = await guild.roles.fetch(config.pendingRoleId).catch(() => null);
-                    if (pendingRole) {
-                        await member.roles.add(pendingRole).catch(() => {});
+                if (existingProfile) {
+                    const result = await applyApprovedHierarchy(member, 'Hierarquia Vortex: membro entrou com perfil aprovado');
+                    const added = result.addedApproved.added.map((roleId) => `<@&${roleId}>`).join(' ') || '`Ja estava sincronizado`';
+                    const failed = result.addedApproved.failed.map((roleId) => `<@&${roleId}>`).join(' ');
+                    hierarchyText = `cadastro aprovado encontrado; cargo(s) aprovado(s): ${added}${failed ? `; falhou em: ${failed}` : ''}.`;
+                } else {
+                    const result = await applyPendingHierarchy(member);
+                    if (!result.added.length && !result.failed.length && config.pendingRoleId) {
+                        const pendingRole = await guild.roles.fetch(config.pendingRoleId).catch(() => null);
+                        if (pendingRole) {
+                            await member.roles.add(pendingRole).catch(() => {});
+                        }
                     }
+                    const added = result.added.map((roleId) => `<@&${roleId}>`).join(' ') || '`Ja estava sincronizado`';
+                    const failed = result.failed.map((roleId) => `<@&${roleId}>`).join(' ');
+                    hierarchyText = `cargo(s) pendente(s): ${added}${failed ? `; falhou em: ${failed}` : ''}.`;
                 }
             } catch (error) {
-                console.error(`[VORTEX] Erro ao aplicar cargo pendente:`, error.message);
+                console.error('[VORTEX] Erro ao aplicar hierarquia automatica:', error.message);
+                hierarchyText = `falha ao sincronizar cargos automaticamente: \`${error.message}\`.`;
             }
 
             const autoRoles = getVortexAutoRoles();
 
-            // Log de entrada profissional
             await sendStaffLog(
                 client,
-                '📥 Novo Membro',
+                'Novo Membro',
                 [
-                    `**Usuário:** <@${member.id}>`,
+                    `**Usuario:** <@${member.id}>`,
                     `**Tag:** \`${member.user.tag}\``,
                     `**ID:** \`${member.id}\``,
                     '',
-                    `**Ação automática:** cargo(s) pendente(s) aplicado(s): ${autoRoles.pending.map((roleId) => `<@&${roleId}>`).join(' ') || '`Nenhum`'}.`,
-                    '**Próximo passo:** usuário precisa iniciar o cadastro pelo `/set`.',
+                    `**Acao automatica:** ${hierarchyText}`,
+                    existingProfile
+                        ? `**Perfil:** cadastro aprovado salvo no sistema. Cargo(s) aprovado(s) configurado(s): ${autoRoles.approved.map((roleId) => `<@&${roleId}>`).join(' ') || '`Nenhum`'}.`
+                        : `**Proximo passo:** usuario precisa iniciar o cadastro pelo \`/set\`. Cargo(s) pendente(s) configurado(s): ${autoRoles.pending.map((roleId) => `<@&${roleId}>`).join(' ') || '`Nenhum`'}.`,
                 ].join('\n'),
                 '#57F287',
                 { guildId: guild.id }
@@ -47,19 +62,26 @@ module.exports = {
                 logger.error('Erro ao registrar log de entrada:', error);
             });
 
-            // Enviar mensagem de Boas-vindas via DM
+            if (memberHasFactionHierarchyRole(member)) {
+                await updateFactionHierarchyPanel(client, guild.id).catch((error) => {
+                    logger.error('Erro ao atualizar hierarquia da fac apos entrada de membro:', error);
+                });
+            }
+
             try {
                 const welcomeEmbed = new EmbedBuilder()
                     .setColor('#7000FF')
-                    .setTitle(`Bem-vindo à Vortex, ${member.user.username}`)
+                    .setTitle(`Bem-vindo a Vortex, ${member.user.username}`)
                     .setDescription([
-                        `Você entrou no servidor **${guild.name}**.`,
+                        `Voce entrou no servidor **${guild.name}**.`,
                         '',
-                        '**Para liberar seu acesso:**',
-                        'Use `/set` em um canal autorizado e preencha as informações solicitadas.',
+                        existingProfile ? '**Seu cadastro aprovado foi encontrado:**' : '**Para liberar seu acesso:**',
+                        existingProfile
+                            ? 'Seus cargos serao sincronizados automaticamente pelo sistema.'
+                            : 'Use `/set` em um canal autorizado e preencha as informacoes solicitadas.',
                         '',
-                        '**Depois da aprovação:**',
-                        'Seu cadastro ficará salvo no sistema e você poderá usar `/perfil` para consultar ou atualizar seus próprios dados.',
+                        '**Depois da aprovacao:**',
+                        'Seu cadastro fica salvo no sistema e voce pode usar `/perfil` para consultar ou atualizar seus dados.',
                         '',
                         'Se tiver problema com o cadastro, procure a equipe no servidor.',
                     ].join('\n'))
@@ -71,8 +93,8 @@ module.exports = {
                     embeds: [welcomeEmbed],
                     allowedMentions: { parse: [], users: [], roles: [] },
                 }).catch(() => {});
-            } catch (dmError) {
-                // Silencioso se DMs estiverem fechadas
+            } catch {
+                // DM fechada ou indisponivel.
             }
         } catch (error) {
             console.error('[VORTEX] Erro no evento guildMemberAdd:', error.message);

@@ -32,6 +32,7 @@ const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsen
 const {
   getGuildProfiles,
   checkProfileUpdates,
+  ensureAllProfileChannelAccess,
   parseTestPeriod,
   registerManualProfile,
   readProfileConfig,
@@ -2145,6 +2146,9 @@ module.exports = {
         }
 
         const savedRoles = setVortexAutoRoles(type, roleIds);
+        ensureAllProfileChannelAccess(interaction.client).catch((error) => {
+            console.error('[VORTEX] Erro ao sincronizar hierarquia apos alterar cargo automatico:', error);
+        });
         sendVortexLog(interaction.client, {
             title: 'Hierarquia Vortex Alterada',
             description: [

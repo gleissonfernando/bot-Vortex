@@ -9,6 +9,8 @@ const MEMBER_SYNC_INTERVAL_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQU
 const POINT_SYNC_INTERVAL_MS = Math.max(30 * 1000, Number(process.env.FREQUENCY_POINT_SYNC_INTERVAL_MS || 60 * 1000));
 let intervalsStarted = false;
 let pointSyncQueued = false;
+let memberSyncRunning = false;
+let pointSyncRunning = false;
 
 function getApiUrl() {
   return String(process.env.FREQUENCY_API_URL || process.env.INTERNAL_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
@@ -144,7 +146,8 @@ async function syncPointSnapshot(client) {
     const sessions = points.flatMap(pointSessionsFromRecord);
 
     for (const point of points) {
-      const member = await guild.members.fetch(point.userId).catch(() => null);
+      const member = guild.members.cache.get(point.userId)
+        || await guild.members.fetch(point.userId).catch(() => null);
       if (member && !member.user?.bot) membersById.set(member.id, mapMember(member));
     }
 
@@ -165,7 +168,7 @@ function queuePointSnapshotSync(client) {
   pointSyncQueued = true;
   setTimeout(() => {
     pointSyncQueued = false;
-    syncPointSnapshot(client).catch((error) => logger.warn('Falha ao sincronizar ponto com o dashboard:', error.message));
+    runPointSyncScheduled(client);
   }, 1500);
 }
 
@@ -179,6 +182,26 @@ async function syncPresence(newPresence) {
   }).catch(() => null);
 }
 
+function runMemberSyncScheduled(client) {
+  if (memberSyncRunning) return;
+  memberSyncRunning = true;
+  syncGuildMembers(client)
+    .catch((error) => logger.warn('Falha ao sincronizar membros com o dashboard:', error.message))
+    .finally(() => {
+      memberSyncRunning = false;
+    });
+}
+
+function runPointSyncScheduled(client) {
+  if (pointSyncRunning) return;
+  pointSyncRunning = true;
+  syncPointSnapshot(client)
+    .catch((error) => logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message))
+    .finally(() => {
+      pointSyncRunning = false;
+    });
+}
+
 function initFrequencyDashboardSync(client) {
   if (!isEnabled()) {
     logger.warn('Frequency dashboard sync desativado: INGEST_SECRET/BOT_INGEST_SECRET ausente.');
@@ -188,16 +211,16 @@ function initFrequencyDashboardSync(client) {
   intervalsStarted = true;
 
   setTimeout(() => {
-    syncGuildMembers(client).catch((error) => logger.warn('Falha ao sincronizar membros com o dashboard:', error.message));
-    syncPointSnapshot(client).catch((error) => logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message));
+    runMemberSyncScheduled(client);
+    runPointSyncScheduled(client);
   }, 10 * 1000);
 
   setInterval(() => {
-    syncGuildMembers(client).catch((error) => logger.warn('Falha ao sincronizar membros com o dashboard:', error.message));
+    runMemberSyncScheduled(client);
   }, MEMBER_SYNC_INTERVAL_MS);
 
   setInterval(() => {
-    syncPointSnapshot(client).catch((error) => logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message));
+    runPointSyncScheduled(client);
   }, POINT_SYNC_INTERVAL_MS);
 }
 

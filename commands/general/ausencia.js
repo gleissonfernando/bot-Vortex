@@ -1,6 +1,7 @@
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -8,8 +9,23 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 const { safeReply } = require('../../utils/safeReply');
 const { buildThemedPanelPayload } = require('../../utils/panelTheme');
+
+const ABSENCE_BANNER_NAME = 'vortex-ausencia-banner.png';
+const ABSENCE_BANNER_PATH = path.join(__dirname, '..', '..', 'foto', ABSENCE_BANNER_NAME);
+
+function getAbsenceBannerOptions() {
+  if (!fs.existsSync(ABSENCE_BANNER_PATH)) return {};
+  return {
+    bannerUrl: `attachment://${ABSENCE_BANNER_NAME}`,
+    files: [
+      new AttachmentBuilder(ABSENCE_BANNER_PATH, { name: ABSENCE_BANNER_NAME }),
+    ],
+  };
+}
 
 function buildAbsenceModal(interaction) {
   const modal = new ModalBuilder()
@@ -104,7 +120,10 @@ function buildAbsencePanel(interaction = null) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  return buildThemedPanelPayload('ausencia', embed, { components: [row] });
+  return buildThemedPanelPayload('ausencia', embed, {
+    ...getAbsenceBannerOptions(),
+    components: [row],
+  });
 }
 
 module.exports = {

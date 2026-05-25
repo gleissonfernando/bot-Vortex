@@ -3,8 +3,12 @@ const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { formatDate } = require('./pontoManager');
 const { buildThemedPanelPayload } = require('./panelTheme');
+const { isPrimaryGuild } = require('./guildScope');
+const { logger } = require('./logger');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
+const AUTO_REFRESH_INTERVAL_MS = Number(process.env.FACTION_HIERARCHY_REFRESH_INTERVAL_MS || 5 * 60 * 1000);
+let autoRefreshInterval = null;
 
 const FACTION_HIERARCHY_ROLES = [
   { key: 'leader', label: 'Lider' },
@@ -205,8 +209,52 @@ async function publishFactionHierarchyPanel(interaction) {
 function hasRelevantFactionHierarchyRoleChange(oldMember, newMember) {
   const hierarchy = getFactionHierarchyConfig();
   const roleIds = FACTION_HIERARCHY_ROLES.flatMap((role) => normalizeRoleIds(hierarchy.roles[role.key]));
-  if (!roleIds.length) return false;
+  if (!roleIds.length || !newMember?.roles?.cache) return false;
+  if (!oldMember?.roles?.cache) {
+    return roleIds.some((roleId) => newMember.roles.cache.has(roleId));
+  }
   return roleIds.some((roleId) => oldMember.roles.cache.has(roleId) !== newMember.roles.cache.has(roleId));
+}
+
+function memberHasFactionHierarchyRole(member) {
+  const hierarchy = getFactionHierarchyConfig();
+  const roleIds = FACTION_HIERARCHY_ROLES.flatMap((role) => normalizeRoleIds(hierarchy.roles[role.key]));
+  if (!roleIds.length || !member?.roles?.cache) return false;
+  return roleIds.some((roleId) => member.roles.cache.has(roleId));
+}
+
+async function refreshFactionHierarchyPanels(client) {
+  const hierarchy = getFactionHierarchyConfig();
+  if (!hierarchy.channelId || !hierarchy.messageId) {
+    return { ok: false, reason: 'not_published' };
+  }
+
+  const results = [];
+  for (const guild of client.guilds.cache.values()) {
+    if (!isPrimaryGuild(guild.id)) continue;
+    const result = await updateFactionHierarchyPanel(client, guild.id).catch((error) => {
+      logger.error('Erro ao atualizar painel automatico de hierarquia da fac:', error);
+      return { ok: false, message: error.message };
+    });
+    results.push({ guildId: guild.id, ...result });
+  }
+
+  return { ok: results.some((result) => result.ok), results };
+}
+
+function initFactionHierarchyAutoRefresh(client) {
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+  if (!Number.isFinite(AUTO_REFRESH_INTERVAL_MS) || AUTO_REFRESH_INTERVAL_MS <= 0) return;
+
+  refreshFactionHierarchyPanels(client).catch((error) => {
+    logger.error('Erro no refresh inicial da hierarquia da fac:', error);
+  });
+
+  autoRefreshInterval = setInterval(() => {
+    refreshFactionHierarchyPanels(client).catch((error) => {
+      logger.error('Erro no refresh automatico da hierarquia da fac:', error);
+    });
+  }, AUTO_REFRESH_INTERVAL_MS);
 }
 
 module.exports = {
@@ -221,5 +269,8 @@ module.exports = {
   publishFactionHierarchyPanel,
   updateFactionHierarchyPanel,
   hasRelevantFactionHierarchyRoleChange,
+  memberHasFactionHierarchyRole,
+  refreshFactionHierarchyPanels,
+  initFactionHierarchyAutoRefresh,
   formatConfiguredRoles,
 };

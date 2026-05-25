@@ -14,6 +14,7 @@ const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
 const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
 let statusPanelInterval = null;
+let statusPanelUpdateRunning = false;
 const transientPanelFailures = new Map();
 const lastVisibilitySyncByGuild = new Map();
 const TRANSIENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
@@ -346,15 +347,23 @@ async function updateAllStatusPanels(client) {
 }
 
 function initStatusPanel(client) {
-  updateAllStatusPanels(client).catch((error) => {
-    logger.error('Erro ao inicializar painel de ponto:', error);
-  });
+  const runScheduledUpdate = (label) => {
+    if (statusPanelUpdateRunning) return;
+    statusPanelUpdateRunning = true;
+    updateAllStatusPanels(client)
+      .catch((error) => {
+        logger.error(label, error);
+      })
+      .finally(() => {
+        statusPanelUpdateRunning = false;
+      });
+  };
+
+  runScheduledUpdate('Erro ao inicializar painel de ponto:');
 
   if (statusPanelInterval) return;
   statusPanelInterval = setInterval(() => {
-    updateAllStatusPanels(client).catch((error) => {
-      logger.error('Erro ao atualizar painel de ponto automaticamente:', error);
-    });
+    runScheduledUpdate('Erro ao atualizar painel de ponto automaticamente:');
   }, STATUS_PANEL_INTERVAL_MS);
 }
 

@@ -72,6 +72,7 @@ function normalizeBannerRatio(value, fallback = '16:9') {
 function normalizeBannerUrl(value) {
   const text = String(value || '').trim();
   if (!text) return '';
+  if (/^attachment:\/\/[^\s/\\]+$/i.test(text)) return text;
   if (/^https?:\/\/\S+$/i.test(text)) return text;
   return '';
 }

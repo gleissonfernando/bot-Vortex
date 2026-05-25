@@ -28,12 +28,14 @@ const MASTER_ROLE_ID = '1497703127074345040';
 const DEFAULT_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const CHECK_INTERVAL_MS = Math.max(
   5 * 60 * 1000,
-  Number(process.env.POINT_AUTOMATION_INTERVAL_MS || DEFAULT_CHECK_INTERVAL_MS) || DEFAULT_CHECK_INTERVAL_MS
+  Number(process.env.POINT_AUTOMATION_INTERVAL_MS || process.env.CHECK_INTERVAL_MS || DEFAULT_CHECK_INTERVAL_MS) || DEFAULT_CHECK_INTERVAL_MS
 );
 const POINT_AUTOMATION_FETCH_PRESENCES = process.env.POINT_AUTOMATION_FETCH_PRESENCES !== 'false';
+const POINT_AUTOMATION_SCAN_FIVEM = process.env.POINT_AUTOMATION_SCAN_FIVEM !== 'false';
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
 
 let interval = null;
+let scheduledAutomationRunning = false;
 
 function ensureFile(filePath, fallback = {}) {
   if (!fs.existsSync(filePath)) {
@@ -334,14 +336,14 @@ async function closeUnconfirmedPoint(client, guild, point, item, state, key, rea
   };
 }
 
-async function checkOpenPointConfirmations(client, guild, state) {
+async function checkOpenPointConfirmations(client, guild, state, points = null) {
   const config = readAutomationConfig();
   if (!config.pointMonitorEnabled) return;
-  const points = await listGuildPoints(guild.id);
+  const guildPoints = points || await listGuildPoints(guild.id);
   const minOpenMs = config.pointMonitorDmIntervalHours * 60 * 60 * 1000;
   const retryMs = 15 * 60 * 1000;
 
-  for (const point of points.filter((item) => item.activePointStartedAt)) {
+  for (const point of guildPoints.filter((item) => item.activePointStartedAt)) {
     const key = getStateKey(guild.id, point.userId);
     const item = state[key] || {};
     const cycleStartMs = getPointCycleStartMs(point, item);
@@ -392,7 +394,7 @@ function getAutomationDateKey(date = new Date()) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function checkOfflineUsers(client, guild, state, force = false) {
+async function checkOfflineUsers(client, guild, state, force = false, points = null) {
   const config = readAutomationConfig();
   if (!config.offlineChargeEnabled) return;
   if (!force && getAutomationHour() !== config.offlineChargeHour) return;
@@ -400,8 +402,8 @@ async function checkOfflineUsers(client, guild, state, force = false) {
   const profiles = Object.values(getGuildProfiles(guild.id));
   const billingExemptUserIds = new Set(getBillingExemptUserIds());
   const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
-  const points = await listGuildPoints(guild.id);
-  const pointByUser = new Map(points.map((point) => [point.userId, point]));
+  const guildPoints = points || await listGuildPoints(guild.id);
+  const pointByUser = new Map(guildPoints.map((point) => [point.userId, point]));
   const intervalMs = Math.max(1, config.offlineChargeIntervalDays) * 24 * 60 * 60 * 1000;
 
   for (const profile of profiles) {
@@ -545,12 +547,22 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
 
 async function runPointAutomationCheck(client, { force = false } = {}) {
   const state = readJSON(STATE_PATH, {});
-  const { scanCurrentFiveMActivities } = require('./fivemActivityAlertManager');
-  await scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao reconciliar atividades FiveM no ciclo de ponto:', error));
+  if (POINT_AUTOMATION_SCAN_FIVEM) {
+    const { scanCurrentFiveMActivities } = require('./fivemActivityAlertManager');
+    await scanCurrentFiveMActivities(client).catch((error) => logger.error('Erro ao reconciliar atividades FiveM no ciclo de ponto:', error));
+  }
   for (const guild of client.guilds.cache.values()) {
     if (!isPrimaryGuild(guild.id)) continue;
-    await checkOpenPointConfirmations(client, guild, state, force).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
-    await checkOfflineUsers(client, guild, state, force).catch((error) => logger.error('Erro na cobrança de usuários offline:', error));
+    const config = readAutomationConfig();
+    const needsPoints = config.pointMonitorEnabled || config.offlineChargeEnabled;
+    const points = needsPoints
+      ? await listGuildPoints(guild.id).catch((error) => {
+        logger.error('Erro ao carregar pontos para automacao:', error);
+        return [];
+      })
+      : [];
+    await checkOpenPointConfirmations(client, guild, state, points).catch((error) => logger.error('Erro no monitor de ponto aberto:', error));
+    await checkOfflineUsers(client, guild, state, force, points).catch((error) => logger.error('Erro na cobranca de usuarios offline:', error));
     await checkAvailabilityReminders(client, guild, state, force).catch((error) => logger.error('Erro no lembrete de status disponível:', error));
   }
   writeJSON(STATE_PATH, state);
@@ -622,9 +634,18 @@ async function handlePenaltyButton(interaction) {
 
 function initPointAutomation(client) {
   if (interval) clearInterval(interval);
-  setTimeout(() => runPointAutomationCheck(client).catch((error) => logger.error('Erro inicial na automação de ponto:', error)), 15 * 1000);
+  const runScheduled = (label) => {
+    if (scheduledAutomationRunning) return;
+    scheduledAutomationRunning = true;
+    runPointAutomationCheck(client)
+      .catch((error) => logger.error(label, error))
+      .finally(() => {
+        scheduledAutomationRunning = false;
+      });
+  };
+  setTimeout(() => runScheduled('Erro inicial na automacao de ponto:'), 15 * 1000);
   interval = setInterval(() => {
-    runPointAutomationCheck(client).catch((error) => logger.error('Erro na automação de ponto:', error));
+    runScheduled('Erro na automacao de ponto:');
   }, CHECK_INTERVAL_MS);
 }
 

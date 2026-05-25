@@ -4,6 +4,9 @@ const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 const { isPrimaryGuild } = require('../utils/guildScope');
 const { initFrequencyDashboardSync } = require('../utils/frequencyDashboardSync');
+const { initFactionHierarchyAutoRefresh } = require('../utils/factionHierarchy');
+
+const SYNC_CHANNEL_ACCESS_ON_READY = process.env.SYNC_CHANNEL_ACCESS_ON_READY !== 'false';
 
 module.exports = {
     name: Events.ClientReady,
@@ -23,26 +26,31 @@ module.exports = {
             console.error('Erro ao enviar log de inicialização no canal:', error);
         }
 
-        try {
-            await Promise.allSettled(
-                client.guilds.cache
-                    .filter((guild) => isPrimaryGuild(guild.id))
-                    .map((guild) => syncVoiceChannelAccess(guild))
-            );
-        } catch (error) {
-            console.error('Erro ao sincronizar acesso às calls ocultas:', error);
-        }
+        if (SYNC_CHANNEL_ACCESS_ON_READY) {
+            try {
+                await Promise.allSettled(
+                    client.guilds.cache
+                        .filter((guild) => isPrimaryGuild(guild.id))
+                        .map((guild) => syncVoiceChannelAccess(guild))
+                );
+            } catch (error) {
+                console.error('Erro ao sincronizar acesso às calls ocultas:', error);
+            }
 
-        try {
-            await Promise.allSettled(
-                client.guilds.cache
-                    .filter((guild) => isPrimaryGuild(guild.id))
-                    .map((guild) => syncTextChannelAccess(guild))
-            );
-        } catch (error) {
-            console.error('Erro ao sincronizar acesso aos canais de texto:', error);
+            try {
+                await Promise.allSettled(
+                    client.guilds.cache
+                        .filter((guild) => isPrimaryGuild(guild.id))
+                        .map((guild) => syncTextChannelAccess(guild))
+                );
+            } catch (error) {
+                console.error('Erro ao sincronizar acesso aos canais de texto:', error);
+            }
+        } else {
+            console.log('[VORTEX] Sync inicial de canais desativado para reduzir uso no startup.');
         }
 
         initFrequencyDashboardSync(client);
+        initFactionHierarchyAutoRefresh(client);
     },
 };

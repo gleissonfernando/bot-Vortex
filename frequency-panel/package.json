@@ -18,5 +18,8 @@
     "start:api": "npm run start --workspace apps/api",
     "start:web": "npm run start --workspace apps/web",
     "start:bot": "npm run start --workspace apps/bot"
+  },
+  "dependencies": {
+    "vortex-management-system": "file:.."
   }
 }

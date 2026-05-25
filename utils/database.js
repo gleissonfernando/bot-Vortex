@@ -36,6 +36,11 @@ function isMongoConnected() {
   return mongoose.connection.readyState === 1;
 }
 
+function readPositiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 function getMongoHost() {
   const uri = getMongoUri();
   return (uri.match(/@([^/?]+)/) || [])[1] || null;
@@ -163,7 +168,10 @@ async function connectDatabase() {
 
   mongoose.set('strictQuery', false);
   connectPromise = mongoose.connect(uri, {
-    serverSelectionTimeoutMS: 10000,
+    maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),
+    minPoolSize: 0,
+    maxIdleTimeMS: readPositiveIntEnv('MONGODB_MAX_IDLE_TIME_MS', 30000),
+    serverSelectionTimeoutMS: readPositiveIntEnv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 10000),
   })
     .then(() => {
       connectPromise = null;

@@ -864,6 +864,7 @@ module.exports = {
                 });
 
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 60000);
+                return;
             }
         }
 

@@ -13,9 +13,19 @@ function databaseNameFromUri(uri: string) {
   return decodeURIComponent(pathname) || 'vortex_frequency';
 }
 
+function readPositiveIntEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 export async function getDb() {
   if (!client) {
-    client = new MongoClient(env.mongoUri);
+    client = new MongoClient(env.mongoUri, {
+      maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),
+      minPoolSize: 0,
+      maxIdleTimeMS: readPositiveIntEnv('MONGODB_MAX_IDLE_TIME_MS', 30000),
+      serverSelectionTimeoutMS: readPositiveIntEnv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 10000)
+    });
     await client.connect();
     database = client.db(process.env.MONGODB_DB || databaseNameFromUri(env.mongoUri));
   }

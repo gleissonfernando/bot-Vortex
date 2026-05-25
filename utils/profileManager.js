@@ -4,7 +4,7 @@ const { EmbedBuilder } = require('discord.js');
 const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
 const { syncApprovedSetChannel } = require('./approvedSetChannels');
-const { resetToPendingHierarchy } = require('./vortexHierarchy');
+const { applyApprovedHierarchy, resetToPendingHierarchy } = require('./vortexHierarchy');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { isSilentLogUser } = require('./notifications');
 const { refreshMongoJsonKeys } = require('./mongoJsonStore');
@@ -24,7 +24,27 @@ const PROFILE_ALERT_ROLE_IDS = [
 ];
 const MASTER_ROLE_ID = '1497703127074345040';
 const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
+const PROFILE_ACCESS_REVIEW_ENABLED = process.env.PROFILE_ACCESS_REVIEW_ENABLED !== 'false';
+const PROFILE_SYNC_CHANNELS_ON_STARTUP = process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP !== 'false';
 let interval = null;
+
+async function syncApprovedHierarchyForMember(guild, userId, reason = 'Hierarquia Vortex: perfil aprovado sincronizado') {
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (!member?.roles?.cache) {
+    return { ok: false, reason: 'member_not_found' };
+  }
+
+  const result = await applyApprovedHierarchy(member, reason);
+  if (result.removedPending.failed.length || result.addedApproved.failed.length) {
+    logger.error('Falha parcial ao aplicar hierarquia aprovada:', {
+      userId: member.id,
+      removedPending: result.removedPending,
+      addedApproved: result.addedApproved,
+    });
+  }
+
+  return { ok: true, result };
+}
 
 function ensureFile() {
   if (!fs.existsSync(PROFILES_PATH)) {
@@ -361,6 +381,9 @@ async function registerApprovedProfile(guild, member, {
 
   data[guild.id][member.id] = profile;
   writeProfiles(data);
+  await syncApprovedHierarchyForMember(guild, member.id, 'Hierarquia Vortex: perfil aprovado registrado').catch((error) => {
+    logger.error('Erro ao aplicar hierarquia em perfil aprovado:', error);
+  });
   await ensureProfileChannelAccess(guild, profile.callChannelId, member.id).catch(() => null);
   await syncApprovedSetChannel(guild, profile, { reason: 'registerApprovedProfile' }).catch(() => null);
   return profile;
@@ -507,6 +530,9 @@ async function registerManualProfile(guild, user, {
 
   data[guild.id][user.id] = profile;
   writeProfiles(data);
+  await syncApprovedHierarchyForMember(guild, user.id, 'Hierarquia Vortex: perfil manual registrado').catch((error) => {
+    logger.error('Erro ao aplicar hierarquia em perfil manual:', error);
+  });
   await syncApprovedSetChannel(guild, profile, { reason: 'registerManualProfile' }).catch(() => null);
   await sendProfileUpdateNotice(guild, profile, {
     userId: user.id,
@@ -828,6 +854,11 @@ async function ensureAllProfileChannelAccess(client) {
     if (!guild) continue;
 
     for (const profile of Object.values(guildProfiles || {})) {
+      if (profile?.userId) {
+        await syncApprovedHierarchyForMember(guild, profile.userId, 'Hierarquia Vortex: sincronizacao periodica de perfil').catch((error) => {
+          logger.error('Erro ao revisar hierarquia aprovada do perfil:', error);
+        });
+      }
       if (!profile?.callChannelId) continue;
       await ensureProfileChannelAccess(guild, profile.callChannelId, profile.userId).catch((error) => {
         logger.error('Erro ao garantir acesso ao canal privado do perfil:', error);
@@ -911,12 +942,22 @@ async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = fal
         || String(existing.nomeGame || '') !== String(nomeGame || '');
 
       if (!changed) {
+        if (!dryRun && guild && member) {
+          await syncApprovedHierarchyForMember(guild, userId, 'Hierarquia Vortex: perfil aprovado ja sincronizado').catch((error) => {
+            logger.error('Erro ao revisar hierarquia de perfil aprovado:', error);
+          });
+        }
         results.unchanged.push({ guildId, userId, callChannelId });
         continue;
       }
 
       if (!dryRun) {
         profiles[guildId][userId] = nextProfile;
+        if (guild && member) {
+          await syncApprovedHierarchyForMember(guild, userId, 'Hierarquia Vortex: perfil aprovado sincronizado').catch((error) => {
+            logger.error('Erro ao aplicar hierarquia durante sync de perfis:', error);
+          });
+        }
         if (guild && syncChannels) {
           await ensureProfileChannelAccess(guild, callChannelId, userId).catch((error) => {
             logger.error('Erro ao garantir acesso ao canal privado durante sync de perfis:', error);
@@ -1029,12 +1070,16 @@ function parseTestPeriod(amountInput, unitInput) {
 
 function initProfileManager(client) {
   if (interval) clearInterval(interval);
-  syncProfilesFromApprovedSetChannels(client, { syncChannels: true }).catch((error) => logger.error('Erro ao sincronizar perfis pelos canais aprovados:', error));
-  ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
+  syncProfilesFromApprovedSetChannels(client, { syncChannels: PROFILE_SYNC_CHANNELS_ON_STARTUP }).catch((error) => logger.error('Erro ao sincronizar perfis pelos canais aprovados:', error));
+  if (PROFILE_ACCESS_REVIEW_ENABLED) {
+    ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
+  }
   checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis no início:', error));
   sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   interval = setInterval(() => {
-    ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
+    if (PROFILE_ACCESS_REVIEW_ENABLED) {
+      ensureAllProfileChannelAccess(client).catch((error) => logger.error('Erro ao revisar canais privados de perfil:', error));
+    }
     checkProfileUpdates(client).catch((error) => logger.error('Erro ao checar perfis:', error));
     sendMissingProfileDailyAlert(client).catch((error) => logger.error('Erro ao enviar alerta diario de cadastros:', error));
   }, PROFILE_CHECK_INTERVAL_MS);

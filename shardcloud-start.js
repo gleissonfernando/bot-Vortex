@@ -4,6 +4,29 @@ const fs = require('node:fs');
 const http = require('node:http');
 
 const rootDir = __dirname;
+
+function loadRootEnv() {
+  const envPath = path.join(rootDir, '.env');
+  try {
+    require('dotenv').config({ path: envPath });
+    return;
+  } catch (error) {
+    if (error?.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || process.env[match[1]] !== undefined) continue;
+    process.env[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+}
+
+loadRootEnv();
+
 const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 const apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
