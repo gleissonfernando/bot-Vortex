@@ -320,11 +320,7 @@ async function main() {
           });
     }
 
-    if (await isPortBusy(webPort)) {
-      console.warn(`[shardcloud] proxy skipped: port ${webPort} is already in use.`);
-    } else {
-      proxyServer = startProxy();
-    }
+    proxyServer = startProxy();
   } else {
     console.log('[shardcloud] Frequency web disabled by START_FREQUENCY_WEB=false.');
   }
