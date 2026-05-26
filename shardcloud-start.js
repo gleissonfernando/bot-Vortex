@@ -89,8 +89,11 @@ function run(command, args, options = {}) {
   });
 
   if (result.status !== 0) {
+    if (options.fatal === false) return false;
     process.exit(result.status || 1);
   }
+
+  return true;
 }
 
 function start(name, command, args, options = {}) {
@@ -134,8 +137,30 @@ function startProxy() {
 
     upstream.on('error', (error) => {
       console.error('[shardcloud] proxy error:', error.message);
-      if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: 'Service unavailable' }));
+      if (isApi) {
+        if (!res.headersSent) res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, error: 'Frequency API unavailable' }));
+        return;
+      }
+
+      if (!res.headersSent) {
+        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      }
+      res.end(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="10">
+  <title>Vortex Frequency iniciando</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif}
+    main{max-width:520px;padding:28px;border:1px solid rgba(96,165,250,.28);border-radius:10px;background:rgba(15,23,42,.72);text-align:center}
+    h1{margin:0 0 12px;font-size:22px}p{line-height:1.5;color:#cbd5e1}
+  </style>
+</head>
+<body><main><h1>Vortex Frequency iniciando</h1><p>O painel ainda esta subindo ou reiniciando. A pagina vai tentar novamente em alguns segundos.</p></main></body>
+</html>`);
     });
 
     req.pipe(upstream);
@@ -232,6 +257,10 @@ let web = null;
 let proxyServer = null;
 
 async function main() {
+  if (shouldStartFrequencyWeb) {
+    proxyServer = startProxy();
+  }
+
   if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN)) {
     if (await isPortBusy(botApiPort)) {
       console.warn(`[shardcloud] discord-bot skipped: port ${botApiPort} is already in use.`);
@@ -278,7 +307,8 @@ async function main() {
 
       if (shouldBuildApi()) {
         console.log('[shardcloud] Building Frequency API for production...');
-        run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api']);
+        const built = run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api'], { fatal: false });
+        if (!built) console.warn('[shardcloud] Frequency API build failed. Trying to start with available files.');
       }
 
       const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
@@ -287,7 +317,8 @@ async function main() {
           env: {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
-          }
+          },
+          fatal: false
         });
       } else {
         const apiArgs = fs.existsSync(apiSource)
@@ -297,7 +328,8 @@ async function main() {
           env: {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
-          }
+          },
+          fatal: false
         });
       }
     }
@@ -307,13 +339,15 @@ async function main() {
 
   if (shouldStartFrequencyWeb && shouldBuildWeb()) {
     console.log('[shardcloud] Building Next web for production...');
-    run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
+    const built = run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
       cwd: rootDir,
       env: {
         INTERNAL_API_URL: process.env.INTERNAL_API_URL,
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-      }
+      },
+      fatal: false
     });
+    if (!built) console.warn('[shardcloud] Next web build failed. Trying to start with available files.');
   }
 
   if (shouldStartFrequencyWeb) {
@@ -331,18 +365,18 @@ async function main() {
               NODE_ENV: 'production',
               INTERNAL_API_URL: process.env.INTERNAL_API_URL,
               NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-            }
+            },
+            fatal: false
           })
         : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
             cwd: rootDir,
             env: {
               INTERNAL_API_URL: process.env.INTERNAL_API_URL,
               NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-            }
+            },
+            fatal: false
           });
     }
-
-    proxyServer = startProxy();
   } else {
     console.log('[shardcloud] Frequency web disabled by START_FREQUENCY_WEB=false.');
   }
