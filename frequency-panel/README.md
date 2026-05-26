@@ -109,6 +109,7 @@ DISCORD_GUILD_ID=put-your-discord-guild-id
 BOT_API_URL=http://localhost:4100
 BOT_INGEST_SECRET=replace-with-the-same-value-as-ingest-secret
 BOT_LIGHT_MODE=true
+FIVEM_SYSTEM_ENABLED=true
 ```
 
 `INGEST_SECRET` e `BOT_INGEST_SECRET` precisam ter o mesmo valor.
@@ -122,7 +123,7 @@ A API cria automaticamente um usuario admin ao iniciar:
 
 Troque esses valores antes de colocar em producao. A API recusa iniciar com senha admin curta, placeholders ou segredos fracos.
 
-Se a URI do MongoDB nao tiver `/nomeDoBanco`, defina `MONGODB_DB=vortex_frequency` para o bot e o painel usarem o mesmo banco. Em hospedagem pequena, deixe `BOT_LIGHT_MODE=true` para reduzir intents de presenca, scans FiveM e caches.
+Se a URI do MongoDB nao tiver `/nomeDoBanco`, defina `MONGODB_DB=vortex_frequency` para o bot e o painel usarem o mesmo banco. Em hospedagem pequena, deixe `BOT_LIGHT_MODE=true` para reduzir caches e scans pesados. O FiveM continua ativo com `FIVEM_SYSTEM_ENABLED=true`.
 
 ## Comandos do bot
 
