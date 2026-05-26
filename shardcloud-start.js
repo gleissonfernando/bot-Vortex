@@ -110,10 +110,6 @@ function start(name, command, args, options = {}) {
   return child;
 }
 
-process.env.JWT_SECRET ||= 'change-this-jwt-secret-in-shardcloud';
-process.env.INGEST_SECRET ||= 'change-this-ingest-secret-in-shardcloud';
-process.env.ADMIN_EMAIL ||= 'vortex@adimin.com';
-process.env.ADMIN_PASSWORD ||= 'vortex';
 process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
 process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;

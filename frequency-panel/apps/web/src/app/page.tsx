@@ -16,7 +16,7 @@ async function readJsonResponse(response: Response) {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@vortex.local');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -63,6 +63,7 @@ export default function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               type="email"
+              autoComplete="username"
               className="w-full rounded-lg border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus:border-brand-400 focus:ring-brand-400"
               placeholder="admin@empresa.com"
               required
@@ -75,6 +76,7 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
+              autoComplete="current-password"
               className="w-full rounded-lg border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus:border-brand-400 focus:ring-brand-400"
               placeholder="Sua senha"
               required

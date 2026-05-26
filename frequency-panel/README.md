@@ -91,12 +91,14 @@ npm run dev:bot
 
 ```env
 MONGODB_URI=mongodb://localhost:27017/vortex_frequency
-JWT_SECRET=change-this-long-random-secret
-ADMIN_EMAIL=vortex@adimin.com
-ADMIN_PASSWORD=vortex
+JWT_SECRET=replace-with-32-plus-random-characters
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=replace-with-12-plus-random-characters
 API_PORT=4100
 API_ORIGIN=https://bot-vortex.shardweb.app
-INGEST_SECRET=change-this-bot-ingest-secret
+INGEST_SECRET=replace-with-32-plus-random-characters
+LOGIN_RATE_LIMIT_WINDOW_MS=600000
+LOGIN_RATE_LIMIT_MAX=8
 
 NEXT_PUBLIC_API_URL=/api
 
@@ -104,7 +106,7 @@ DISCORD_TOKEN=put-your-discord-bot-token
 DISCORD_CLIENT_ID=put-your-discord-client-id
 DISCORD_GUILD_ID=put-your-discord-guild-id
 BOT_API_URL=http://localhost:4100
-BOT_INGEST_SECRET=change-this-bot-ingest-secret
+BOT_INGEST_SECRET=replace-with-the-same-value-as-ingest-secret
 ```
 
 `INGEST_SECRET` e `BOT_INGEST_SECRET` precisam ter o mesmo valor.
@@ -116,7 +118,7 @@ A API cria automaticamente um usuario admin ao iniciar:
 - Email: valor de `ADMIN_EMAIL`
 - Senha: valor de `ADMIN_PASSWORD`
 
-Troque esses valores antes de colocar em producao.
+Troque esses valores antes de colocar em producao. A API recusa iniciar com senha admin curta, placeholders ou segredos fracos.
 
 ## Comandos do bot
 
