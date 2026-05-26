@@ -6,11 +6,15 @@ let database: Db | null = null;
 let indexesReady: Promise<void> | null = null;
 
 function databaseNameFromUri(uri: string) {
-  const withoutQuery = uri.split('?')[0] || '';
-  const withoutScheme = withoutQuery.replace(/^mongodb(?:\+srv)?:\/\//i, '');
-  const slashIndex = withoutScheme.indexOf('/');
-  const pathname = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1).trim() : '';
-  return decodeURIComponent(pathname) || 'vortex_frequency';
+  try {
+    const withoutQuery = uri.split('?')[0] || '';
+    const withoutScheme = withoutQuery.replace(/^mongodb(?:\+srv)?:\/\//i, '');
+    const slashIndex = withoutScheme.indexOf('/');
+    const pathname = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1).trim() : '';
+    return decodeURIComponent(pathname) || 'vortex_frequency';
+  } catch {
+    return 'vortex_frequency';
+  }
 }
 
 function readPositiveIntEnv(name: string, fallback: number) {

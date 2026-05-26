@@ -195,6 +195,7 @@ function shouldBuildWeb() {
 
 function shouldBuildApi() {
   if (process.env.BUILD_API_ON_STARTUP === 'false') return false;
+  if (process.env.NODE_ENV === 'production' || process.env.SHARDCLOUD || process.env.PORT === '80') return true;
   if (process.env.FORCE_API_BUILD === 'true') return true;
   if (!fs.existsSync(apiDist)) return true;
 
