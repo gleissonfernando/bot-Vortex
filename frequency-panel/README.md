@@ -91,6 +91,7 @@ npm run dev:bot
 
 ```env
 MONGODB_URI=mongodb://localhost:27017/vortex_frequency
+MONGODB_DB=vortex_frequency
 JWT_SECRET=replace-with-32-plus-random-characters
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=replace-with-12-plus-random-characters
@@ -107,6 +108,7 @@ DISCORD_CLIENT_ID=put-your-discord-client-id
 DISCORD_GUILD_ID=put-your-discord-guild-id
 BOT_API_URL=http://localhost:4100
 BOT_INGEST_SECRET=replace-with-the-same-value-as-ingest-secret
+BOT_LIGHT_MODE=true
 ```
 
 `INGEST_SECRET` e `BOT_INGEST_SECRET` precisam ter o mesmo valor.
@@ -119,6 +121,8 @@ A API cria automaticamente um usuario admin ao iniciar:
 - Senha: valor de `ADMIN_PASSWORD`
 
 Troque esses valores antes de colocar em producao. A API recusa iniciar com senha admin curta, placeholders ou segredos fracos.
+
+Se a URI do MongoDB nao tiver `/nomeDoBanco`, defina `MONGODB_DB=vortex_frequency` para o bot e o painel usarem o mesmo banco. Em hospedagem pequena, deixe `BOT_LIGHT_MODE=true` para reduzir intents de presenca, scans FiveM e caches.
 
 ## Comandos do bot
 

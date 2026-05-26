@@ -46,6 +46,18 @@ function getMongoHost() {
   return (uri.match(/@([^/?]+)/) || [])[1] || null;
 }
 
+function databaseNameFromUri(uri) {
+  try {
+    const withoutQuery = String(uri || '').split('?')[0] || '';
+    const withoutScheme = withoutQuery.replace(/^mongodb(?:\+srv)?:\/\//i, '');
+    const slashIndex = withoutScheme.indexOf('/');
+    const pathname = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1).trim() : '';
+    return decodeURIComponent(pathname) || 'vortex_frequency';
+  } catch {
+    return 'vortex_frequency';
+  }
+}
+
 function getMongoConnectionHint(error) {
   const uri = getMongoUri();
   const details = [
@@ -168,6 +180,7 @@ async function connectDatabase() {
 
   mongoose.set('strictQuery', false);
   connectPromise = mongoose.connect(uri, {
+    dbName: process.env.MONGODB_DB || databaseNameFromUri(uri),
     maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),
     minPoolSize: 0,
     maxIdleTimeMS: readPositiveIntEnv('MONGODB_MAX_IDLE_TIME_MS', 30000),

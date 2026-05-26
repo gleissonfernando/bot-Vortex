@@ -236,21 +236,26 @@ async function main() {
     if (await isPortBusy(botApiPort)) {
       console.warn(`[shardcloud] discord-bot skipped: port ${botApiPort} is already in use.`);
     } else {
+      const botLightMode = envFlag('BOT_LIGHT_MODE', true);
       start('discord-bot', 'node', ['index.js'], {
         env: {
           API_PORT: botApiPort,
           API_HOST: '0.0.0.0',
-          ENABLE_PRESENCE_FEATURES: process.env.ENABLE_PRESENCE_FEATURES || 'true',
+          ENABLE_PRESENCE_FEATURES: botLightMode ? 'false' : (process.env.ENABLE_PRESENCE_FEATURES || 'true'),
           REGISTER_COMMANDS_ON_STARTUP: process.env.REGISTER_COMMANDS_ON_STARTUP || 'false',
-          FIVEM_STARTUP_SCAN_ENABLED: process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true',
-          FIVEM_STARTUP_FETCH_PRESENCES: process.env.FIVEM_STARTUP_FETCH_PRESENCES || 'true',
-          POINT_AUTOMATION_FETCH_PRESENCES: process.env.POINT_AUTOMATION_FETCH_PRESENCES || 'true',
-          POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(30 * 60 * 1000),
-          PONTO_PANEL_FETCH_PRESENCES: process.env.PONTO_PANEL_FETCH_PRESENCES || 'true',
-          PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(60 * 1000),
-          DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || '25',
-          DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || '100',
-          DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || '500',
+          FIVEM_STARTUP_SCAN_ENABLED: botLightMode ? 'false' : (process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true'),
+          FIVEM_STARTUP_FETCH_PRESENCES: botLightMode ? 'false' : (process.env.FIVEM_STARTUP_FETCH_PRESENCES || 'true'),
+          POINT_AUTOMATION_SCAN_FIVEM: botLightMode ? 'false' : (process.env.POINT_AUTOMATION_SCAN_FIVEM || 'true'),
+          POINT_AUTOMATION_FETCH_PRESENCES: botLightMode ? 'false' : (process.env.POINT_AUTOMATION_FETCH_PRESENCES || 'true'),
+          POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(botLightMode ? 60 * 60 * 1000 : 30 * 60 * 1000),
+          PONTO_PANEL_FETCH_PRESENCES: botLightMode ? 'false' : (process.env.PONTO_PANEL_FETCH_PRESENCES || 'true'),
+          PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(botLightMode ? 5 * 60 * 1000 : 60 * 1000),
+          PROFILE_ACCESS_REVIEW_ENABLED: botLightMode ? 'false' : (process.env.PROFILE_ACCESS_REVIEW_ENABLED || 'true'),
+          PROFILE_SYNC_CHANNELS_ON_STARTUP: botLightMode ? 'false' : (process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP || 'true'),
+          SYNC_CHANNEL_ACCESS_ON_READY: botLightMode ? 'false' : (process.env.SYNC_CHANNEL_ACCESS_ON_READY || 'true'),
+          DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || (botLightMode ? '10' : '25'),
+          DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || (botLightMode ? '50' : '100'),
+          DISCORD_CACHE_MAX_PRESENCES: botLightMode ? '0' : (process.env.DISCORD_CACHE_MAX_PRESENCES || '500'),
           MONGODB_REQUIRED: process.env.BOT_MONGODB_REQUIRED || 'false'
         },
         fatal: false

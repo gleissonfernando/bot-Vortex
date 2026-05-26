@@ -12,6 +12,11 @@ export type SessionUser = {
 };
 
 export async function ensureAdminUser() {
+  if (!env.adminEmail || !env.adminPassword) {
+    console.warn('[frequency-api] ADMIN_EMAIL/ADMIN_PASSWORD invalidos ou ausentes. API ativa, mas usuario admin automatico/fallback desativado.');
+    return;
+  }
+
   if (!env.mongoEnabled) {
     console.warn('[frequency-api] MongoDB ausente. Login administrativo usara fallback por ADMIN_EMAIL/ADMIN_PASSWORD.');
     return;
@@ -73,6 +78,7 @@ export async function login(email: string, password: string) {
 }
 
 function fallbackLogin(email: string, password: string) {
+  if (!env.adminEmail || !env.adminPassword) return null;
   if (email.toLowerCase() !== env.adminEmail.toLowerCase()) return null;
   if (password !== env.adminPassword) return null;
 
