@@ -13,8 +13,10 @@ const toolSections = [
   { id: 'profile', label: 'Perfil', description: 'Cadastros, cobrancas e perfis.' },
   { id: 'billing', label: 'Cobrancas', description: 'Cobrancas e penalidades automaticas.' },
   { id: 'messages', label: 'Mensagens', description: 'Canais de mensagens em painel.' },
+  { id: 'adjust', label: 'Ajuste', description: 'Calls de ajuste e revisao de ponto.' },
   { id: 'bau', label: 'Bau', description: 'Permissao do painel de bau.' },
   { id: 'visual', label: 'Visual', description: 'Tema visual dos paineis.' },
+  { id: 'hierarchy', label: 'Hierarquia FAC', description: 'Painel automatico da hierarquia.' },
   { id: 'maintenance', label: 'Manutencao', description: 'Modo manutencao e logs.' }
 ];
 
@@ -56,11 +58,16 @@ function pickBotConfig(config: Record<string, any>) {
     DISABLE_DM_LOGS: config.DISABLE_DM_LOGS === true,
     DISABLE_ACTIVITY_LOGS: config.DISABLE_ACTIVITY_LOGS === true,
     PANEL_PRIVATE_MODE: config.PANEL_PRIVATE_MODE === true,
+    LOG_CHANNEL: config.LOG_CHANNEL || '',
+    DISABLED_LOG_CHANNEL_IDS: Array.isArray(config.DISABLED_LOG_CHANNEL_IDS) ? config.DISABLED_LOG_CHANNEL_IDS : [],
     NOTICE_MENTION_ROLE_ID: config.NOTICE_MENTION_ROLE_ID || '',
     POINT_ACTION_CHANNEL_ID: config.POINT_ACTION_CHANNEL_ID || '',
     POINT_ONLINE_CHANNEL_ID: config.POINT_ONLINE_CHANNEL_ID || '',
     POINT_ONLINE_VOICE_CHANNEL_ID: config.POINT_ONLINE_VOICE_CHANNEL_ID || '',
     POINT_ADJUST_CATEGORY_ID: config.POINT_ADJUST_CATEGORY_ID || '',
+    POINT_MONITOR_CORRECTION_CATEGORY_ID: config.POINT_MONITOR_CORRECTION_CATEGORY_ID || '',
+    POINT_PENALTY_CHANNEL_ID: config.POINT_PENALTY_CHANNEL_ID || '',
+    POINT_MANAGER_DM_USER_IDS: Array.isArray(config.POINT_MANAGER_DM_USER_IDS) ? config.POINT_MANAGER_DM_USER_IDS : [],
     POINT_ALLOWED_ROLE_IDS: Array.isArray(config.POINT_ALLOWED_ROLE_IDS) ? config.POINT_ALLOWED_ROLE_IDS : [],
     POINT_ADJUST_STAFF_ROLES: Array.isArray(config.POINT_ADJUST_STAFF_ROLES) ? config.POINT_ADJUST_STAFF_ROLES : [],
     POINT_MONITOR_ENABLED: config.POINT_MONITOR_ENABLED !== false,
@@ -70,13 +77,17 @@ function pickBotConfig(config: Record<string, any>) {
     POINT_MONITOR_MAX_DM_ATTEMPTS: Number(config.POINT_MONITOR_MAX_DM_ATTEMPTS || 3),
     POINT_OFFLINE_THRESHOLD_HOURS: Number(config.POINT_OFFLINE_THRESHOLD_HOURS || 12),
     VORTEX_ROLE_LEVELS: config.VORTEX_ROLE_LEVELS || { admin: [], medio: [], membro: [] },
+    VORTEX_AUTO_ROLES: config.VORTEX_AUTO_ROLES || { pending: [], approved: [] },
     COMMAND_ROLE_PERMISSIONS: config.COMMAND_ROLE_PERMISSIONS || {},
     MIRROR_MESSAGE_CHANNEL_IDS: Array.isArray(config.MIRROR_MESSAGE_CHANNEL_IDS) ? config.MIRROR_MESSAGE_CHANNEL_IDS : [],
+    ADJUST_CALL_CHANNEL_IDS: Array.isArray(config.ADJUST_CALL_CHANNEL_IDS) ? config.ADJUST_CALL_CHANNEL_IDS : [],
     ABSENCE_ROLE_ID: config.ABSENCE_ROLE_ID || '',
     ABSENCE_END_MESSAGE_ENABLED: config.ABSENCE_END_MESSAGE_ENABLED !== false,
     PROFILE_BILLING_ENABLED: config.PROFILE_BILLING_ENABLED !== false,
     PROFILE_UPDATE_NOTIFICATIONS_ENABLED: config.PROFILE_UPDATE_NOTIFICATIONS_ENABLED !== false,
-    PANEL_THEME: config.PANEL_THEME || {}
+    PANEL_VISUALS: config.PANEL_VISUALS || {},
+    PANEL_THEME: config.PANEL_THEME || {},
+    FACTION_HIERARCHY: config.FACTION_HIERARCHY || { channelId: '', messageId: '', roles: {} }
   };
 }
 
@@ -101,11 +112,16 @@ function sanitizePatch(patch: Record<string, any>) {
     'DISABLE_DM_LOGS',
     'DISABLE_ACTIVITY_LOGS',
     'PANEL_PRIVATE_MODE',
+    'LOG_CHANNEL',
+    'DISABLED_LOG_CHANNEL_IDS',
     'NOTICE_MENTION_ROLE_ID',
     'POINT_ACTION_CHANNEL_ID',
     'POINT_ONLINE_CHANNEL_ID',
     'POINT_ONLINE_VOICE_CHANNEL_ID',
     'POINT_ADJUST_CATEGORY_ID',
+    'POINT_MONITOR_CORRECTION_CATEGORY_ID',
+    'POINT_PENALTY_CHANNEL_ID',
+    'POINT_MANAGER_DM_USER_IDS',
     'POINT_ALLOWED_ROLE_IDS',
     'POINT_ADJUST_STAFF_ROLES',
     'POINT_MONITOR_ENABLED',
@@ -115,13 +131,17 @@ function sanitizePatch(patch: Record<string, any>) {
     'POINT_MONITOR_MAX_DM_ATTEMPTS',
     'POINT_OFFLINE_THRESHOLD_HOURS',
     'VORTEX_ROLE_LEVELS',
+    'VORTEX_AUTO_ROLES',
     'COMMAND_ROLE_PERMISSIONS',
     'MIRROR_MESSAGE_CHANNEL_IDS',
+    'ADJUST_CALL_CHANNEL_IDS',
     'ABSENCE_ROLE_ID',
     'ABSENCE_END_MESSAGE_ENABLED',
     'PROFILE_BILLING_ENABLED',
     'PROFILE_UPDATE_NOTIFICATIONS_ENABLED',
-    'PANEL_THEME'
+    'PANEL_VISUALS',
+    'PANEL_THEME',
+    'FACTION_HIERARCHY'
   ]);
   return Object.fromEntries(Object.entries(patch).filter(([key]) => allowed.has(key)));
 }
