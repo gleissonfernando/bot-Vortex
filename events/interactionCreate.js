@@ -10,6 +10,7 @@ const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdj
 const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
 const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
+const { handleBauButton, handleBauModal } = require('../utils/bauManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
 const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
@@ -580,6 +581,14 @@ module.exports = {
             }
         }
 
+        if (interaction.isButton() && String(interaction.customId || '').startsWith('bau_')) {
+            return runInteractionHandler(interaction, `Bau botao: ${interaction.customId}`, () => handleBauButton(interaction));
+        }
+
+        if (interaction.isModalSubmit() && String(interaction.customId || '').startsWith('modal_bau_')) {
+            return runInteractionHandler(interaction, `Bau modal: ${interaction.customId}`, () => handleBauModal(interaction));
+        }
+
         const exibir = client.commands.get('exibir');
         if (exibir && interaction.isStringSelectMenu() && String(interaction.customId || '').startsWith('exibir_panel_select')) {
             return await exibir.handleSelectMenu(interaction);
@@ -594,7 +603,7 @@ module.exports = {
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_panel_tool') {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_point_online_voice_channel', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_fac_hierarchy_target' || interaction.customId === 'select_open_point_user' || interaction.customId === 'select_visual_target' || interaction.customId === 'select_adjust_call_id')) {

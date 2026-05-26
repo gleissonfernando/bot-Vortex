@@ -214,7 +214,7 @@ function runPointSyncScheduled(client) {
 
 function initFrequencyDashboardSync(client) {
   if (!isEnabled()) {
-    logger.warn(`Frequency dashboard sync desativado: ${getDisabledReason()}.`);
+    logger.info(`Frequency dashboard sync desativado: ${getDisabledReason()}.`);
     return;
   }
   if (intervalsStarted) return;

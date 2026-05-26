@@ -12,32 +12,52 @@ export type SessionUser = {
 };
 
 export async function ensureAdminUser() {
+  if (!env.mongoEnabled) {
+    console.warn('[frequency-api] MongoDB ausente. Login administrativo usara fallback por ADMIN_EMAIL/ADMIN_PASSWORD.');
+    return;
+  }
+
   const hash = await bcrypt.hash(env.adminPassword, 12);
-  const users = await collection('app_users');
-  const now = new Date();
-  await users.updateOne(
-    { email: env.adminEmail.toLowerCase() },
-    {
-      $set: {
-        email: env.adminEmail.toLowerCase(),
-        name: 'Vortex Admin',
-        password_hash: hash,
-        role: 'admin',
-        updated_at: now
+  try {
+    const users = await collection('app_users');
+    const now = new Date();
+    await users.updateOne(
+      { email: env.adminEmail.toLowerCase() },
+      {
+        $set: {
+          email: env.adminEmail.toLowerCase(),
+          name: 'Vortex Admin',
+          password_hash: hash,
+          role: 'admin',
+          updated_at: now
+        },
+        $setOnInsert: {
+          id: randomUUID(),
+          created_at: now
+        }
       },
-      $setOnInsert: {
-        id: randomUUID(),
-        created_at: now
-      }
-    },
-    { upsert: true }
-  );
+      { upsert: true }
+    );
+  } catch (error) {
+    console.warn('[frequency-api] MongoDB indisponivel. Login administrativo usara fallback por ADMIN_EMAIL/ADMIN_PASSWORD.', error);
+  }
 }
 
 export async function login(email: string, password: string) {
-  const users = await collection<SessionUser & { password_hash: string }>('app_users');
-  const user = serializeDoc(await users.findOne({ email: email.toLowerCase() }));
-  if (!user) return null;
+  if (!env.mongoEnabled) {
+    return fallbackLogin(email, password);
+  }
+
+  let user: (SessionUser & { password_hash: string }) | null = null;
+  try {
+    const users = await collection<SessionUser & { password_hash: string }>('app_users');
+    user = serializeDoc(await users.findOne({ email: email.toLowerCase() }));
+  } catch (error) {
+    console.warn('[frequency-api] Falha ao consultar MongoDB no login. Usando fallback administrativo.', error);
+    return fallbackLogin(email, password);
+  }
+
+  if (!user) return fallbackLogin(email, password);
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return null;
@@ -47,6 +67,20 @@ export async function login(email: string, password: string) {
     email: user.email,
     name: user.name,
     role: user.role
+  };
+  const token = jwt.sign(sessionUser, env.jwtSecret, { expiresIn: '12h' });
+  return { token, user: sessionUser };
+}
+
+function fallbackLogin(email: string, password: string) {
+  if (email.toLowerCase() !== env.adminEmail.toLowerCase()) return null;
+  if (password !== env.adminPassword) return null;
+
+  const sessionUser: SessionUser = {
+    id: 'fallback-admin',
+    email: env.adminEmail.toLowerCase(),
+    name: 'Vortex Admin',
+    role: 'admin'
   };
   const token = jwt.sign(sessionUser, env.jwtSecret, { expiresIn: '12h' });
   return { token, user: sessionUser };

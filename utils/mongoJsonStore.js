@@ -177,6 +177,19 @@ function writeJsonToDisk(filePath, data) {
   fsOriginal.writeFileSync(filePath, stringifyJson(data), 'utf8');
 }
 
+function getLocalSourcePath(key, sourcePath = null) {
+  const fallback = path.join(ROOT_DIR, key);
+  if (!sourcePath) return fallback;
+
+  const absolutePath = path.resolve(String(sourcePath));
+  const relativePath = path.relative(ROOT_DIR, absolutePath);
+  if (relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+    return absolutePath;
+  }
+
+  return fallback;
+}
+
 function enrichPointTranscriptRecords(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const fsOriginal = getOriginalFs();
@@ -451,7 +464,7 @@ async function hydrateMongoJsonStore() {
   for (const document of documents) {
     const key = toStoreKey(path.join(ROOT_DIR, document.key));
     if (!key) continue;
-    const sourcePath = document.sourcePath || path.join(ROOT_DIR, key);
+    const sourcePath = getLocalSourcePath(key, document.sourcePath);
     const diskData = readJsonFromDisk(sourcePath);
     const selected = chooseJsonDataForHydration(key, document.data ?? {}, diskData);
     cacheJson(key, sourcePath, selected.data, false);
@@ -493,7 +506,7 @@ async function refreshMongoJsonKeys(keys = []) {
     const key = toStoreKey(path.join(ROOT_DIR, document.key));
     if (!key) continue;
 
-    const sourcePath = document.sourcePath || path.join(ROOT_DIR, key);
+    const sourcePath = getLocalSourcePath(key, document.sourcePath);
     const diskData = readJsonFromDisk(sourcePath);
     const selected = chooseJsonDataForHydration(key, document.data ?? {}, diskData);
     cacheJson(key, sourcePath, selected.data, false);

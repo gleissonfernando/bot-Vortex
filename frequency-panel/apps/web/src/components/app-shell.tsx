@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Bot, LayoutDashboard, LogOut, Radio, Search, Users } from 'lucide-react';
+import { BarChart3, Bot, LayoutDashboard, LogOut, PackageOpen, Radio, Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clearToken } from '@/lib/api';
@@ -9,6 +9,7 @@ const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/members', label: 'Membros', icon: Users },
   { href: '/dashboard/members', label: 'Relatorios', icon: BarChart3 },
+  { href: '/dashboard/bau', label: 'Bau', icon: PackageOpen },
   { href: '/dashboard/lives', label: 'Lives', icon: Radio },
   { href: '/dashboard/bot-vortex', label: 'Bot Vortex', icon: Bot }
 ];

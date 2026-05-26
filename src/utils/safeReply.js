@@ -31,6 +31,17 @@ function logInteractionError(interaction, error, action = 'interaction_response'
   logger.error(`Erro ao responder interação: ${action}`, error, getInteractionContext(interaction));
 }
 
+async function safeFollowUp(interaction, options = {}, action = 'safeFollowUp') {
+  try {
+    if (!interaction?.isRepliable?.()) return null;
+    if (!interaction.replied && !interaction.deferred) return null;
+    return await interaction.followUp(options);
+  } catch (error) {
+    logInteractionError(interaction, error, action);
+    return null;
+  }
+}
+
 async function safeReply(interaction, options = {}) {
   // Use reply() apenas na primeira resposta da interação.
   // Se a interação já foi respondida ou deferida, use followUp().
@@ -42,10 +53,7 @@ async function safeReply(interaction, options = {}) {
     return await interaction.reply(options);
   } catch (error) {
     if (isAlreadyAcknowledgedError(error)) {
-      return interaction.followUp(options).catch((followError) => {
-        logInteractionError(interaction, followError, 'safeReply.followUp_after_40060');
-        return null;
-      });
+      return safeFollowUp(interaction, options, 'safeReply.followUp_after_40060');
     }
     logInteractionError(interaction, error, 'safeReply');
     return null;
@@ -63,15 +71,11 @@ async function safeEdit(interaction, options = {}) {
     return await safeReply(interaction, options);
   } catch (error) {
     if (isAlreadyAcknowledgedError(error)) {
-      return interaction.followUp(options).catch((followError) => {
-        logInteractionError(interaction, followError, 'safeEdit.followUp_after_40060');
-        return null;
-      });
+      return safeFollowUp(interaction, options, 'safeEdit.followUp_after_40060');
     }
-    return interaction.followUp(options).catch(() => {
-      logInteractionError(interaction, error, 'safeEdit');
-      return null;
-    });
+    const followed = await safeFollowUp(interaction, options, 'safeEdit.followUp');
+    if (!followed) logInteractionError(interaction, error, 'safeEdit');
+    return followed;
   }
 }
 
@@ -144,6 +148,7 @@ module.exports = {
   safeReply,
   safeEdit,
   safeDeferReply,
+  safeFollowUp,
   safeShowModal,
   safeUpdate,
   safeDeferUpdate,

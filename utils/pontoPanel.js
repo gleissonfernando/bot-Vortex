@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder } = require('discord.js');
 const { listGuildPoints, formatPanelDate } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
@@ -12,6 +12,7 @@ const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
 const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
+const DEFAULT_PONTO_ONLINE_VOICE_CHANNEL_ID = process.env.POINT_ONLINE_VOICE_CHANNEL_ID || process.env.FIVEM_ONLINE_CALL_ID || '';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
 let statusPanelInterval = null;
 let statusPanelUpdateRunning = false;
@@ -63,6 +64,7 @@ function getPointConfig() {
   return {
     actionChannelId: String(config.POINT_ACTION_CHANNEL_ID || DEFAULT_PONTO_ACTION_CHANNEL_ID),
     statusChannelId: String(config.POINT_ONLINE_CHANNEL_ID || PONTO_ONLINE_CHANNEL_ID),
+    onlineVoiceChannelId: String(config.POINT_ONLINE_VOICE_CHANNEL_ID || DEFAULT_PONTO_ONLINE_VOICE_CHANNEL_ID || ''),
     adjustCategoryId: String(config.POINT_ADJUST_CATEGORY_ID || DEFAULT_PONTO_ADJUST_CATEGORY_ID),
     adjustStaffRoleIds: Array.isArray(config.POINT_ADJUST_STAFF_ROLES)
       ? config.POINT_ADJUST_STAFF_ROLES.map(String)
@@ -162,6 +164,40 @@ function hasAnyRole(member, roleIds) {
   return Boolean(member?.roles?.cache && roleIds.some((roleId) => member.roles.cache.has(roleId)));
 }
 
+function isVoiceChannel(channel) {
+  return channel?.type === ChannelType.GuildVoice || channel?.type === ChannelType.GuildStageVoice;
+}
+
+async function fetchOnlineVoiceChannel(guild, pointConfig = getPointConfig()) {
+  const configuredId = String(pointConfig.onlineVoiceChannelId || '').trim();
+  if (configuredId) {
+    const configured = guild.channels.cache.get(configuredId) || await guild.channels.fetch(configuredId).catch(() => null);
+    if (isVoiceChannel(configured)) return configured;
+  }
+
+  const statusId = String(pointConfig.statusChannelId || '').trim();
+  if (statusId) {
+    const statusChannel = guild.channels.cache.get(statusId) || await guild.channels.fetch(statusId).catch(() => null);
+    if (isVoiceChannel(statusChannel)) return statusChannel;
+  }
+
+  return null;
+}
+
+function getOnlinePermissionsForChannel(channel) {
+  if (isVoiceChannel(channel)) {
+    return {
+      ViewChannel: true,
+      Connect: true,
+    };
+  }
+
+  return {
+    ViewChannel: true,
+    ReadMessageHistory: true,
+  };
+}
+
 async function getOnlinePlayers(guild) {
   const pointRoleIds = getPointAllowedRoleIds();
   if (PONTO_PANEL_FETCH_PRESENCES) {
@@ -247,6 +283,7 @@ async function updateStatusPanel(client, guildId) {
     const configuredStatusChannelId = pointConfig.statusChannelId;
     const channel = client.channels.cache.get(configuredStatusChannelId)
       || await client.channels.fetch(configuredStatusChannelId).catch(() => null);
+    const voiceChannel = await fetchOnlineVoiceChannel(guild, pointConfig);
     if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.isTextBased?.()) return false;
 
@@ -254,6 +291,11 @@ async function updateStatusPanel(client, guildId) {
       await syncOnlineChannelVisibility(guild, channel).catch((error) => {
         logStatusPanelError(guild.id, error);
       });
+      if (voiceChannel) {
+        await syncOnlineChannelVisibility(guild, voiceChannel).catch((error) => {
+          logStatusPanelError(guild.id, error);
+        });
+      }
     }
 
     const embed = await createStatusEmbed(guild);
@@ -291,21 +333,30 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
     const pointConfig = getPointConfig();
     const channel = client.channels.cache.get(pointConfig.statusChannelId)
       || await client.channels.fetch(pointConfig.statusChannelId).catch(() => null);
-    if (!isPrimaryGuildChannel(channel)) return false;
-    if (!channel?.permissionOverwrites?.edit) return false;
+    const voiceChannel = await fetchOnlineVoiceChannel(guild, pointConfig);
+    const targets = [channel, voiceChannel].filter((target) => (
+      isPrimaryGuildChannel(target) && target?.permissionOverwrites?.edit
+    ));
+    if (!targets.length) return false;
 
     const onlinePlayers = allowed ? await getOnlinePlayers(guild).catch(() => []) : [];
     const isInCity = onlinePlayers.some((player) => String(player.id) === String(userId));
 
-    if (allowed && isInCity) {
-      await channel.permissionOverwrites.edit(userId, {
-        ViewChannel: true,
-        ReadMessageHistory: true,
-      });
-    } else {
-      await channel.permissionOverwrites.delete(userId).catch(async () => {
-        await channel.permissionOverwrites.edit(userId, { ViewChannel: null, ReadMessageHistory: null });
-      });
+    for (const target of targets) {
+      if (allowed && isInCity) {
+        await target.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(target), {
+          reason: 'Player detectado online no FiveM',
+        });
+      } else {
+        await target.permissionOverwrites.delete(userId, {
+          reason: 'Player saiu do FiveM ou nao esta mais detectado online',
+        }).catch(async () => {
+          const reset = isVoiceChannel(target)
+            ? { ViewChannel: null, Connect: null }
+            : { ViewChannel: null, ReadMessageHistory: null };
+          await target.permissionOverwrites.edit(userId, reset);
+        });
+      }
     }
 
     return true;
@@ -324,9 +375,8 @@ async function syncOnlineChannelVisibility(guild, channel) {
   }).catch(() => null);
 
   for (const userId of onlineUserIds) {
-    await channel.permissionOverwrites.edit(userId, {
-      ViewChannel: true,
-      ReadMessageHistory: true,
+    await channel.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(channel), {
+      reason: isVoiceChannel(channel) ? 'Player online no FiveM: liberar call' : 'Player online no FiveM: liberar painel',
     }).catch(() => null);
   }
 

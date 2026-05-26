@@ -24,6 +24,7 @@ const PANEL_THEME_TARGETS = [
   { key: 'painelponto', label: '/painelponto', description: 'Folha individual de ponto' },
   { key: 'exibir', label: '/exibir', description: 'Apresentacao dos paineis' },
   { key: 'facHierarchy', label: 'Hierarquia FAC', description: 'Painel automatico de cargos' },
+  { key: 'bau', label: 'Bau', description: 'Painel de estoque dos membros e gerencia' },
 ];
 
 const DEFAULT_VISUALS = {

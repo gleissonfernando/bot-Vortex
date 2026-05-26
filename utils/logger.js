@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { safeError, safeLog, safeWarn } = require('./safeConsole');
 
 /**
  * Níveis de log
@@ -71,7 +72,7 @@ class Logger {
                     return;
                 }
 
-                console.error('Erro ao escrever log em arquivo apos tentativas:', error.message || error);
+                safeError('Erro ao escrever log em arquivo apos tentativas:', error.message || error);
             }
         }, delay);
 
@@ -138,14 +139,14 @@ class Logger {
                 return;
             }
 
-            console.error('Erro ao escrever log em arquivo:', error);
+            safeError('Erro ao escrever log em arquivo:', error);
         }
     }
 
     debug(message, meta = {}) {
         if (this.minLevel > LOG_LEVELS.DEBUG) return;
         const formatted = this.formatMessage('DEBUG', message, meta);
-        if (this.enableConsole) console.log(this.formatConsoleMessage('DEBUG', message, COLORS.CYAN));
+        if (this.enableConsole) safeLog(this.formatConsoleMessage('DEBUG', message, COLORS.CYAN));
         if (this.enableFile) {
             this.writeToFile(this.logFiles.debug, formatted);
             this.writeToFile(this.logFiles.all, formatted);
@@ -155,7 +156,7 @@ class Logger {
     info(message, meta = {}) {
         if (this.minLevel > LOG_LEVELS.INFO) return;
         const formatted = this.formatMessage('INFO', message, meta);
-        if (this.enableConsole) console.log(this.formatConsoleMessage('INFO', message, COLORS.GREEN));
+        if (this.enableConsole) safeLog(this.formatConsoleMessage('INFO', message, COLORS.GREEN));
         if (this.enableFile) {
             this.writeToFile(this.logFiles.info, formatted);
             this.writeToFile(this.logFiles.all, formatted);
@@ -165,7 +166,7 @@ class Logger {
     warn(message, meta = {}) {
         if (this.minLevel > LOG_LEVELS.WARN) return;
         const formatted = this.formatMessage('WARN', message, meta);
-        if (this.enableConsole) console.warn(this.formatConsoleMessage('WARN', message, COLORS.YELLOW));
+        if (this.enableConsole) safeWarn(this.formatConsoleMessage('WARN', message, COLORS.YELLOW));
         if (this.enableFile) {
             this.writeToFile(this.logFiles.warn, formatted);
             this.writeToFile(this.logFiles.all, formatted);
@@ -181,8 +182,8 @@ class Logger {
         const fullFormatted = errorStack ? `${formatted}\n${errorStack}` : formatted;
         
         if (this.enableConsole) {
-            console.error(this.formatConsoleMessage('ERROR', message, COLORS.RED));
-            if (error) console.error(error);
+            safeError(this.formatConsoleMessage('ERROR', message, COLORS.RED));
+            if (error) safeError(error);
         }
         
         if (this.enableFile) {
@@ -200,8 +201,8 @@ class Logger {
         const fullFormatted = errorStack ? `${formatted}\n${errorStack}` : formatted;
         
         if (this.enableConsole) {
-            console.error(this.formatConsoleMessage('CRITICAL', message, COLORS.MAGENTA));
-            if (error) console.error(error);
+            safeError(this.formatConsoleMessage('CRITICAL', message, COLORS.MAGENTA));
+            if (error) safeError(error);
         }
         
         if (this.enableFile) {
@@ -217,7 +218,7 @@ class Logger {
      * Envia alerta (integração com notificações do Discord)
      */
     sendAlert(message, error, meta) {
-        console.log('🚨 ALERTA CRÍTICO VORTEX:', message);
+        safeLog('ALERTA CRITICO VORTEX:', message);
         // Tenta enviar para o Discord se as notificações estiverem disponíveis
         try {
             const { notifyError } = require('./notifications');

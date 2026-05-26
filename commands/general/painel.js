@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
 const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
-const { setOnlineChannelAccess, updateStatusPanel } = require('../../utils/pontoPanel');
+const { setOnlineChannelAccess, syncOnlineChannelVisibility, updateStatusPanel } = require('../../utils/pontoPanel');
 const {
   safeReply,
   safeEdit,
@@ -109,6 +109,8 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
+    { label: '/bau membro', value: 'bau', description: 'Quem pode publicar e cadastrar produtos no bau' },
+    { label: '/bau-membros', value: 'bau-membros', description: 'Quem pode publicar e cadastrar produtos no bau' },
 ];
 const PANEL_TOOL_OPTIONS = [
     { label: 'Estatísticas', value: 'tab_stats', description: 'Visão geral do servidor e cadastros', emoji: '📊' },
@@ -1882,6 +1884,31 @@ module.exports = {
         return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
+    if (interaction.customId === 'select_point_online_voice_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar a call online do ponto.', ephemeral: true });
+        const channelId = String(interaction.values[0]);
+        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+        if (!isAdjustCallChannel(channel)) {
+            return safeReply(interaction, { content: '❌ Selecione uma call válida.', ephemeral: true });
+        }
+
+        data.POINT_ONLINE_VOICE_CHANNEL_ID = channelId;
+        saveJSON(CONFIG_PATH, data);
+        await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
+        await syncOnlineChannelVisibility(interaction.guild, channel).catch(() => null);
+        await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+
+        sendVortexLog(interaction.client, {
+            title: 'Call online do ponto alterada',
+            description: `A call liberada para quem estiver online no game foi alterada para <#${channelId}> por <@${interaction.user.id}>.`,
+            color: '#5865F2',
+            type: 'PONTO',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_pontos', true);
+    }
+
     if (interaction.customId === 'select_point_adjust_role') {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ajuste de ponto.', ephemeral: true });
         data.POINT_ADJUST_STAFF_ROLES = interaction.values.map(String);
@@ -2726,6 +2753,7 @@ async function renderDashboard(interaction, tab, edit = false) {
     const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
     const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[guild.id] || {};
     const pointAllowedRoles = getPointAllowedRoleIds();
+    const onlineVoiceChannelId = conf.POINT_ONLINE_VOICE_CHANNEL_ID || '';
     const openPointOptions = Object.values(pointData)
       .filter((point) => point?.activePointStartedAt)
       .slice(0, 25)
@@ -2746,6 +2774,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         `**Usuário selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
         `**Pontos abertos:** ${openPointOptions.length}`,
         `**Cargos que podem bater ponto/detectar:** ${formatRoleList(pointAllowedRoles)}`,
+        `**Call liberada no game:** ${onlineVoiceChannelId ? `<#${onlineVoiceChannelId}>` : '`Não configurada`'}`,
         '',
         '**Reajuste de ponto**',
         'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
@@ -2778,6 +2807,14 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setPlaceholder('Selecionar cargos que podem bater ponto e detectar')
           .setMinValues(1)
           .setMaxValues(10)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_point_online_voice_channel')
+          .setPlaceholder('Selecionar call liberada para quem está no game')
+          .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
+          .setMinValues(1)
+          .setMaxValues(1)
       ),
     ];
   } else if (tab === 'tab_cobrancas') {

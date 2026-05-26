@@ -1,4 +1,5 @@
 const { logger } = require('../utils/logger');
+const { isBrokenPipeError, safeError } = require('../../utils/safeConsole');
 
 function formatError(error) {
   if (error instanceof Error) {
@@ -19,6 +20,7 @@ function setupErrorHandlers(client, { notifyError = null, notifyBotDown = null }
   let notifying = false;
 
   async function notify(error, context) {
+    if (isBrokenPipeError(error)) return;
     const details = formatError(error);
     logger.critical(`Erro global capturado: ${context}`, error instanceof Error ? error : null, {
       context,
@@ -42,12 +44,14 @@ function setupErrorHandlers(client, { notifyError = null, notifyBotDown = null }
   }
 
   process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    if (isBrokenPipeError(error)) return;
+    safeError('Uncaught Exception:', error);
     notify(error, 'Uncaught Exception').catch(() => null);
   });
 
   process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled Rejection:', reason);
+    if (isBrokenPipeError(reason)) return;
+    safeError('Unhandled Rejection:', reason);
     notify(reason, 'Unhandled Rejection').catch(() => null);
   });
 

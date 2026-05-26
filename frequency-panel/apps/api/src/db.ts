@@ -19,6 +19,10 @@ function readPositiveIntEnv(name: string, fallback: number) {
 }
 
 export async function getDb() {
+  if (!env.mongoUri) {
+    throw new Error('MongoDB not configured');
+  }
+
   if (!client) {
     client = new MongoClient(env.mongoUri, {
       maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),

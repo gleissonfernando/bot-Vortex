@@ -78,8 +78,11 @@ config/*.local.js
 # These files are local cache/backup for data mirrored into MongoDB.
 commands/approvedSetChannels.json
 commands/ausencias.json
+commands/bauStorage.json
 commands/config.json
 commands/dailyPointTranscriptState.json
+commands/liveAlerts.json
+commands/liveLinks.json
 commands/nicks_originais.json
 commands/pedidos_ativos.json
 commands/perfis.json
@@ -102,6 +105,7 @@ commands/*backup*.json
 ecosystem.config.js
 pm2*.json
 *.pid.lock
+*.tsbuildinfo
 
 # Local generated media/reports
 logs/*

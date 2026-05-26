@@ -13,6 +13,7 @@ const toolSections = [
   { id: 'profile', label: 'Perfil', description: 'Cadastros, cobrancas e perfis.' },
   { id: 'billing', label: 'Cobrancas', description: 'Cobrancas e penalidades automaticas.' },
   { id: 'messages', label: 'Mensagens', description: 'Canais de mensagens em painel.' },
+  { id: 'bau', label: 'Bau', description: 'Permissao do painel de bau.' },
   { id: 'visual', label: 'Visual', description: 'Tema visual dos paineis.' },
   { id: 'maintenance', label: 'Manutencao', description: 'Modo manutencao e logs.' }
 ];
@@ -58,6 +59,7 @@ function pickBotConfig(config: Record<string, any>) {
     NOTICE_MENTION_ROLE_ID: config.NOTICE_MENTION_ROLE_ID || '',
     POINT_ACTION_CHANNEL_ID: config.POINT_ACTION_CHANNEL_ID || '',
     POINT_ONLINE_CHANNEL_ID: config.POINT_ONLINE_CHANNEL_ID || '',
+    POINT_ONLINE_VOICE_CHANNEL_ID: config.POINT_ONLINE_VOICE_CHANNEL_ID || '',
     POINT_ADJUST_CATEGORY_ID: config.POINT_ADJUST_CATEGORY_ID || '',
     POINT_ALLOWED_ROLE_IDS: Array.isArray(config.POINT_ALLOWED_ROLE_IDS) ? config.POINT_ALLOWED_ROLE_IDS : [],
     POINT_ADJUST_STAFF_ROLES: Array.isArray(config.POINT_ADJUST_STAFF_ROLES) ? config.POINT_ADJUST_STAFF_ROLES : [],
@@ -89,6 +91,7 @@ function sanitizePatch(patch: Record<string, any>) {
     'NOTICE_MENTION_ROLE_ID',
     'POINT_ACTION_CHANNEL_ID',
     'POINT_ONLINE_CHANNEL_ID',
+    'POINT_ONLINE_VOICE_CHANNEL_ID',
     'POINT_ADJUST_CATEGORY_ID',
     'POINT_ALLOWED_ROLE_IDS',
     'POINT_ADJUST_STAFF_ROLES',

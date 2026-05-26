@@ -303,10 +303,26 @@ export const livesRouter = Router();
 
 livesRouter.get('/', async (req, res) => {
   const guildId = defaultGuildId(req);
-  const lives = await collection<LiveDoc>('live_alert_configs');
-  const rows = await lives.find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
-  const settings = await getSettings(guildId);
-  res.json({ ok: true, lives: rows.map(normalizeLive), settings: normalizeSettings(settings) });
+  try {
+    const lives = await collection<LiveDoc>('live_alert_configs');
+    const rows = await lives.find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
+    const settings = await getSettings(guildId);
+    return res.json({ ok: true, lives: rows.map(normalizeLive), settings: normalizeSettings(settings) });
+  } catch (error) {
+    console.warn('[frequency-api] Lives sem MongoDB:', error);
+    return res.json({
+      ok: true,
+      lives: [],
+      settings: normalizeSettings({
+        guild_id: guildId,
+        enabled: true,
+        default_alert_channel_id: null,
+        default_mention_role_id: null,
+        default_message: DEFAULT_MESSAGE,
+        check_interval_seconds: 120
+      })
+    });
+  }
 });
 
 livesRouter.get('/discord-options', requireManager, async (req, res) => {
@@ -387,8 +403,23 @@ livesRouter.delete('/:id', requireManager, async (req, res) => {
 });
 
 livesRouter.get('/settings', async (req, res) => {
-  const settings = await getSettings(defaultGuildId(req));
-  res.json({ ok: true, settings: normalizeSettings(settings) });
+  const guildId = defaultGuildId(req);
+  try {
+    const settings = await getSettings(guildId);
+    return res.json({ ok: true, settings: normalizeSettings(settings) });
+  } catch {
+    return res.json({
+      ok: true,
+      settings: normalizeSettings({
+        guild_id: guildId,
+        enabled: true,
+        default_alert_channel_id: null,
+        default_mention_role_id: null,
+        default_message: DEFAULT_MESSAGE,
+        check_interval_seconds: 120
+      })
+    });
+  }
 });
 
 livesRouter.put('/settings/general', requireManager, async (req, res) => {

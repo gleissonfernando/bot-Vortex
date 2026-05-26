@@ -2,6 +2,12 @@ const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
+const net = require('node:net');
+require('./utils/safeConsole').patchConsole();
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0'
+  ? '1'
+  : (process.env.NODE_TLS_REJECT_UNAUTHORIZED || '1');
 
 const rootDir = __dirname;
 
@@ -49,6 +55,30 @@ function envFlag(name, fallback = true) {
   return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
 }
 
+function canConnect(port, host) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port: Number(port), host });
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(500);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+  });
+}
+
+async function isPortBusy(port) {
+  const value = Number(port);
+  if (!Number.isInteger(value) || value <= 0 || value > 65535) return false;
+  return (await canConnect(value, '127.0.0.1')) || (await canConnect(value, '::1'));
+}
+
 function run(command, args, options = {}) {
   console.log(`[shardcloud] ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, {
@@ -67,7 +97,7 @@ function start(name, command, args, options = {}) {
   console.log(`[shardcloud] starting ${name}: ${command} ${args.join(' ')}`);
   const child = spawn(command, args, {
     cwd: options.cwd || rootDir,
-    env: { ...process.env, ...(options.env || {}) },
+    env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '1', ...(options.env || {}) },
     shell: process.platform === 'win32',
     stdio: 'inherit'
   });
@@ -120,6 +150,10 @@ function startProxy() {
   });
 
   server.on('error', (error) => {
+    if (error?.code === 'EADDRINUSE') {
+      console.warn(`[shardcloud] proxy skipped: port ${webPort} is already in use.`);
+      return;
+    }
     console.error('[shardcloud] proxy failed:', error);
     process.exit(1);
   });
@@ -182,98 +216,124 @@ const shouldStartDiscordBot = envFlag('START_DISCORD_BOT', true);
 const shouldStartFrequencyApi = envFlag('START_FREQUENCY_API', true);
 const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', true);
 
-if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN)) {
-  start('discord-bot', 'node', ['index.js'], {
-    env: {
-      API_PORT: botApiPort,
-      API_HOST: '0.0.0.0',
-      ENABLE_PRESENCE_FEATURES: process.env.ENABLE_PRESENCE_FEATURES || 'true',
-      REGISTER_COMMANDS_ON_STARTUP: process.env.REGISTER_COMMANDS_ON_STARTUP || 'false',
-      FIVEM_STARTUP_SCAN_ENABLED: process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true',
-      FIVEM_STARTUP_FETCH_PRESENCES: process.env.FIVEM_STARTUP_FETCH_PRESENCES || 'true',
-      POINT_AUTOMATION_FETCH_PRESENCES: process.env.POINT_AUTOMATION_FETCH_PRESENCES || 'true',
-      POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(30 * 60 * 1000),
-      PONTO_PANEL_FETCH_PRESENCES: process.env.PONTO_PANEL_FETCH_PRESENCES || 'true',
-      PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(60 * 1000),
-      DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || '25',
-      DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || '100',
-      DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || '500'
-    },
-    fatal: false
-  });
-} else if (shouldStartDiscordBot) {
-  console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN not configured. Discord bot will not start.');
-} else {
-  console.log('[shardcloud] Discord bot disabled by START_DISCORD_BOT=false.');
-}
-
-if (shouldStartFrequencyApi && (process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL)) {
-  const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
-  if (fs.existsSync(apiDist)) {
-    start('frequency-api', 'node', [apiDist], {
-      env: {
-        API_PORT: apiPort,
-        API_ORIGIN: process.env.API_ORIGIN
-      },
-      fatal: false
-    });
-  } else {
-    const apiArgs = fs.existsSync(apiSource)
-      ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
-      : ['--prefix', 'frequency-panel', 'run', 'start:api'];
-    start('frequency-api', 'npm', apiArgs, {
-      env: {
-        API_PORT: apiPort,
-        API_ORIGIN: process.env.API_ORIGIN
-      },
-      fatal: false
-    });
-  }
-} else if (shouldStartFrequencyApi) {
-  console.error('[shardcloud] MONGODB_URI/MONGO_URI/DATABASE_URL not configured. Web will start, but /api routes and login will fail until MongoDB is configured.');
-} else {
-  console.log('[shardcloud] Frequency API disabled by START_FREQUENCY_API=false.');
-}
-
-if (shouldStartFrequencyWeb && shouldBuildWeb()) {
-  console.log('[shardcloud] Building Next web for production...');
-  run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
-    cwd: rootDir,
-    env: {
-      INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-    }
-  });
-}
-
 let web = null;
 let proxyServer = null;
 
-if (shouldStartFrequencyWeb) {
-  ensureStandaloneWebAssets();
-
-  web = fs.existsSync(standaloneServer)
-    ? start('frequency-web', 'node', [standaloneServer], {
-        cwd: webDir,
+async function main() {
+  if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN)) {
+    if (await isPortBusy(botApiPort)) {
+      console.warn(`[shardcloud] discord-bot skipped: port ${botApiPort} is already in use.`);
+    } else {
+      start('discord-bot', 'node', ['index.js'], {
         env: {
-          HOSTNAME: '0.0.0.0',
-          PORT: webInternalPort,
-          NODE_ENV: 'production',
-          INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-          NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-        }
-      })
-    : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
-        cwd: rootDir,
-        env: {
-          INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-          NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-        }
+          API_PORT: botApiPort,
+          API_HOST: '0.0.0.0',
+          ENABLE_PRESENCE_FEATURES: process.env.ENABLE_PRESENCE_FEATURES || 'true',
+          REGISTER_COMMANDS_ON_STARTUP: process.env.REGISTER_COMMANDS_ON_STARTUP || 'false',
+          FIVEM_STARTUP_SCAN_ENABLED: process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true',
+          FIVEM_STARTUP_FETCH_PRESENCES: process.env.FIVEM_STARTUP_FETCH_PRESENCES || 'true',
+          POINT_AUTOMATION_FETCH_PRESENCES: process.env.POINT_AUTOMATION_FETCH_PRESENCES || 'true',
+          POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(30 * 60 * 1000),
+          PONTO_PANEL_FETCH_PRESENCES: process.env.PONTO_PANEL_FETCH_PRESENCES || 'true',
+          PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(60 * 1000),
+          DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || '25',
+          DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || '100',
+          DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || '500'
+        },
+        fatal: false
       });
-  proxyServer = startProxy();
-} else {
-  console.log('[shardcloud] Frequency web disabled by START_FREQUENCY_WEB=false.');
+    }
+  } else if (shouldStartDiscordBot) {
+    console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN not configured. Discord bot will not start.');
+  } else {
+    console.log('[shardcloud] Discord bot disabled by START_DISCORD_BOT=false.');
+  }
+
+  if (shouldStartFrequencyApi) {
+    if (await isPortBusy(apiPort)) {
+      console.warn(`[shardcloud] frequency-api skipped: port ${apiPort} is already in use.`);
+    } else {
+      if (!(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL)) {
+        console.warn('[shardcloud] MongoDB nao configurado. A API sera iniciada em modo fallback para login, configuracoes e bau.');
+      }
+
+      const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
+      if (fs.existsSync(apiDist)) {
+        start('frequency-api', 'node', [apiDist], {
+          env: {
+            API_PORT: apiPort,
+            API_ORIGIN: process.env.API_ORIGIN
+          },
+          fatal: false
+        });
+      } else {
+        const apiArgs = fs.existsSync(apiSource)
+          ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
+          : ['--prefix', 'frequency-panel', 'run', 'start:api'];
+        start('frequency-api', 'npm', apiArgs, {
+          env: {
+            API_PORT: apiPort,
+            API_ORIGIN: process.env.API_ORIGIN
+          },
+          fatal: false
+        });
+      }
+    }
+  } else {
+    console.log('[shardcloud] Frequency API disabled by START_FREQUENCY_API=false.');
+  }
+
+  if (shouldStartFrequencyWeb && shouldBuildWeb()) {
+    console.log('[shardcloud] Building Next web for production...');
+    run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
+      cwd: rootDir,
+      env: {
+        INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+        NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+      }
+    });
+  }
+
+  if (shouldStartFrequencyWeb) {
+    ensureStandaloneWebAssets();
+
+    if (await isPortBusy(webInternalPort)) {
+      console.warn(`[shardcloud] frequency-web skipped: port ${webInternalPort} is already in use.`);
+    } else {
+      web = fs.existsSync(standaloneServer)
+        ? start('frequency-web', 'node', [standaloneServer], {
+            cwd: webDir,
+            env: {
+              HOSTNAME: '0.0.0.0',
+              PORT: webInternalPort,
+              NODE_ENV: 'production',
+              INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+              NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+            }
+          })
+        : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
+            cwd: rootDir,
+            env: {
+              INTERNAL_API_URL: process.env.INTERNAL_API_URL,
+              NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
+            }
+          });
+    }
+
+    if (await isPortBusy(webPort)) {
+      console.warn(`[shardcloud] proxy skipped: port ${webPort} is already in use.`);
+    } else {
+      proxyServer = startProxy();
+    }
+  } else {
+    console.log('[shardcloud] Frequency web disabled by START_FREQUENCY_WEB=false.');
+  }
 }
+
+main().catch((error) => {
+  console.error('[shardcloud] startup failed:', error);
+  process.exit(1);
+});
 
 process.on('SIGINT', () => {
   web?.kill('SIGINT');

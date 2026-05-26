@@ -9,8 +9,11 @@ function required(name: string): string {
   return value;
 }
 
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL || '';
+
 export const env = {
-  mongoUri: process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL || required('MONGODB_URI'),
+  mongoUri,
+  mongoEnabled: Boolean(mongoUri),
   jwtSecret: required('JWT_SECRET'),
   adminEmail: process.env.ADMIN_EMAIL || 'vortex@adimin.com',
   adminPassword: process.env.ADMIN_PASSWORD || 'vortex',

@@ -2,14 +2,14 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { AlertTriangle, Bot, CheckCircle2, Radio, RefreshCw, Save, Search, Shield, SlidersHorizontal, ToggleLeft, Users } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, PackageOpen, Radio, RefreshCw, Save, Search, Shield, SlidersHorizontal, ToggleLeft, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type Tool = { id: string; label: string; description: string };
 type Option = { id: string; name: string; type?: number };
 type BotConfig = Record<string, any>;
 
-const commandOptions = ['painel', 'ponto', 'registro', 'relatorio-ponto', 'painelponto', 'ativarponto', 'avisos', 'ausencia', 'perfil', 'lives'];
+const commandOptions = ['painel', 'ponto', 'registro', 'relatorio-ponto', 'painelponto', 'ativarponto', 'avisos', 'ausencia', 'perfil', 'lives', 'bau', 'bau-membros'];
 
 export default function BotVortexPage() {
   const [tools, setTools] = useState<Tool[]>([]);
@@ -24,6 +24,7 @@ export default function BotVortexPage() {
   const [query, setQuery] = useState('');
 
   const textChannels = useMemo(() => channels.filter((channel) => channel.type === 0 || channel.type === 5), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 2), [channels]);
   const categories = useMemo(() => channels.filter((channel) => channel.type === 4), [channels]);
   const filteredTools = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -189,6 +190,7 @@ export default function BotVortexPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <Select label="Canal para bater ponto" value={config.POINT_ACTION_CHANNEL_ID || ''} options={textChannels} onChange={(value) => update('POINT_ACTION_CHANNEL_ID', value)} />
                   <Select label="Canal de membros online" value={config.POINT_ONLINE_CHANNEL_ID || ''} options={textChannels} onChange={(value) => update('POINT_ONLINE_CHANNEL_ID', value)} />
+                  <Select label="Call liberada no game" value={config.POINT_ONLINE_VOICE_CHANNEL_ID || ''} options={voiceChannels} onChange={(value) => update('POINT_ONLINE_VOICE_CHANNEL_ID', value)} />
                   <Select label="Categoria de ajuste" value={config.POINT_ADJUST_CATEGORY_ID || ''} options={categories} onChange={(value) => update('POINT_ADJUST_CATEGORY_ID', value)} />
                   <MultiSelect label="Cargos que podem bater ponto" value={config.POINT_ALLOWED_ROLE_IDS || []} options={roles} onChange={(value) => update('POINT_ALLOWED_ROLE_IDS', value)} />
                   <MultiSelect label="Cargos staff de ajuste" value={config.POINT_ADJUST_STAFF_ROLES || []} options={roles} onChange={(value) => update('POINT_ADJUST_STAFF_ROLES', value)} />
@@ -228,6 +230,23 @@ export default function BotVortexPage() {
               </ToolPanel>
             ) : null}
 
+            {config && selected === 'bau' ? (
+              <ToolPanel title="Bau" icon={<PackageOpen size={20} />}>
+                <MultiSelect
+                  label="/bau membro"
+                  value={config.COMMAND_ROLE_PERMISSIONS?.bau || []}
+                  options={roles}
+                  onChange={(value) => updateNested('COMMAND_ROLE_PERMISSIONS', 'bau', value)}
+                />
+                <MultiSelect
+                  label="/bau-membros"
+                  value={config.COMMAND_ROLE_PERMISSIONS?.['bau-membros'] || []}
+                  options={roles}
+                  onChange={(value) => updateNested('COMMAND_ROLE_PERMISSIONS', 'bau-membros', value)}
+                />
+              </ToolPanel>
+            ) : null}
+
             {config && selected === 'maintenance' ? (
               <ToolPanel title="Manutencao e Logs" icon={<ToggleLeft size={20} />}>
                 <SwitchRow label="Modo manutencao" value={config.MAINTENANCE_MODE} onChange={(value) => update('MAINTENANCE_MODE', value)} />
@@ -253,7 +272,7 @@ export default function BotVortexPage() {
               </ToolPanel>
             ) : null}
 
-            {config && !['stats', 'points', 'roles', 'commands', 'maintenance', 'messages', 'absence'].includes(selected) ? (
+            {config && !['stats', 'points', 'roles', 'commands', 'bau', 'maintenance', 'messages', 'absence'].includes(selected) ? (
               <ToolPanel title={selectedTool?.label || 'Ferramenta'} icon={<SlidersHorizontal size={20} />}>
                 <p className="text-sm text-slate-400">Esta ferramenta ja aparece organizada aqui e sera expandida com os controles especificos do /painel.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -333,6 +352,7 @@ function toolOwnsKey(toolId: string, key: string) {
     profile: ['PROFILE_'],
     billing: ['PROFILE_BILLING_ENABLED', 'POINT_OFFLINE_CHARGE_ENABLED', 'POINT_OFFLINE_THRESHOLD_HOURS'],
     messages: ['MIRROR_MESSAGE_CHANNEL_IDS', 'DISABLE_NOTICE_DMS', 'NOTICE_MENTION_ROLE_ID'],
+    bau: ['COMMAND_ROLE_PERMISSIONS'],
     visual: ['PANEL_THEME'],
     maintenance: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE', 'DISABLE_']
   };

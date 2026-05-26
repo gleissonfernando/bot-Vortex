@@ -1,4 +1,5 @@
 
+require('./utils/safeConsole').patchConsole();
 console.log("🔥 VORTEX LOCAL ATIVO 🔥");
 const { Client, GatewayIntentBits, Collection, Events, REST, Routes, Options } = require('discord.js');
 const { DefaultWebSocketManagerOptions } = require('@discordjs/ws');
@@ -27,6 +28,7 @@ const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
 const { initPointAutomation } = require('./utils/pointAutomation');
 const { initLiveAlertMonitor } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
+const { initDailyBauReport } = require('./utils/bauManager');
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 const {
     getPointTranscriptRecord,
@@ -370,6 +372,7 @@ client.once(Events.ClientReady, async () => {
     initAbsenceManager(client);
     initProfileManager(client);
     initDailyPointTranscript(client);
+    initDailyBauReport(client);
     initPointAutomation(client);
     initLiveAlertMonitor(client);
     initChannelLogRecovery(client);

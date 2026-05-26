@@ -8,8 +8,13 @@ import { memberReport, secondsToLabel, toCsv } from '../services/reports.js';
 export const membersRouter = Router();
 
 export async function memberAvatarHandler(req: any, res: any) {
-  const members = await collection('discord_members');
-  const member = serializeDoc(await members.findOne({ id: req.params.id })) as any;
+  let member: any = null;
+  try {
+    const members = await collection('discord_members');
+    member = serializeDoc(await members.findOne({ id: req.params.id })) as any;
+  } catch {
+    return res.status(404).end();
+  }
   const avatarUrl = String(member?.avatar_url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
   if (!avatarUrl) return res.status(404).end();
 
@@ -27,15 +32,20 @@ export async function memberAvatarHandler(req: any, res: any) {
 }
 
 membersRouter.get('/', async (req, res) => {
-  const members = await listMembers({
-    guildId: String(req.query.guildId || ''),
-    search: String(req.query.search || ''),
-    role: String(req.query.role || ''),
-    status: String(req.query.status || ''),
-    limit: Number(req.query.limit || 80)
-  });
+  try {
+    const members = await listMembers({
+      guildId: String(req.query.guildId || ''),
+      search: String(req.query.search || ''),
+      role: String(req.query.role || ''),
+      status: String(req.query.status || ''),
+      limit: Number(req.query.limit || 80)
+    });
 
-  return res.json({ ok: true, members });
+    return res.json({ ok: true, members });
+  } catch (error) {
+    console.warn('[frequency-api] Lista de membros indisponivel sem MongoDB:', error);
+    return res.json({ ok: true, members: [] });
+  }
 });
 
 membersRouter.get('/:id/avatar', async (req, res) => {
@@ -43,30 +53,51 @@ membersRouter.get('/:id/avatar', async (req, res) => {
 });
 
 membersRouter.get('/:id', async (req, res) => {
-  const member = await getMember(req.params.id);
-  if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
+  try {
+    const member = await getMember(req.params.id);
+    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
 
-  const report = await memberReport(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-  return res.json({ ok: true, member, report });
+    const report = await memberReport(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+    return res.json({ ok: true, member, report });
+  } catch {
+    return res.status(404).json({ ok: false, error: 'Member database unavailable' });
+  }
 });
 
 membersRouter.get('/:id/attendance', async (req, res) => {
-  const sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-  return res.json({ ok: true, sessions });
+  try {
+    const sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+    return res.json({ ok: true, sessions });
+  } catch {
+    return res.json({ ok: true, sessions: [] });
+  }
 });
 
 membersRouter.get('/:id/frequency', async (req, res) => {
-  const days = await getFrequency(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-  return res.json({ ok: true, days });
+  try {
+    const days = await getFrequency(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+    return res.json({ ok: true, days });
+  } catch {
+    return res.json({ ok: true, days: [] });
+  }
 });
 
 membersRouter.get('/:id/absences', async (req, res) => {
-  const absences = await getAbsences(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-  return res.json({ ok: true, absences });
+  try {
+    const absences = await getAbsences(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+    return res.json({ ok: true, absences: absences });
+  } catch {
+    return res.json({ ok: true, absences: [] });
+  }
 });
 
 membersRouter.get('/:id/export', async (req, res) => {
-  const sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+  let sessions: any[] = [];
+  try {
+    sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
+  } catch {
+    sessions = [];
+  }
   const rows = sessions.map((session: any) => ({
     opened_at: session.opened_at,
     closed_at: session.closed_at || '',
