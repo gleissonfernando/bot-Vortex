@@ -193,6 +193,21 @@ function shouldBuildWeb() {
   return sourceMtime > standaloneMtime;
 }
 
+function shouldBuildApi() {
+  if (process.env.BUILD_API_ON_STARTUP === 'false') return false;
+  if (process.env.FORCE_API_BUILD === 'true') return true;
+  if (!fs.existsSync(apiDist)) return true;
+
+  const distMtime = fs.statSync(apiDist).mtimeMs;
+  const sourceMtime = Math.max(
+    newestMtimeMs(path.join(panelDir, 'apps', 'api', 'src')),
+    newestMtimeMs(path.join(panelDir, 'apps', 'api', 'package.json')),
+    newestMtimeMs(path.join(panelDir, 'apps', 'api', 'tsconfig.json')),
+    newestMtimeMs(path.join(panelDir, 'package.json'))
+  );
+  return sourceMtime > distMtime;
+}
+
 function ensureStandaloneWebAssets() {
   if (!fs.existsSync(standaloneServer)) return;
 
@@ -251,6 +266,11 @@ async function main() {
     } else {
       if (!(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL)) {
         console.warn('[shardcloud] MongoDB nao configurado. A API sera iniciada em modo fallback para login, configuracoes e bau.');
+      }
+
+      if (shouldBuildApi()) {
+        console.log('[shardcloud] Building Frequency API for production...');
+        run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api']);
       }
 
       const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
