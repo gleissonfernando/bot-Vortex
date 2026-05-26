@@ -36,7 +36,7 @@ function findRepoRoot() {
 const rootDir = findRepoRoot();
 const configPath = path.join(rootDir, 'commands', 'config.json');
 
-function readConfig() {
+export function readConfig() {
   try {
     return JSON.parse(fs.readFileSync(configPath, 'utf8') || '{}');
   } catch {
@@ -77,6 +77,19 @@ function pickBotConfig(config: Record<string, any>) {
     PROFILE_BILLING_ENABLED: config.PROFILE_BILLING_ENABLED !== false,
     PROFILE_UPDATE_NOTIFICATIONS_ENABLED: config.PROFILE_UPDATE_NOTIFICATIONS_ENABLED !== false,
     PANEL_THEME: config.PANEL_THEME || {}
+  };
+}
+
+export function getMaintenanceStatus(config: Record<string, any> = readConfig()) {
+  const enabled = config.MAINTENANCE_MODE === true;
+  const sinceMs = Number(config.MAINTENANCE_SINCE || 0);
+  const sinceDate = Number.isFinite(sinceMs) && sinceMs > 0 ? new Date(sinceMs) : null;
+
+  return {
+    enabled,
+    message: enabled ? 'O sistema esta em manutencao. Algumas funcoes podem ficar indisponiveis.' : '',
+    since: enabled && sinceDate ? sinceDate.toISOString() : null,
+    by: enabled && config.MAINTENANCE_BY ? String(config.MAINTENANCE_BY) : null
   };
 }
 
@@ -150,6 +163,7 @@ botVortexRouter.get('/', async (_req, res) => {
     guildId,
     tools: toolSections,
     config: pickBotConfig(config),
+    maintenance: getMaintenanceStatus(config),
     options
   });
 });
@@ -160,6 +174,10 @@ botVortexRouter.put('/config', requireManager, async (req, res) => {
   const current = readConfig();
   const patch = sanitizePatch(parsed.data.patch || {});
   const next = { ...current, ...patch };
+  if (Object.prototype.hasOwnProperty.call(patch, 'MAINTENANCE_MODE') && current.MAINTENANCE_MODE !== patch.MAINTENANCE_MODE) {
+    next.MAINTENANCE_BY = req.user?.id || req.user?.email || 'frequency-panel';
+    next.MAINTENANCE_SINCE = Date.now();
+  }
   writeConfig(next);
-  res.json({ ok: true, config: pickBotConfig(next), applied: Object.keys(patch) });
+  res.json({ ok: true, config: pickBotConfig(next), maintenance: getMaintenanceStatus(next), applied: Object.keys(patch) });
 });

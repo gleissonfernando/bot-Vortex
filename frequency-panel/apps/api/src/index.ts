@@ -6,7 +6,7 @@ import { env } from './env.js';
 import { requireAuth } from './middleware.js';
 import { authRouter } from './routes/auth.js';
 import { bauRouter } from './routes/bau.js';
-import { botVortexRouter } from './routes/bot-vortex.js';
+import { botVortexRouter, getMaintenanceStatus } from './routes/bot-vortex.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
@@ -22,6 +22,10 @@ app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'vortex-frequency-api' });
+});
+
+app.get('/status/maintenance', (_req, res) => {
+  res.json({ ok: true, maintenance: getMaintenanceStatus() });
 });
 
 app.use('/auth', authRouter);

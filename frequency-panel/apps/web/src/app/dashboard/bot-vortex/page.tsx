@@ -73,12 +73,15 @@ export default function BotVortexPage() {
     setMessage('');
     setSaving(true);
     try {
-      const data = await apiFetch<{ config: BotConfig; applied: string[] }>('/bot-vortex/config', {
+      const data = await apiFetch<{ config: BotConfig; applied: string[]; maintenance?: unknown }>('/bot-vortex/config', {
         method: 'PUT',
         body: JSON.stringify({ patch: payload })
       });
       setConfig(data.config);
       setOriginalConfig(data.config);
+      if (data.applied.includes('MAINTENANCE_MODE')) {
+        window.dispatchEvent(new Event('vortex-maintenance-updated'));
+      }
       setMessage(`Salvo em tempo real: ${data.applied.join(', ') || 'configuracao'}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao salvar');

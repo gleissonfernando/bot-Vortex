@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { MaintenanceBanner } from '@/components/maintenance-banner';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <MaintenanceBanner />
+        {children}
+      </body>
     </html>
   );
 }
