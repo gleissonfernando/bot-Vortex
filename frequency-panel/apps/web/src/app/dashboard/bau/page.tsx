@@ -33,7 +33,10 @@ type BauEvent = {
   action: 'withdraw' | 'deposit' | 'register' | string;
   userId?: string;
   userTag?: string;
+  memberDisplayName?: string | null;
   profileName?: string | null;
+  actorName?: string | null;
+  actorId?: string | null;
   itemName?: string;
   quantity?: number;
   quantityBefore?: number;
@@ -294,6 +297,9 @@ function EventRow({ event }: { event: BauEvent }) {
       : 'border-sky-300/15 bg-sky-400/10 text-sky-200';
   const Icon = event.action === 'withdraw' ? ArrowDownLeft : ArrowUpRight;
   const label = event.action === 'withdraw' ? 'Retirado' : event.action === 'deposit' ? 'Colocado' : 'Cadastrado';
+  const actorLabel = getActorLabel(event);
+  const actorActionLabel = getActorActionLabel(event.action);
+  const actorId = event.actorId || event.userId;
 
   return (
     <div className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
@@ -305,12 +311,14 @@ function EventRow({ event }: { event: BauEvent }) {
           <div className="min-w-0">
             <p className="truncate font-semibold text-white">{event.itemName || 'Item'}</p>
             <p className="mt-1 text-xs text-slate-500">
-              {event.chestLabel || event.chest} | {event.profileName || event.userTag || event.userId || 'Sistema'}
+              {event.chestLabel || event.chest} | {actorActionLabel}: <span className="font-medium text-slate-300">{actorLabel}</span>
             </p>
           </div>
           <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${style}`}>{label}</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+          <span>{actorActionLabel} {actorLabel}</span>
+          {actorId ? <span>ID {actorId}</span> : null}
           <span>Quantidade {formatNumber(event.quantity || 0)}</span>
           <span>Antes {formatNumber(event.quantityBefore || 0)}</span>
           <span>Depois {formatNumber(event.quantityAfter || 0)}</span>
@@ -319,6 +327,17 @@ function EventRow({ event }: { event: BauEvent }) {
       </div>
     </div>
   );
+}
+
+function getActorLabel(event: BauEvent) {
+  return event.actorName || event.profileName || event.memberDisplayName || event.userTag || event.userId || 'Sistema';
+}
+
+function getActorActionLabel(action: BauEvent['action']) {
+  if (action === 'withdraw') return 'Retirado por';
+  if (action === 'deposit') return 'Colocado por';
+  if (action === 'register') return 'Cadastrado por';
+  return 'Responsavel';
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {

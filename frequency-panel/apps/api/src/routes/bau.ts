@@ -62,6 +62,22 @@ function normalizeChest(guildData: Record<string, any>, chestKey: keyof typeof c
   };
 }
 
+function normalizeEvent(event: Record<string, any>) {
+  const source = event && typeof event === 'object' ? event : {};
+  const userId = source.userId ? String(source.userId) : '';
+  const actorName = source.profileName || source.memberDisplayName || source.userTag || userId || 'Sistema';
+
+  return {
+    ...source,
+    userId: userId || null,
+    userTag: source.userTag || null,
+    memberDisplayName: source.memberDisplayName || null,
+    profileName: source.profileName || null,
+    actorName,
+    actorId: userId || null
+  };
+}
+
 function pickGuildData(storage: Record<string, any>, requestedGuildId: string) {
   const guilds = storage.guilds && typeof storage.guilds === 'object' ? storage.guilds : {};
   const fallbackGuildId = process.env.DISCORD_GUILD_ID || process.env.VITE_DISCORD_GUILD_ID || Object.keys(guilds)[0] || '';
@@ -79,7 +95,7 @@ bauRouter.get('/', (req, res) => {
   const requestedGuildId = String(req.query.guildId || '').trim();
   const { guildId, guildData } = pickGuildData(storage, requestedGuildId);
   const chests = [normalizeChest(guildData, 'membros'), normalizeChest(guildData, 'gerencia')];
-  const events = Array.isArray(guildData.events) ? guildData.events.slice(-300).reverse() : [];
+  const events = Array.isArray(guildData.events) ? guildData.events.slice(-300).reverse().map(normalizeEvent) : [];
   const reports = Array.isArray(guildData.reports) ? guildData.reports.slice(-60).reverse() : [];
 
   res.json({
