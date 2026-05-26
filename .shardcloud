@@ -3,6 +3,6 @@ DESCRIPTION=Vortex Frequency Panel
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
-VERSION=recommended
+VERSION=latest
 SUBDOMAIN=bot-vortex
 CUSTOM_COMMAND=PORT=80 npm start

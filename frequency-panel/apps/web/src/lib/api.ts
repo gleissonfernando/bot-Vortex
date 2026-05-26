@@ -29,7 +29,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const data = await response.json().catch(() => ({
     ok: false,
     error: response.status === 502
-      ? 'API indisponivel no ShardCloud'
+      ? 'API indisponivel no ShardCloud. Confira os logs do frequency-api.'
       : 'A API retornou uma resposta invalida'
   }));
   if (!response.ok || !data.ok) {

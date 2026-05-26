@@ -9,7 +9,7 @@ async function readJsonResponse(response: Response) {
     return JSON.parse(text);
   } catch {
     throw new Error(response.status === 502
-      ? 'API indisponivel no ShardCloud. Verifique o MongoDB e reinicie a hospedagem.'
+      ? 'API indisponivel no ShardCloud. Reinicie a hospedagem e confira os logs do frequency-api.'
       : 'A API retornou uma pagina HTML em vez de JSON. Verifique o roteamento /api no ShardCloud.');
   }
 }

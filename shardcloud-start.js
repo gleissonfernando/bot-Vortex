@@ -263,8 +263,7 @@ async function main() {
           env: {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
-          },
-          fatal: false
+          }
         });
       } else {
         const apiArgs = fs.existsSync(apiSource)
@@ -274,8 +273,7 @@ async function main() {
           env: {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
-          },
-          fatal: false
+          }
         });
       }
     }
