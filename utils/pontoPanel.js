@@ -252,6 +252,16 @@ async function getOnlinePlayers(guild) {
   return onlinePlayers;
 }
 
+async function getActivePointUserIds(guildId) {
+  const points = await listGuildPoints(guildId).catch(() => []);
+  return new Set(
+    points
+      .filter((point) => point?.activePointStartedAt)
+      .map((point) => String(point.userId))
+      .filter(Boolean)
+  );
+}
+
 async function createStatusEmbed(guild) {
   const allPoints = await listGuildPoints(guild.id);
   const pointByUserId = new Map(allPoints.map((item) => [String(item.userId), item]));
@@ -376,18 +386,15 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
     ));
     if (!targets.length) return false;
 
-    const onlinePlayers = allowed ? await getOnlinePlayers(guild).catch(() => []) : [];
-    const isInCity = onlinePlayers.some((player) => String(player.id) === String(userId));
-
     for (const target of targets) {
       await ensureOnlineChannelBotAccess(guild, target).catch(() => null);
-      if (allowed && isInCity) {
+      if (allowed) {
         await target.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(target), {
-          reason: 'Player detectado online no FiveM',
+          reason: isVoiceChannel(target) ? 'Ponto aberto: liberar call online' : 'Ponto aberto: liberar painel online',
         });
       } else {
         await target.permissionOverwrites.delete(userId, {
-          reason: 'Player saiu do FiveM ou nao esta mais detectado online',
+          reason: 'Ponto fechado ou usuario sem acesso ao painel online',
         }).catch(async () => {
           const reset = isVoiceChannel(target)
             ? { ViewChannel: null, Connect: null }
@@ -405,8 +412,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 }
 
 async function syncOnlineChannelVisibility(guild, channel) {
-  const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
-  const onlineUserIds = new Set(onlinePlayers.map((player) => String(player.id)));
+  const activePointUserIds = await getActivePointUserIds(guild.id);
   const botId = guild.client?.user?.id ? String(guild.client.user.id) : null;
 
   await ensureOnlineChannelBotAccess(guild, channel).catch(() => null);
@@ -415,9 +421,9 @@ async function syncOnlineChannelVisibility(guild, channel) {
     ViewChannel: false,
   }).catch(() => null);
 
-  for (const userId of onlineUserIds) {
+  for (const userId of activePointUserIds) {
     await channel.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(channel), {
-      reason: isVoiceChannel(channel) ? 'Player online no FiveM: liberar call' : 'Player online no FiveM: liberar painel',
+      reason: isVoiceChannel(channel) ? 'Ponto aberto: liberar call online' : 'Ponto aberto: liberar painel online',
     }).catch(() => null);
   }
 
@@ -425,7 +431,7 @@ async function syncOnlineChannelVisibility(guild, channel) {
     if (targetId === guild.id) continue;
     if (botId && String(targetId) === botId) continue;
     if (overwrite.type !== 1) continue;
-    if (!onlineUserIds.has(targetId)) {
+    if (!activePointUserIds.has(targetId)) {
       await channel.permissionOverwrites.delete(targetId).catch(() => null);
     }
   }
