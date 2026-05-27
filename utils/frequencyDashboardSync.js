@@ -9,6 +9,7 @@ const MEMBER_SYNC_INTERVAL_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQU
 const POINT_SYNC_INTERVAL_MS = Math.max(30 * 1000, Number(process.env.FREQUENCY_POINT_SYNC_INTERVAL_MS || 60 * 1000));
 let intervalsStarted = false;
 let pointSyncQueued = false;
+let memberSyncQueued = false;
 let memberSyncRunning = false;
 let pointSyncRunning = false;
 
@@ -173,13 +174,22 @@ async function syncPointSnapshot(client) {
   return { total };
 }
 
-function queuePointSnapshotSync(client) {
+function queuePointSnapshotSync(client, delayMs = 1500) {
   if (pointSyncQueued) return;
   pointSyncQueued = true;
   setTimeout(() => {
     pointSyncQueued = false;
     runPointSyncScheduled(client);
-  }, 1500);
+  }, Math.max(1000, Number(delayMs) || 1500));
+}
+
+function queueMemberSync(client, delayMs = 1500) {
+  if (memberSyncQueued) return;
+  memberSyncQueued = true;
+  setTimeout(() => {
+    memberSyncQueued = false;
+    runMemberSyncScheduled(client);
+  }, Math.max(1000, Number(delayMs) || 1500));
 }
 
 async function syncPresence(newPresence) {
@@ -196,7 +206,10 @@ function runMemberSyncScheduled(client) {
   if (memberSyncRunning) return;
   memberSyncRunning = true;
   syncGuildMembers(client)
-    .catch((error) => logger.warn('Falha ao sincronizar membros com o dashboard:', error.message))
+    .catch((error) => {
+      logger.warn('Falha ao sincronizar membros com o dashboard:', error.message);
+      queueMemberSync(client, 60 * 1000);
+    })
     .finally(() => {
       memberSyncRunning = false;
     });
@@ -206,7 +219,10 @@ function runPointSyncScheduled(client) {
   if (pointSyncRunning) return;
   pointSyncRunning = true;
   syncPointSnapshot(client)
-    .catch((error) => logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message))
+    .catch((error) => {
+      logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message);
+      queuePointSnapshotSync(client, 60 * 1000);
+    })
     .finally(() => {
       pointSyncRunning = false;
     });
@@ -236,6 +252,7 @@ function initFrequencyDashboardSync(client) {
 
 module.exports = {
   initFrequencyDashboardSync,
+  queueMemberSync,
   queuePointSnapshotSync,
   syncGuildMembers,
   syncPointSnapshot,

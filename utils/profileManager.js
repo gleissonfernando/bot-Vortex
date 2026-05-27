@@ -8,6 +8,7 @@ const { applyApprovedHierarchy, resetToPendingHierarchy } = require('./vortexHie
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { isSilentLogUser } = require('./notifications');
 const { refreshMongoJsonKeys } = require('./mongoJsonStore');
+const { queueMemberSync, queuePointSnapshotSync } = require('./frequencyDashboardSync');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -27,6 +28,12 @@ const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
 const PROFILE_ACCESS_REVIEW_ENABLED = process.env.PROFILE_ACCESS_REVIEW_ENABLED !== 'false';
 const PROFILE_SYNC_CHANNELS_ON_STARTUP = process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP !== 'false';
 let interval = null;
+
+function queueFrequencyDashboardRefresh(guild) {
+  if (!guild?.client) return;
+  queueMemberSync(guild.client);
+  queuePointSnapshotSync(guild.client);
+}
 
 async function syncApprovedHierarchyForMember(guild, userId, reason = 'Hierarquia Vortex: perfil aprovado sincronizado') {
   const member = await guild.members.fetch(userId).catch(() => null);
@@ -381,6 +388,7 @@ async function registerApprovedProfile(guild, member, {
 
   data[guild.id][member.id] = profile;
   writeProfiles(data);
+  queueFrequencyDashboardRefresh(guild);
   await syncApprovedHierarchyForMember(guild, member.id, 'Hierarquia Vortex: perfil aprovado registrado').catch((error) => {
     logger.error('Erro ao aplicar hierarquia em perfil aprovado:', error);
   });
@@ -530,6 +538,7 @@ async function registerManualProfile(guild, user, {
 
   data[guild.id][user.id] = profile;
   writeProfiles(data);
+  queueFrequencyDashboardRefresh(guild);
   await syncApprovedHierarchyForMember(guild, user.id, 'Hierarquia Vortex: perfil manual registrado').catch((error) => {
     logger.error('Erro ao aplicar hierarquia em perfil manual:', error);
   });
@@ -1054,6 +1063,7 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   }
 
   writeProfiles(data);
+  queueFrequencyDashboardRefresh(guild);
 
   return { ok: true, deleted: true, deletedCount, channelDeleted, approvedRoleRemoved, pendingRoleAdded };
 }
