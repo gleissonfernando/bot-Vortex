@@ -1,11 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { collection } from '../db.js';
 
 type ProfileData = Record<string, any>;
 type RegisteredProfileRef = {
   guildId: string | null;
   userId: string;
+};
+
+type JsonDocumentRecord = {
+  key?: string;
+  data?: unknown;
 };
 
 function normalizeDiscordId(value: unknown) {
@@ -30,7 +36,7 @@ function resolveProfilesPath() {
     || path.join(process.cwd(), 'commands', 'perfis.json');
 }
 
-function readProfiles() {
+function readProfilesFromDisk() {
   const filePath = resolveProfilesPath();
   if (!fs.existsSync(filePath)) return {};
 
@@ -40,6 +46,23 @@ function readProfiles() {
     console.warn('[frequency-api] Nao foi possivel ler commands/perfis.json:', error);
     return {};
   }
+}
+
+async function readProfilesFromMongo() {
+  try {
+    const documents = await collection<JsonDocumentRecord>('jsondocuments');
+    const document = await documents.findOne({ key: 'commands/perfis.json' });
+    const data = document?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    return data as ProfileData;
+  } catch (error) {
+    console.warn('[frequency-api] Nao foi possivel ler commands/perfis.json no MongoDB:', error);
+    return null;
+  }
+}
+
+async function readProfiles() {
+  return await readProfilesFromMongo() || readProfilesFromDisk();
 }
 
 function hasRegistrationData(profile: any) {
@@ -66,8 +89,8 @@ function addProfileRef(refs: RegisteredProfileRef[], seen: Set<string>, guildId:
   refs.push({ guildId: normalizedGuildId, userId: normalizedUserId });
 }
 
-export function getRegisteredProfileRefs(guildId?: string | null) {
-  const data = readProfiles();
+export async function getRegisteredProfileRefs(guildId?: string | null) {
+  const data = await readProfiles();
   const refs: RegisteredProfileRef[] = [];
   const seen = new Set<string>();
   const requestedGuildId = normalizeDiscordId(guildId);
@@ -92,8 +115,8 @@ export function getRegisteredProfileRefs(guildId?: string | null) {
   return refs.filter((ref) => !ref.guildId || ref.guildId === requestedGuildId);
 }
 
-export function buildRegisteredMemberFilter(guildId?: string | null) {
-  const refs = getRegisteredProfileRefs(guildId);
+export async function buildRegisteredMemberFilter(guildId?: string | null) {
+  const refs = await getRegisteredProfileRefs(guildId);
   if (!refs.length) return { discord_user_id: { $in: [] } };
 
   const requestedGuildId = normalizeDiscordId(guildId);
@@ -109,12 +132,12 @@ export function buildRegisteredMemberFilter(guildId?: string | null) {
   return clauses.length === 1 ? clauses[0] : { $or: clauses };
 }
 
-export function isRegisteredProfile(guildId: unknown, userId: unknown) {
+export async function isRegisteredProfile(guildId: unknown, userId: unknown) {
   const normalizedGuildId = normalizeDiscordId(guildId);
   const normalizedUserId = normalizeDiscordId(userId);
   if (!normalizedUserId) return false;
 
-  return getRegisteredProfileRefs(normalizedGuildId).some((ref) => (
+  return (await getRegisteredProfileRefs(normalizedGuildId)).some((ref) => (
     ref.userId === normalizedUserId && (!normalizedGuildId || !ref.guildId || ref.guildId === normalizedGuildId)
   ));
 }

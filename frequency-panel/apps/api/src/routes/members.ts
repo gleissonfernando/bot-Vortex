@@ -16,7 +16,7 @@ export async function memberAvatarHandler(req: any, res: any) {
   } catch {
     return res.status(404).end();
   }
-  if (!member || !isRegisteredProfile(member.guild_id, member.discord_user_id)) return res.status(404).end();
+  if (!member || !(await isRegisteredProfile(member.guild_id, member.discord_user_id))) return res.status(404).end();
 
   const avatarUrl = String(member?.avatar_url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
   if (!avatarUrl) return res.status(404).end();

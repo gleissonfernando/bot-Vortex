@@ -139,7 +139,7 @@ function startProxy() {
       console.error('[shardcloud] proxy error:', error.message);
       if (isApi) {
         if (!res.headersSent) res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify({ ok: false, error: 'Frequency API unavailable' }));
+        res.end(JSON.stringify({ ok: false, error: 'Vortex API unavailable' }));
         return;
       }
 
@@ -152,14 +152,14 @@ function startProxy() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="refresh" content="10">
-  <title>Vortex Frequency iniciando</title>
+  <title>Vortex iniciando</title>
   <style>
     body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif}
     main{max-width:520px;padding:28px;border:1px solid rgba(96,165,250,.28);border-radius:10px;background:rgba(15,23,42,.72);text-align:center}
     h1{margin:0 0 12px;font-size:22px}p{line-height:1.5;color:#cbd5e1}
   </style>
 </head>
-<body><main><h1>Vortex Frequency iniciando</h1><p>O painel ainda esta subindo ou reiniciando. A pagina vai tentar novamente em alguns segundos.</p></main></body>
+<body><main><h1>Vortex iniciando</h1><p>O painel ainda esta subindo ou reiniciando. A pagina vai tentar novamente em alguns segundos.</p></main></body>
 </html>`);
     });
 

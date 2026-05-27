@@ -38,8 +38,9 @@ function rangeFilter(field: string, from?: string, to?: string) {
 export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
+  const registeredMemberFilter = await buildRegisteredMemberFilter();
   const registeredMembers = await members
-    .find(buildRegisteredMemberFilter(), { projection: { id: 1 } })
+    .find(registeredMemberFilter, { projection: { id: 1 } })
     .toArray();
   const registeredMemberIds = registeredMembers
     .map((member: any) => String(member.id || ''))

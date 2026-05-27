@@ -46,5 +46,5 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 await ensureAdminUser();
 
 app.listen(env.apiPort, () => {
-  console.log(`Vortex Frequency API running on port ${env.apiPort}`);
+  console.log(`Vortex API running on port ${env.apiPort}`);
 });
