@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
+import { collection } from '../db.js';
 import { requireManager } from '../middleware.js';
 
 const toolSections = [
@@ -46,8 +47,24 @@ export function readConfig() {
   }
 }
 
-function writeConfig(config: Record<string, any>) {
+async function writeConfig(config: Record<string, any>) {
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  try {
+    await (await collection('jsondocuments')).updateOne(
+      { key: 'commands/config.json' },
+      {
+        $set: {
+          key: 'commands/config.json',
+          sourcePath: configPath,
+          data: config,
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  } catch (error) {
+    console.warn('[frequency-api] Nao foi possivel sincronizar commands/config.json no Mongo:', error);
+  }
 }
 
 function pickBotConfig(config: Record<string, any>) {
@@ -198,6 +215,6 @@ botVortexRouter.put('/config', requireManager, async (req, res) => {
     next.MAINTENANCE_BY = req.user?.id || req.user?.email || 'frequency-panel';
     next.MAINTENANCE_SINCE = Date.now();
   }
-  writeConfig(next);
+  await writeConfig(next);
   res.json({ ok: true, config: pickBotConfig(next), maintenance: getMaintenanceStatus(next), applied: Object.keys(patch) });
 });

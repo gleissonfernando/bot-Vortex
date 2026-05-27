@@ -29,6 +29,7 @@ const { initPointAutomation } = require('./utils/pointAutomation');
 const { initLiveAlertMonitor } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
 const { initDailyBauReport } = require('./utils/bauManager');
+const { initMaintenanceConfigSync } = require('./utils/maintenanceMode');
 const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
 const {
     getPointTranscriptRecord,
@@ -451,6 +452,7 @@ async function start() {
         throw new Error('MongoDB obrigatorio, mas a conexao falhou. Verifique MONGODB_URI/MONGO_URI e acesso de rede.');
     }
     if (connected) await initializeMongoJsonStore();
+    initMaintenanceConfigSync();
 
     await client.login(config.token).catch(err => {
         console.error('[VORTEX] Falha no Login:', err.message);

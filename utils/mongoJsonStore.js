@@ -529,6 +529,36 @@ async function refreshMongoJsonKeys(keys = []) {
   return refreshed;
 }
 
+function refreshLocalJsonKeys(keys = []) {
+  const normalizedKeys = Array.from(new Set((Array.isArray(keys) ? keys : [keys])
+    .map((key) => String(key || '').replace(/\\/g, '/').trim())
+    .filter(Boolean)));
+
+  const refreshed = [];
+  for (const key of normalizedKeys) {
+    const sourcePath = getLocalSourcePath(key);
+    const storeKey = toStoreKey(sourcePath);
+    if (!storeKey) continue;
+
+    try {
+      const data = readJsonFromDisk(sourcePath);
+      if (data === null) continue;
+      cacheJson(storeKey, sourcePath, normalizeDataForMongo(storeKey, data), false);
+      refreshed.push(storeKey);
+    } catch (error) {
+      logDatabaseError({
+        event: 'json_document_local_refresh',
+        error,
+        payload: { key: storeKey, sourcePath },
+        query: 'refreshLocalJsonKeys',
+        params: { key: storeKey, sourcePath },
+      });
+    }
+  }
+
+  return refreshed;
+}
+
 async function initializeMongoJsonStore() {
   installMongoJsonStoreBridge();
   if (!isMongoConfigured() || !isMongoConnected()) return;
@@ -561,6 +591,7 @@ module.exports = {
   initializeMongoJsonStore,
   flushMongoJsonStore,
   getMongoJsonStoreStatus,
+  refreshLocalJsonKeys,
   refreshMongoJsonKeys,
   toStoreKey,
 };
