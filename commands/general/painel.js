@@ -1884,7 +1884,7 @@ module.exports = {
         data.POINT_ONLINE_CHANNEL_ID = channelId;
         saveJSON(CONFIG_PATH, data);
         await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
-        await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+        await updateStatusPanel(interaction.client, interaction.guild.id, { forceVisibilitySync: true }).catch(() => null);
 
         sendVortexLog(interaction.client, {
             title: 'Canal do Painel Online Alterado',
@@ -1925,7 +1925,7 @@ module.exports = {
         saveJSON(CONFIG_PATH, data);
         await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
         await syncOnlineChannelVisibility(interaction.guild, channel).catch(() => null);
-        await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+        await updateStatusPanel(interaction.client, interaction.guild.id, { forceVisibilitySync: true }).catch(() => null);
 
         sendVortexLog(interaction.client, {
             title: 'Call online do ponto alterada',

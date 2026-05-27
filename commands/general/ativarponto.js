@@ -6,6 +6,7 @@ const {
   getPointConfig,
   ensureOnlineChannelBotAccess,
   savePanel,
+  syncOnlineChannelVisibility,
 } = require('../../utils/pontoPanel');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
 const { safeReply, safeEdit, safeDeferReply } = require('../../utils/safeReply');
@@ -46,6 +47,7 @@ module.exports = {
       });
     }
     await ensureOnlineChannelBotAccess(interaction.guild, onlineChannel).catch(() => null);
+    await syncOnlineChannelVisibility(interaction.guild, onlineChannel).catch(() => null);
 
     const controlPayload = buildThemedPanelPayload('ponto', createControlEmbed(), {
       components: [createControlRow()],

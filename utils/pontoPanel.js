@@ -15,6 +15,7 @@ const DEFAULT_PONTO_ACTION_CHANNEL_ID = '1498087608390127806';
 const PONTO_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_PONTO_ONLINE_VOICE_CHANNEL_ID = process.env.POINT_ONLINE_VOICE_CHANNEL_ID || process.env.FIVEM_ONLINE_CALL_ID || '';
 const DEFAULT_PONTO_ADJUST_CATEGORY_ID = '1498087442304073870';
+const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 let statusPanelInterval = null;
 let statusPanelUpdateRunning = false;
 const transientPanelFailures = new Map();
@@ -71,6 +72,23 @@ function getPointConfig() {
       ? config.POINT_ADJUST_STAFF_ROLES.map(String)
       : [],
   };
+}
+
+function normalizeRoleIds(list) {
+  return Array.isArray(list)
+    ? list.map(String).map((roleId) => roleId.trim()).filter(Boolean)
+    : [];
+}
+
+function getOnlinePanelManagerRoleIds(config = readConfig()) {
+  const levels = config.VORTEX_ROLE_LEVELS || {};
+  return [...new Set([
+    ...MASTER_ROLE_IDS,
+    ...normalizeRoleIds(config.STAFF_ROLES),
+    ...normalizeRoleIds(levels.admin),
+    ...normalizeRoleIds(levels.medio),
+    ...normalizeRoleIds(config.POINT_ADJUST_STAFF_ROLES),
+  ])];
 }
 
 function savePanel(guildId, data) {
@@ -307,7 +325,7 @@ async function createStatusEmbed(guild) {
     .setFooter({ text: 'Atualização automática - Vortex Ponto' });
 }
 
-async function updateStatusPanel(client, guildId) {
+async function updateStatusPanel(client, guildId, options = {}) {
   if (isMaintenanceMode()) return false;
   if (!isPrimaryGuild(guildId)) return false;
   const panel = getPanel(guildId);
@@ -333,7 +351,7 @@ async function updateStatusPanel(client, guildId) {
       });
     }
 
-    if (shouldSyncVisibility(guild.id)) {
+    if (options.forceVisibilitySync || shouldSyncVisibility(guild.id)) {
       await syncOnlineChannelVisibility(guild, channel).catch((error) => {
         logStatusPanelError(guild.id, error);
       });
@@ -413,6 +431,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 
 async function syncOnlineChannelVisibility(guild, channel) {
   const activePointUserIds = await getActivePointUserIds(guild.id);
+  const managerRoleIds = getOnlinePanelManagerRoleIds();
   const botId = guild.client?.user?.id ? String(guild.client.user.id) : null;
 
   await ensureOnlineChannelBotAccess(guild, channel).catch(() => null);
@@ -420,6 +439,12 @@ async function syncOnlineChannelVisibility(guild, channel) {
   await channel.permissionOverwrites.edit(guild.id, {
     ViewChannel: false,
   }).catch(() => null);
+
+  for (const roleId of managerRoleIds) {
+    await channel.permissionOverwrites.edit(roleId, getOnlinePermissionsForChannel(channel), {
+      reason: isVoiceChannel(channel) ? 'Gerencia do ponto: manter call online visivel' : 'Gerencia do ponto: manter painel online visivel',
+    }).catch(() => null);
+  }
 
   for (const userId of activePointUserIds) {
     await channel.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(channel), {
@@ -471,6 +496,7 @@ module.exports = {
   PONTO_ONLINE_CHANNEL_ID,
   DEFAULT_PONTO_ADJUST_CATEGORY_ID,
   getPointConfig,
+  getOnlinePanelManagerRoleIds,
   savePanel,
   getPanel,
   createControlEmbed,

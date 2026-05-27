@@ -307,7 +307,7 @@ module.exports = {
                 return safeEdit(interaction, { content: `❌ ${result.message}` });
             }
 
-            await updateStatusPanel(client, guild.id);
+            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
             await interaction.message.edit({ components: [] }).catch(() => {});
             await interaction.channel.send({
                 content: [
@@ -349,14 +349,14 @@ module.exports = {
                 })
                 : await closePoint(guild.id, user.id);
 
-            if (result.action === 'opened') {
+            if (result.action === 'opened' || (opening && result.action === 'already_open')) {
                 await setOnlineChannelAccess(client, guild.id, user.id, true);
             }
-            if (result.action === 'closed') {
+            if (result.action === 'closed' || (!opening && result.action === 'already_closed')) {
                 await setOnlineChannelAccess(client, guild.id, user.id, false);
             }
 
-            await updateStatusPanel(client, guild.id);
+            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
             if (result.action === 'opened' || result.action === 'closed') {
                 queuePointSnapshotSync(client);
             }
