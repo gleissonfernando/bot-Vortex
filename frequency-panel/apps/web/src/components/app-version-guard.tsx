@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-const APP_SHELL_VERSION = '2026-05-27-reports-nav';
+const APP_SHELL_VERSION = '2026-05-27-vortex-brand';
 const STORAGE_KEY = 'vortex_frequency_shell_version';
 
 export function AppVersionGuard() {

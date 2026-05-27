@@ -51,7 +51,7 @@ export default function LoginPage() {
             <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">Vortex Frequency</h1>
+            <h1 className="text-xl font-semibold text-white">Vortex</h1>
             <p className="text-sm text-slate-400">Acesso administrativo</p>
           </div>
         </div>

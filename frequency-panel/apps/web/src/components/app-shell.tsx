@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
           <div>
-            <h1 className="text-base font-semibold">Vortex Frequency</h1>
+            <h1 className="text-base font-semibold">Vortex</h1>
             <p className="text-xs text-slate-500">Operacao em tempo real</p>
           </div>
         </div>
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
               </div>
               <div className="min-w-0">
-                <h1 className="truncate text-sm font-semibold">Vortex Frequency</h1>
+                <h1 className="truncate text-sm font-semibold">Vortex</h1>
                 <p className="text-xs text-slate-500">Tempo real</p>
               </div>
             </Link>

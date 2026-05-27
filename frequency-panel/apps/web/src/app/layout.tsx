@@ -4,7 +4,7 @@ import { MaintenanceBanner } from '@/components/maintenance-banner';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Vortex Frequency',
+  title: 'Vortex',
   description: 'Painel de frequencia para membros do Discord'
 };
 
