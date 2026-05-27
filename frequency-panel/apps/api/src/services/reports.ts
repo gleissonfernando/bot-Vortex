@@ -11,6 +11,16 @@ function thirtyDaysAgo() {
   return date;
 }
 
+function cityOnlineFilter() {
+  return {
+    closed_at: null,
+    $or: [
+      { source: /fivem/i },
+      { note: /fivem|metropole|metropole rp|cidade/i }
+    ]
+  };
+}
+
 function rangeFilter(field: string, from?: string, to?: string) {
   const range: Record<string, Date> = {};
   const fromDate = toDate(from);
@@ -27,16 +37,18 @@ function rangeFilter(field: string, from?: string, to?: string) {
 export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
+  const onlineFilter = cityOnlineFilter();
 
-  const [totalMembers, activeMembers, openPoints, monthSessions, trendSessions, recentSessions, recentMembers] = await Promise.all([
+  const [totalMembers, activeMemberIds, openPoints, monthSessions, trendSessions, cityOnlineSessions] = await Promise.all([
     members.countDocuments({}),
-    members.countDocuments({ status: 'active' }),
+    sessions.distinct('member_id', onlineFilter),
     sessions.countDocuments({ closed_at: null }),
     sessions.find({ opened_at: { $gte: monthStart() } }).toArray(),
     sessions.find({ opened_at: { $gte: thirtyDaysAgo() } }).sort({ opened_at: 1 }).toArray(),
     sessions.aggregate([
+      { $match: onlineFilter },
       { $sort: { opened_at: -1 } },
-      { $limit: 8 },
+      { $limit: 12 },
       {
         $lookup: {
           from: 'discord_members',
@@ -55,22 +67,15 @@ export async function dashboardMetrics() {
           closed_at: 1,
           total_seconds: 1,
           source: 1,
+          note: 1,
           member_name: '$member.display_name',
           username: '$member.username',
           avatar_url: '$member.avatar_url',
-          discord_user_id: '$member.discord_user_id'
+          discord_user_id: '$member.discord_user_id',
+          role: '$member.highest_role_name'
         }
       }
-    ]).toArray(),
-    members.find({ last_seen_at: { $ne: null } }).sort({ last_seen_at: -1 }).limit(6).project({
-      id: 1,
-      display_name: 1,
-      username: 1,
-      avatar_url: 1,
-      discord_user_id: 1,
-      last_seen_at: 1,
-      highest_role_name: 1
-    }).toArray()
+    ]).toArray()
   ]);
 
   const trendMap = new Map<string, { date_key: string; points: number; total_seconds: number }>();
@@ -85,35 +90,30 @@ export async function dashboardMetrics() {
   return {
     metrics: {
       total_members: totalMembers,
-      active_members: activeMembers,
+      active_members: activeMemberIds.length,
       open_points: openPoints,
       month_seconds: (monthSessions as any[]).reduce((sum, session) => sum + Number(session.total_seconds || 0), 0)
     },
     trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key)),
     activity: [
-      ...(recentSessions as any[]).map((item) => ({
-        id: String(item.id || `${item.member_id || item.discord_user_id}:${item.at}`),
-        type: item.action === 'closed' ? 'point.closed' : 'point.opened',
-        title: item.action === 'closed' ? 'Ponto fechado' : 'Ponto aberto',
-        member_name: item.member_name || item.username || 'Membro',
-        username: item.username || null,
-        avatar_url: item.avatar_url || null,
-        discord_user_id: item.discord_user_id || null,
-        at: item.at ? item.at.toISOString() : null,
-        total_seconds: Number(item.total_seconds || 0),
-        source: item.source || 'bot'
-      })),
-      ...(recentMembers as any[]).map((member) => ({
-        id: `presence:${member.id}`,
-        type: 'presence.seen',
-        title: 'Presenca detectada',
-        member_name: member.display_name || member.username || 'Membro',
-        username: member.username || null,
-        avatar_url: member.avatar_url || null,
-        discord_user_id: member.discord_user_id || null,
-        at: member.last_seen_at ? member.last_seen_at.toISOString() : null,
-        role: member.highest_role_name || null
-      }))
+      ...(cityOnlineSessions as any[]).map((item) => {
+        const openedAt = item.opened_at instanceof Date ? item.opened_at : toDate(item.opened_at);
+        const elapsedSeconds = openedAt ? Math.max(0, Math.floor((Date.now() - openedAt.getTime()) / 1000)) : 0;
+        return {
+          id: String(item.id || `${item.member_id || item.discord_user_id}:${item.at}`),
+          type: 'city.online',
+          title: 'Na cidade agora',
+          member_name: item.member_name || item.username || 'Membro',
+          username: item.username || null,
+          avatar_url: item.avatar_url || null,
+          discord_user_id: item.discord_user_id || null,
+          at: openedAt ? openedAt.toISOString() : null,
+          total_seconds: elapsedSeconds,
+          source: item.source || 'fivem',
+          role: item.role || null,
+          city: item.note || 'FiveM'
+        };
+      })
     ]
       .filter((item) => item.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))

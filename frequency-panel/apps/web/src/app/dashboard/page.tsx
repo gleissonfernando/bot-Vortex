@@ -29,6 +29,7 @@ type Metrics = {
     total_seconds?: number;
     source?: string;
     role?: string | null;
+    city?: string | null;
   }>;
 };
 
@@ -84,7 +85,7 @@ export default function DashboardPage() {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Membros" value={data?.metrics.total_members ?? '...'} helper="Total sincronizado" icon={Users} tone="blue" />
-        <StatCard label="Ativos" value={data?.metrics.active_members ?? '...'} helper="Com presenca recente" icon={Activity} tone="emerald" />
+        <StatCard label="Ativos" value={data?.metrics.active_members ?? '...'} helper="Na cidade agora" icon={Activity} tone="emerald" />
         <StatCard label="Pontos abertos" value={data?.metrics.open_points ?? '...'} helper="Em andamento" icon={Radio} tone="rose" />
         <StatCard label="Tempo no mes" value={data ? formatSeconds(data.metrics.month_seconds) : '...'} helper="Soma mensal" icon={Clock} tone="violet" />
       </section>
@@ -107,7 +108,7 @@ export default function DashboardPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold text-white">Atividades dos membros</h2>
-              <p className="text-sm text-slate-500">Eventos chegando do bot em tempo real</p>
+              <p className="text-sm text-slate-500">Somente quem esta logado na cidade agora</p>
             </div>
             <span className="rounded-full border border-emerald-300/15 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200">
               Live
@@ -119,7 +120,7 @@ export default function DashboardPage() {
             ))}
             {data && !data.activity.length ? (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-500">
-                Nenhuma atividade recente encontrada.
+                Nenhum membro logado na cidade agora.
               </div>
             ) : null}
             {!data ? (
@@ -138,6 +139,7 @@ function ActivityRow({ item }: { item: Metrics['activity'][number] }) {
   const initials = (item.member_name || item.username || 'VX').slice(0, 2).toUpperCase();
   const isOpen = item.type === 'point.opened';
   const isClosed = item.type === 'point.closed';
+  const isCityOnline = item.type === 'city.online';
 
   return (
     <div className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.055]">
@@ -156,13 +158,15 @@ function ActivityRow({ item }: { item: Metrics['activity'][number] }) {
               ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200'
               : isClosed
                 ? 'border-rose-300/15 bg-rose-400/10 text-rose-200'
-                : 'border-sky-300/15 bg-sky-400/10 text-sky-200'
+                : isCityOnline
+                  ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200'
+                  : 'border-sky-300/15 bg-sky-400/10 text-sky-200'
           }`}>
-            {isOpen ? 'Entrada' : isClosed ? 'Saida' : 'Presenca'}
+            {isOpen ? 'Entrada' : isClosed ? 'Saida' : isCityOnline ? 'Na cidade' : 'Presenca'}
           </span>
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-          <span>{item.title}{item.total_seconds ? ` · ${formatSeconds(item.total_seconds)}` : ''}</span>
+          <span>{item.title}{item.city ? ` - ${item.city}` : ''}{item.total_seconds ? ` - ${formatSeconds(item.total_seconds)}` : ''}</span>
           <span className="shrink-0">{formatRelative(item.at)}</span>
         </div>
       </div>
