@@ -419,8 +419,34 @@ client.on('shardReconnecting', (shardId) => {
     logger.warn(`Reconectando shard ${shardId} ao gateway Discord...`);
 });
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readPositiveInt(name, fallback) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+async function connectDatabaseForStartup() {
+    const attempts = isMongoRequired() ? readPositiveInt('MONGODB_STARTUP_RETRIES', 5) : 1;
+    const delayMs = readPositiveInt('MONGODB_STARTUP_RETRY_MS', 5000);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        const connected = await connectDatabase();
+        if (connected) return true;
+
+        if (attempt < attempts) {
+            logger.warn(`MongoDB indisponivel no startup. Nova tentativa em ${Math.round(delayMs / 1000)}s (${attempt}/${attempts}).`);
+            await sleep(delayMs);
+        }
+    }
+
+    return false;
+}
+
 async function start() {
-    const connected = await connectDatabase();
+    const connected = await connectDatabaseForStartup();
     if (!connected && isMongoRequired()) {
         throw new Error('MongoDB obrigatorio, mas a conexao falhou. Verifique MONGODB_URI/MONGO_URI e acesso de rede.');
     }

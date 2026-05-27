@@ -48,6 +48,9 @@ const publicBaseUrl = (
   || process.env.APP_URL
   || 'https://bot-vortex.shardweb.app'
 ).replace(/\/+$/, '');
+const childRestartState = new Map();
+const managedChildren = new Set();
+let shuttingDown = false;
 
 function envFlag(name, fallback = true) {
   const value = process.env[name];
@@ -98,19 +101,47 @@ function run(command, args, options = {}) {
 
 function start(name, command, args, options = {}) {
   console.log(`[shardcloud] starting ${name}: ${command} ${args.join(' ')}`);
+  const startedAt = Date.now();
   const child = spawn(command, args, {
     cwd: options.cwd || rootDir,
     env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '1', ...(options.env || {}) },
     shell: process.platform === 'win32',
     stdio: 'inherit'
   });
+  managedChildren.add(child);
 
   child.on('exit', (code, signal) => {
+    managedChildren.delete(child);
     console.error(`[shardcloud] ${name} stopped (${signal || code})`);
     if (options.fatal !== false) process.exit(code || 1);
+    if (!options.restart || shuttingDown) return;
+
+    const state = childRestartState.get(name) || { attempts: 0 };
+    if (Date.now() - startedAt > 60 * 1000) state.attempts = 0;
+    state.attempts += 1;
+    const delayMs = Math.min(60 * 1000, 1000 * (2 ** Math.min(state.attempts - 1, 6)));
+    childRestartState.set(name, state);
+    console.error(`[shardcloud] restarting ${name} in ${Math.round(delayMs / 1000)}s (attempt ${state.attempts})`);
+    const timer = setTimeout(() => {
+      state.timer = null;
+      start(name, command, args, options);
+    }, delayMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    state.timer = timer;
   });
 
   return child;
+}
+
+function stopManagedChildren(signal) {
+  shuttingDown = true;
+  for (const state of childRestartState.values()) {
+    if (state.timer) clearTimeout(state.timer);
+  }
+  childRestartState.clear();
+  for (const child of managedChildren) {
+    child.kill(signal);
+  }
 }
 
 process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
@@ -288,7 +319,8 @@ async function main() {
           DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || (fivemSystemEnabled ? '100' : (botLightMode ? '0' : '500')),
           MONGODB_REQUIRED: process.env.BOT_MONGODB_REQUIRED || 'false'
         },
-        fatal: false
+        fatal: false,
+        restart: true
       });
     }
   } else if (shouldStartDiscordBot) {
@@ -318,7 +350,8 @@ async function main() {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
           },
-          fatal: false
+          fatal: false,
+          restart: true
         });
       } else {
         const apiArgs = fs.existsSync(apiSource)
@@ -329,7 +362,8 @@ async function main() {
             API_PORT: apiPort,
             API_ORIGIN: process.env.API_ORIGIN
           },
-          fatal: false
+          fatal: false,
+          restart: true
         });
       }
     }
@@ -366,7 +400,8 @@ async function main() {
               INTERNAL_API_URL: process.env.INTERNAL_API_URL,
               NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
             },
-            fatal: false
+            fatal: false,
+            restart: true
           })
         : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
             cwd: rootDir,
@@ -374,7 +409,8 @@ async function main() {
               INTERNAL_API_URL: process.env.INTERNAL_API_URL,
               NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
             },
-            fatal: false
+            fatal: false,
+            restart: true
           });
     }
   } else {
@@ -388,13 +424,13 @@ main().catch((error) => {
 });
 
 process.on('SIGINT', () => {
-  web?.kill('SIGINT');
+  stopManagedChildren('SIGINT');
   proxyServer?.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  web?.kill('SIGTERM');
+  stopManagedChildren('SIGTERM');
   proxyServer?.close();
   process.exit(0);
 });
