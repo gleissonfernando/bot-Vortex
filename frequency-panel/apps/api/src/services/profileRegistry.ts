@@ -14,9 +14,22 @@ type JsonDocumentRecord = {
   data?: unknown;
 };
 
+let cachedProfiles: ProfileData | null = null;
+let cacheExpiresAt = 0;
+let profileReadPromise: Promise<ProfileData> | null = null;
+
 function normalizeDiscordId(value: unknown) {
   const text = String(value || '').trim();
   return /^\d{15,25}$/.test(text) ? text : null;
+}
+
+function readPositiveIntEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function profileCacheMs() {
+  return readPositiveIntEnv('PROFILE_REGISTRY_CACHE_MS', 30 * 1000);
 }
 
 function resolveProfilesPath() {
@@ -62,7 +75,20 @@ async function readProfilesFromMongo() {
 }
 
 async function readProfiles() {
-  return await readProfilesFromMongo() || readProfilesFromDisk();
+  const now = Date.now();
+  if (cachedProfiles && cacheExpiresAt > now) return cachedProfiles;
+  if (profileReadPromise) return profileReadPromise;
+
+  profileReadPromise = (async () => {
+    const data = await readProfilesFromMongo() || readProfilesFromDisk();
+    cachedProfiles = data;
+    cacheExpiresAt = Date.now() + profileCacheMs();
+    return data;
+  })().finally(() => {
+    profileReadPromise = null;
+  });
+
+  return profileReadPromise;
 }
 
 function hasRegistrationData(profile: any) {

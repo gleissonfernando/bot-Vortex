@@ -189,7 +189,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 
 function MemberAvatar({ member }: { member?: Member }) {
   const initials = (member?.display_name || member?.username || 'VX').slice(0, 2).toUpperCase();
-  const avatarUrl = member?.avatar_url ? `/api/members/${member.id}/avatar` : '';
+  const avatarUrl = normalizeAvatarUrl(member?.avatar_url);
 
   return (
     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-blue-500/15 text-lg font-semibold text-blue-200">
@@ -207,6 +207,10 @@ function MemberAvatar({ member }: { member?: Member }) {
       <span className="absolute inset-0 z-0 grid place-items-center">{initials}</span>
     </div>
   );
+}
+
+function normalizeAvatarUrl(url?: string | null) {
+  return String(url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
 }
 
 function SessionsTable({ sessions }: { sessions: AttendanceSession[] }) {

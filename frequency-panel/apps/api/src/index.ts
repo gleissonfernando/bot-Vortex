@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { ensureAdminUser } from './auth.js';
 import { env } from './env.js';
 import { requireAuth } from './middleware.js';
+import { absencesRouter } from './routes/absences.js';
 import { authRouter } from './routes/auth.js';
 import { bauRouter } from './routes/bau.js';
 import { botVortexRouter, getMaintenanceStatus } from './routes/bot-vortex.js';
@@ -31,6 +32,7 @@ app.get('/status/maintenance', (_req, res) => {
 app.use('/auth', authRouter);
 app.use('/events', eventsRouter);
 app.use('/ingest', ingestRouter);
+app.use('/absences', requireAuth, absencesRouter);
 app.use('/bau', requireAuth, bauRouter);
 app.use('/bot-vortex', requireAuth, botVortexRouter);
 app.use('/dashboard', requireAuth, dashboardRouter);

@@ -30,3 +30,33 @@ export type FrequencyDay = {
   sessions?: number;
   total_seconds: number;
 };
+
+export type AbsenceRecord = {
+  id: string;
+  guild_id: string;
+  discord_user_id: string;
+  member_id?: string | null;
+  member_name: string;
+  username?: string | null;
+  avatar_url?: string | null;
+  status: string;
+  reason?: string | null;
+  starts_at?: string | null;
+  started_at?: string | null;
+  ends_at?: string | null;
+  created_at?: string | null;
+  approved_at?: string | null;
+  approved_by_id?: string | null;
+  approved_by_name?: string | null;
+  rejected_at?: string | null;
+  rejected_by_id?: string | null;
+  rejected_by_name?: string | null;
+  removed_at?: string | null;
+  removed_by_id?: string | null;
+  removed_by_name?: string | null;
+  finished_at?: string | null;
+  decided_at?: string | null;
+  decided_by_id?: string | null;
+  decided_by_name?: string | null;
+  period_days: number;
+};
