@@ -23,8 +23,10 @@ type Metrics = {
     type: string;
     title: string;
     member_name: string;
+    global_name?: string | null;
     username?: string | null;
     avatar_url?: string | null;
+    banner_url?: string | null;
     at?: string | null;
     total_seconds?: number;
     source?: string;
@@ -136,7 +138,8 @@ export default function DashboardPage() {
 }
 
 function ActivityRow({ item }: { item: Metrics['activity'][number] }) {
-  const initials = (item.member_name || item.username || 'VX').slice(0, 2).toUpperCase();
+  const displayName = item.global_name || item.member_name || item.username || 'Membro';
+  const initials = displayName.slice(0, 2).toUpperCase();
   const isOpen = item.type === 'point.opened';
   const isClosed = item.type === 'point.closed';
   const isCityOnline = item.type === 'city.online';
@@ -144,13 +147,13 @@ function ActivityRow({ item }: { item: Metrics['activity'][number] }) {
   return (
     <div className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.055]">
       <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-white/[0.06] text-sm font-semibold text-slate-200">
-        {item.avatar_url ? <img src={item.avatar_url} alt={item.member_name} className="relative z-10 h-full w-full object-cover" /> : null}
+        {item.avatar_url ? <img src={item.avatar_url} alt={displayName} className="relative z-10 h-full w-full object-cover" /> : null}
         <span className="absolute inset-0 grid place-items-center">{initials}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">{item.member_name}</p>
+            <p className="truncate text-sm font-semibold text-white">{displayName}</p>
             <p className="truncate text-xs text-slate-500">{item.username || item.role || 'Vortex'}</p>
           </div>
           <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${

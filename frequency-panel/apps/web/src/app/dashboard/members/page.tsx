@@ -117,8 +117,8 @@ export default function MembersPage() {
                     <div className="flex items-center gap-3">
                       <MemberAvatar member={member} size="sm" />
                       <div>
-                        <div className="font-medium text-white">{member.display_name}</div>
-                        <div className="text-xs text-slate-500">{member.username}</div>
+                        <div className="font-medium text-white">{discordDisplayName(member)}</div>
+                        <div className="text-xs text-slate-500">{discordSubtitle(member)}</div>
                       </div>
                     </div>
                   </td>
@@ -149,9 +149,18 @@ export default function MembersPage() {
   );
 }
 
+function discordDisplayName(member: Member) {
+  return member.global_name || member.display_name || member.username || 'Membro';
+}
+
+function discordSubtitle(member: Member) {
+  if (member.display_name && member.display_name !== discordDisplayName(member)) return member.display_name;
+  return member.username ? `@${member.username}` : member.discord_user_id;
+}
+
 function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | 'lg' }) {
   const sizeClass = size === 'lg' ? 'h-14 w-14 text-lg' : 'h-9 w-9 text-sm';
-  const initials = (member.display_name || member.username || 'VX').slice(0, 2).toUpperCase();
+  const initials = discordDisplayName(member).slice(0, 2).toUpperCase();
   const avatarUrl = normalizeAvatarUrl(member.avatar_url);
 
   return (
@@ -159,7 +168,7 @@ function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | '
       {avatarUrl ? (
         <img
           src={avatarUrl}
-          alt={member.display_name}
+          alt={discordDisplayName(member)}
           className="relative z-10 block h-full w-full object-cover"
           referrerPolicy="no-referrer"
           onError={(event) => {

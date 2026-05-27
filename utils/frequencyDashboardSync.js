@@ -7,11 +7,13 @@ const MEMBER_CHUNK_SIZE = 100;
 const SESSION_CHUNK_SIZE = 150;
 const MEMBER_SYNC_INTERVAL_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || 15 * 60 * 1000));
 const POINT_SYNC_INTERVAL_MS = Math.max(30 * 1000, Number(process.env.FREQUENCY_POINT_SYNC_INTERVAL_MS || 60 * 1000));
+const DISCORD_PROFILE_CACHE_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQUENCY_DISCORD_PROFILE_CACHE_MS || 30 * 60 * 1000));
 let intervalsStarted = false;
 let pointSyncQueued = false;
 let memberSyncQueued = false;
 let memberSyncRunning = false;
 let pointSyncRunning = false;
+const discordProfileCache = new Map();
 
 function getApiUrl() {
   return String(process.env.FREQUENCY_API_URL || process.env.INTERNAL_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
@@ -35,19 +37,35 @@ function getDisabledReason() {
   return 'configuracao incompleta';
 }
 
-function mapMember(member) {
+async function resolveDiscordUser(member) {
+  const cached = discordProfileCache.get(member.user.id);
+  if (cached && Date.now() - cached.cachedAt < DISCORD_PROFILE_CACHE_MS) return cached.user;
+
+  const fetched = await member.client?.users?.fetch?.(member.user.id, { force: true }).catch(() => null);
+  const user = fetched || member.user;
+  discordProfileCache.set(member.user.id, { user, cachedAt: Date.now() });
+  return user;
+}
+
+async function mapMember(member) {
+  const user = await resolveDiscordUser(member);
   const roles = member.roles?.cache
     ? Array.from(member.roles.cache.values())
         .filter((role) => role.id !== member.guild.id)
         .map((role) => ({ id: role.id, name: role.name }))
     : [];
+  const globalName = user?.globalName || member.user?.globalName || null;
 
   return {
     guildId: member.guild.id,
     discordUserId: member.user.id,
-    username: member.user.username,
-    displayName: member.displayName || member.user.username,
-    avatarUrl: member.user.displayAvatarURL?.({ size: 128, extension: 'png', forceStatic: true }) || null,
+    username: user?.username || member.user.username,
+    globalName,
+    displayName: member.displayName || globalName || user?.username || member.user.username,
+    avatarUrl: member.displayAvatarURL?.({ size: 128, extension: 'png', forceStatic: true })
+      || user?.displayAvatarURL?.({ size: 128, extension: 'png', forceStatic: true })
+      || null,
+    bannerUrl: user?.bannerURL?.({ size: 512, extension: 'png' }) || null,
     highestRoleId: member.roles?.highest?.id || null,
     highestRoleName: member.roles?.highest?.name || null,
     roles,
@@ -84,9 +102,9 @@ async function syncGuildMembers(client) {
   let total = 0;
   for (const guild of getPrimaryGuilds(client).values()) {
     const members = await guild.members.fetch().catch(() => guild.members.cache);
-    const payload = Array.from(members.values())
+    const payload = await Promise.all(Array.from(members.values())
       .filter((member) => !member.user?.bot)
-      .map(mapMember);
+      .map(mapMember));
 
     for (let index = 0; index < payload.length; index += MEMBER_CHUNK_SIZE) {
       const chunk = payload.slice(index, index + MEMBER_CHUNK_SIZE);
@@ -160,7 +178,7 @@ async function syncPointSnapshot(client) {
     for (const point of points) {
       const member = guild.members.cache.get(point.userId)
         || await guild.members.fetch(point.userId).catch(() => null);
-      if (member && !member.user?.bot) membersById.set(member.id, mapMember(member));
+      if (member && !member.user?.bot) membersById.set(member.id, await mapMember(member));
     }
 
     for (let index = 0; index < sessions.length; index += SESSION_CHUNK_SIZE) {

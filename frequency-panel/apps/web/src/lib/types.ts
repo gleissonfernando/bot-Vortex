@@ -3,8 +3,10 @@ export type Member = {
   guild_id: string;
   discord_user_id: string;
   username: string;
+  global_name?: string | null;
   display_name: string;
   avatar_url?: string | null;
+  banner_url?: string | null;
   highest_role_name?: string | null;
   status: 'active' | 'inactive';
   last_seen_at?: string | null;

@@ -10,8 +10,10 @@ export type MemberInput = {
   guildId: string;
   discordUserId: string;
   username: string;
+  globalName?: string | null;
   displayName: string;
   avatarUrl?: string | null;
+  bannerUrl?: string | null;
   highestRoleId?: string | null;
   highestRoleName?: string | null;
   roles?: Array<{ id: string; name: string }>;
@@ -40,8 +42,10 @@ export async function upsertMember(input: MemberInput) {
         guild_id: input.guildId,
         discord_user_id: input.discordUserId,
         username: input.username,
+        global_name: input.globalName || null,
         display_name: input.displayName,
         avatar_url: input.avatarUrl || null,
+        banner_url: input.bannerUrl || null,
         highest_role_id: input.highestRoleId || null,
         highest_role_name: input.highestRoleName || null,
         roles: input.roles || [],
@@ -78,6 +82,7 @@ export async function listMembers(params: {
     const pattern = new RegExp(params.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$or = [
       { display_name: pattern },
+      { global_name: pattern },
       { username: pattern },
       { discord_user_id: pattern }
     ];

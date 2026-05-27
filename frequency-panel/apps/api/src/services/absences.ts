@@ -232,7 +232,7 @@ async function loadMemberMap(absences: any[]) {
     const members = await collection('discord_members');
     const docs = await members.find(
       { discord_user_id: { $in: [...userIds] } },
-      { projection: { id: 1, guild_id: 1, discord_user_id: 1, username: 1, display_name: 1, avatar_url: 1 } }
+      { projection: { id: 1, guild_id: 1, discord_user_id: 1, username: 1, global_name: 1, display_name: 1, avatar_url: 1 } }
     ).toArray();
     const map = new Map<string, any>();
     for (const member of docs as any[]) {
@@ -253,7 +253,7 @@ function memberFromMap(map: Map<string, any>, guildId: string, userId?: string |
 
 function personName(map: Map<string, any>, guildId: string, userId?: string | null) {
   const member = memberFromMap(map, guildId, userId);
-  return member?.display_name || member?.username || userId || null;
+  return member?.global_name || member?.display_name || member?.username || userId || null;
 }
 
 function toRecord(absence: any, membersByUser: Map<string, any>): AbsenceRecord {
@@ -274,7 +274,7 @@ function toRecord(absence: any, membersByUser: Map<string, any>): AbsenceRecord 
     guild_id: guildId,
     discord_user_id: userId,
     member_id: member?.id || null,
-    member_name: absence.name || member?.display_name || member?.username || userId,
+    member_name: absence.name || member?.global_name || member?.display_name || member?.username || userId,
     username: member?.username || null,
     avatar_url: member?.avatar_url || null,
     status: String(absence.status || 'pending'),

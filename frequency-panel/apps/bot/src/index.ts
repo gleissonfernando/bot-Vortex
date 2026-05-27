@@ -15,9 +15,9 @@ const client = new Client({
 async function syncGuildMembers() {
   const guild = await client.guilds.fetch(env.discordGuildId);
   const members = await guild.members.fetch();
-  const payload = members
+  const payload = await Promise.all(members
     .filter((member) => !member.user.bot)
-    .map(mapMember);
+    .map(mapMember));
 
   const chunkSize = 100;
   for (let index = 0; index < payload.length; index += chunkSize) {
@@ -60,7 +60,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       discordUserId: interaction.user.id,
       actorId: interaction.user.id,
       note,
-      member: mapMember(guildMember)
+      member: await mapMember(guildMember)
     });
 
     const label = result.result?.action === 'opened'

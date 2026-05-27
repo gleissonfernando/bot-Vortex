@@ -77,6 +77,7 @@ export default function MemberProfilePage() {
 
   const member = payload?.member;
   const summary = payload?.report.summary;
+  const displayName = discordDisplayName(member);
 
   return (
     <AppShell>
@@ -87,8 +88,8 @@ export default function MemberProfilePage() {
             Voltar para membros
           </Link>
           <p className="text-sm font-medium text-blue-300">Perfil individual</p>
-          <h1 className="mt-1 text-2xl font-semibold text-white">{member?.display_name || 'Carregando membro'}</h1>
-          <p className="mt-1 text-sm text-slate-400">{member?.discord_user_id || 'Dados do Discord sincronizados pelo bot'}</p>
+          <h1 className="mt-1 text-2xl font-semibold text-white">{displayName || 'Carregando membro'}</h1>
+          <p className="mt-1 text-sm text-slate-400">{member?.username ? `@${member.username}` : member?.discord_user_id || 'Dados do Discord sincronizados pelo bot'}</p>
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -138,20 +139,23 @@ export default function MemberProfilePage() {
 
       {activeTab === 'Visao geral' ? (
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
-          <div className="panel rounded-lg p-5">
-            <div className="flex items-center gap-3">
-              <MemberAvatar member={member} />
-              <div>
-                <h2 className="font-semibold text-white">{member?.display_name}</h2>
-                <p className="text-sm text-slate-400">{member?.username}</p>
+          <div className="panel overflow-hidden rounded-lg">
+            <MemberBanner member={member} />
+            <div className="px-5 pb-5">
+              <div className="-mt-7 flex items-end gap-3">
+                <MemberAvatar member={member} />
+                <div className="pb-1">
+                  <h2 className="font-semibold text-white">{displayName}</h2>
+                  <p className="text-sm text-slate-400">{discordSubtitle(member)}</p>
+                </div>
               </div>
+              <dl className="mt-5 space-y-3 text-sm">
+                <Row label="Cargo" value={member?.highest_role_name || 'N/A'} />
+                <Row label="Status" value={member?.status || 'N/A'} />
+                <Row label="Ultima atividade" value={formatDate(summary?.last_activity_at || member?.last_seen_at)} />
+                <Row label="Discord ID" value={member?.discord_user_id || 'N/A'} mono />
+              </dl>
             </div>
-            <dl className="mt-5 space-y-3 text-sm">
-              <Row label="Cargo" value={member?.highest_role_name || 'N/A'} />
-              <Row label="Status" value={member?.status || 'N/A'} />
-              <Row label="Ultima atividade" value={formatDate(summary?.last_activity_at || member?.last_seen_at)} />
-              <Row label="Discord ID" value={member?.discord_user_id || 'N/A'} mono />
-            </dl>
           </div>
 
           <div className="panel rounded-lg p-5">
@@ -188,15 +192,15 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 }
 
 function MemberAvatar({ member }: { member?: Member }) {
-  const initials = (member?.display_name || member?.username || 'VX').slice(0, 2).toUpperCase();
+  const initials = (discordDisplayName(member) || 'VX').slice(0, 2).toUpperCase();
   const avatarUrl = normalizeAvatarUrl(member?.avatar_url);
 
   return (
-    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-blue-500/15 text-lg font-semibold text-blue-200">
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-white/15 bg-blue-500/15 text-lg font-semibold text-blue-200 shadow-lg shadow-black/30">
       {avatarUrl ? (
         <img
           src={avatarUrl}
-          alt={member?.display_name || 'Avatar'}
+          alt={discordDisplayName(member) || 'Avatar'}
           className="relative z-10 block h-full w-full object-cover"
           referrerPolicy="no-referrer"
           onError={(event) => {
@@ -207,6 +211,37 @@ function MemberAvatar({ member }: { member?: Member }) {
       <span className="absolute inset-0 z-0 grid place-items-center">{initials}</span>
     </div>
   );
+}
+
+function MemberBanner({ member }: { member?: Member }) {
+  const bannerUrl = normalizeAvatarUrl(member?.banner_url);
+
+  return (
+    <div className="relative h-32 overflow-hidden bg-gradient-to-br from-blue-950 via-slate-900 to-slate-950">
+      {bannerUrl ? (
+        <img
+          src={bannerUrl}
+          alt={discordDisplayName(member) || 'Banner do Discord'}
+          className="h-full w-full object-cover"
+          referrerPolicy="no-referrer"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : null}
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/10 to-transparent" />
+    </div>
+  );
+}
+
+function discordDisplayName(member?: Member) {
+  return member?.global_name || member?.display_name || member?.username || '';
+}
+
+function discordSubtitle(member?: Member) {
+  if (!member) return '';
+  if (member.display_name && member.display_name !== discordDisplayName(member)) return member.display_name;
+  return member.username ? `@${member.username}` : member.discord_user_id;
 }
 
 function normalizeAvatarUrl(url?: string | null) {

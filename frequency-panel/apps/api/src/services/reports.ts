@@ -38,7 +38,19 @@ export async function dashboardMetrics() {
   await ensureRegisteredMembers();
   const registeredMemberFilter = await buildRegisteredMemberFilter();
   const registeredMembers = await members
-    .find(registeredMemberFilter, { projection: { id: 1, guild_id: 1, discord_user_id: 1 } })
+    .find(registeredMemberFilter, {
+      projection: {
+        id: 1,
+        guild_id: 1,
+        discord_user_id: 1,
+        username: 1,
+        global_name: 1,
+        display_name: 1,
+        avatar_url: 1,
+        banner_url: 1,
+        highest_role_name: 1
+      }
+    })
     .toArray();
   const registeredMemberIds = registeredMembers
     .map((member: any) => String(member.id || ''))
@@ -85,9 +97,11 @@ export async function dashboardMetrics() {
         id: String(`${item.guild_id}:${item.discord_user_id}`),
         type: 'city.online',
         title: 'Na cidade agora',
-        member_name: member.display_name || member.username || 'Membro',
+        member_name: member.global_name || member.display_name || member.username || 'Membro',
+        global_name: member.global_name || null,
         username: member.username || null,
         avatar_url: member.avatar_url || null,
+        banner_url: member.banner_url || null,
         discord_user_id: member.discord_user_id || item.discord_user_id || null,
         at: startedAt ? startedAt.toISOString() : seenAt ? seenAt.toISOString() : null,
         total_seconds: elapsedSeconds,
