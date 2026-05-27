@@ -65,6 +65,8 @@ async function ensureIndexes(db: Db) {
     db.collection('app_users').createIndex({ email: 1 }, { unique: true }),
     db.collection('discord_members').createIndex({ guild_id: 1, discord_user_id: 1 }, { unique: true }),
     db.collection('discord_members').createIndex({ guild_id: 1, display_name: 1 }),
+    db.collection('city_presence').createIndex({ guild_id: 1, discord_user_id: 1 }, { unique: true }),
+    db.collection('city_presence').createIndex({ city_online: 1, seen_at: -1 }),
     db.collection('attendance_sessions').createIndex({ member_id: 1, opened_at: -1 }),
     db.collection('absence_records').createIndex({ member_id: 1, date_key: -1 }),
     db.collection('audit_events').createIndex({ created_at: -1 }),

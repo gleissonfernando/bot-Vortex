@@ -151,6 +151,7 @@ function pointSessionsFromRecord(point) {
 async function syncPointSnapshot(client) {
   if (!isEnabled()) return { skipped: true };
   let total = 0;
+  let cityPresenceTotal = 0;
   for (const guild of getPrimaryGuilds(client).values()) {
     const points = await listGuildPoints(guild.id);
     const membersById = new Map();
@@ -169,9 +170,10 @@ async function syncPointSnapshot(client) {
       await postToFrequencyApi('/ingest/point-snapshot', { members, sessions: chunk });
     }
     total += sessions.length;
+    cityPresenceTotal += await syncGuildCityPresences(guild);
   }
-  logger.info(`Frequency dashboard: ${total} sessao(oes) de ponto sincronizada(s).`);
-  return { total };
+  logger.info(`Frequency dashboard: ${total} sessao(oes) de ponto e ${cityPresenceTotal} presenca(s) de cidade sincronizada(s).`);
+  return { total, cityPresenceTotal };
 }
 
 function queuePointSnapshotSync(client, delayMs = 1500) {
@@ -192,14 +194,45 @@ function queueMemberSync(client, delayMs = 1500) {
   }, Math.max(1000, Number(delayMs) || 1500));
 }
 
-async function syncPresence(newPresence) {
+function buildCityPresenceDetails(presence) {
+  try {
+    const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
+    const activity = getTargetFiveMActivity(presence);
+    return {
+      cityOnline: Boolean(activity),
+      cityName: activity ? extractCityName(activity) : null,
+      activityName: activity?.name || null,
+      activityDetails: activity?.details || null,
+      activityState: activity?.state || null,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function syncPresence(newPresence, cityDetails = null) {
   if (!isEnabled() || !newPresence?.guild || !newPresence.userId) return null;
   if (!isPrimaryGuild(newPresence.guild.id)) return null;
+  const details = cityDetails || buildCityPresenceDetails(newPresence);
   return postToFrequencyApi('/ingest/presence', {
     guildId: newPresence.guild.id,
     discordUserId: newPresence.userId,
     seenAt: new Date().toISOString(),
+    ...(details || {}),
   }).catch(() => null);
+}
+
+async function syncGuildCityPresences(guild) {
+  const presences = guild.presences?.cache;
+  if (!presences?.size) return 0;
+
+  let total = 0;
+  for (const presence of presences.values()) {
+    if (!presence?.userId || presence.user?.bot) continue;
+    await syncPresence(presence, buildCityPresenceDetails(presence));
+    total += 1;
+  }
+  return total;
 }
 
 function runMemberSyncScheduled(client) {
@@ -254,6 +287,7 @@ module.exports = {
   initFrequencyDashboardSync,
   queueMemberSync,
   queuePointSnapshotSync,
+  syncGuildCityPresences,
   syncGuildMembers,
   syncPointSnapshot,
   syncPresence,

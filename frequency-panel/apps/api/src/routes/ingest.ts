@@ -89,21 +89,62 @@ ingestRouter.post('/presence', async (req, res) => {
   const parsed = z.object({
     guildId: z.string(),
     discordUserId: z.string(),
-    seenAt: z.string().optional()
+    seenAt: z.string().optional(),
+    cityOnline: z.boolean().optional(),
+    cityName: z.string().nullable().optional(),
+    activityName: z.string().nullable().optional(),
+    activityDetails: z.string().nullable().optional(),
+    activityState: z.string().nullable().optional()
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid presence payload' });
 
   try {
     const now = new Date();
+    const seenAt = toDate(parsed.data.seenAt) || now;
     await (await collection('discord_members')).updateOne(
       { guild_id: parsed.data.guildId, discord_user_id: parsed.data.discordUserId },
-      { $set: { last_seen_at: toDate(parsed.data.seenAt) || now, updated_at: now } }
+      { $set: { last_seen_at: seenAt, updated_at: now } }
     );
+
+    if (typeof parsed.data.cityOnline === 'boolean') {
+      const cityPresence = await collection('city_presence');
+      const existing = await cityPresence.findOne({
+        guild_id: parsed.data.guildId,
+        discord_user_id: parsed.data.discordUserId
+      });
+      const cityOnline = parsed.data.cityOnline;
+      const wasOnline = existing?.city_online === true && existing?.city_started_at;
+
+      await cityPresence.updateOne(
+        { guild_id: parsed.data.guildId, discord_user_id: parsed.data.discordUserId },
+        {
+          $set: {
+            guild_id: parsed.data.guildId,
+            discord_user_id: parsed.data.discordUserId,
+            city_online: cityOnline,
+            city_name: cityOnline ? (parsed.data.cityName || 'FiveM') : null,
+            activity_name: cityOnline ? (parsed.data.activityName || null) : null,
+            activity_details: cityOnline ? (parsed.data.activityDetails || null) : null,
+            activity_state: cityOnline ? (parsed.data.activityState || null) : null,
+            city_started_at: cityOnline ? (wasOnline ? existing.city_started_at : seenAt) : null,
+            city_left_at: cityOnline ? null : seenAt,
+            seen_at: seenAt,
+            updated_at: now
+          },
+          $setOnInsert: {
+            created_at: now
+          }
+        },
+        { upsert: true }
+      );
+    }
+
     publishDashboardEvent({
-      type: 'presence.updated',
+      type: typeof parsed.data.cityOnline === 'boolean' ? 'city_presence.updated' : 'presence.updated',
       payload: {
         guildId: parsed.data.guildId,
-        discordUserId: parsed.data.discordUserId
+        discordUserId: parsed.data.discordUserId,
+        cityOnline: parsed.data.cityOnline
       }
     });
     return res.json({ ok: true });
