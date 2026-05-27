@@ -19,6 +19,7 @@ const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils
 const { isPrimaryGuildChannel } = require('../utils/guildScope');
 const { createPointActionTranscriptSummary } = require('../utils/pointTranscriptNotifier');
 const { queuePointSnapshotSync } = require('../utils/frequencyDashboardSync');
+const { buildMaintenanceEmbed, isMaintenanceControlInteraction } = require('../utils/maintenanceMode');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -201,22 +202,9 @@ module.exports = {
         if (interaction.guildId && !isPrimaryGuild(interaction.guildId) && !isPublicExibirInteraction(interaction)) return;
 
         // Bloqueio de Manutenção VORTEX
-        if (conf.MAINTENANCE_MODE && !hasMasterPermission(member)) {
-            const maintEmbed = new EmbedBuilder()
-                .setTitle('⚠️ VORTEX | MANUTENÇÃO')
-                .setColor('#FF0055')
-                .setDescription('### 🛠️ Sistema em Manutenção\nO bot está passando por atualizações no momento para garantir a melhor experiência possível. Tente novamente mais tarde.')
-                .addFields({ name: '🕒 Previsão', value: 'Em breve', inline: true })
-                .setFooter({ text: 'Vortex Management System • Segurança & Estabilidade' })
-                .setTimestamp();
-            
-            const maintBtn = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setLabel('Chamar Suporte').setStyle(ButtonStyle.Link).setURL('https://discord.gg/vortex'),
-                new ButtonBuilder().setLabel('Status do Sistema').setStyle(ButtonStyle.Link).setURL('https://status.vortex.im').setDisabled(true)
-            );
-
+        if (conf.MAINTENANCE_MODE && !isMaintenanceControlInteraction(interaction, hasMasterPermission(member))) {
             if (interaction.isRepliable()) {
-                return safeReply(interaction, { embeds: [maintEmbed], components: [maintBtn], ephemeral: true });
+                return safeReply(interaction, { embeds: [buildMaintenanceEmbed(client, conf)], ephemeral: true, allowedMentions: { parse: [] } });
             }
             return;
         }
@@ -603,7 +591,7 @@ module.exports = {
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_panel_tool') {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_point_action_channel', 'select_point_adjust_category', 'select_point_online_voice_channel', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_point_action_channel', 'select_point_online_channel', 'select_point_adjust_category', 'select_point_online_voice_channel', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
             if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_fac_hierarchy_target' || interaction.customId === 'select_open_point_user' || interaction.customId === 'select_visual_target' || interaction.customId === 'select_adjust_call_id')) {

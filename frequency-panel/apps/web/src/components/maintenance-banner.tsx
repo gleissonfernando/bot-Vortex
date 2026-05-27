@@ -58,7 +58,7 @@ export function MaintenanceBanner() {
 
         <h2 className="mt-4 text-2xl font-semibold text-white">Sistema em manutencao</h2>
         <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-300">
-          {status.message || 'O sistema esta em manutencao. Algumas funcoes podem ficar indisponiveis.'}
+          {status.message || 'O sistema esta em manutencao. Nenhum comando, botao, formulario ou automacao fica disponivel ate a liberacao da equipe.'}
         </p>
 
         <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-300">

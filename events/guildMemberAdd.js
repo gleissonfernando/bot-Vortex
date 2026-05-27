@@ -6,10 +6,13 @@ const { sendStaffLog } = require('../utils/notifications');
 const { getUserProfile } = require('../utils/profileManager');
 const { applyApprovedHierarchy, applyPendingHierarchy, getVortexAutoRoles } = require('../utils/vortexHierarchy');
 const { memberHasFactionHierarchyRole, updateFactionHierarchyPanel } = require('../utils/factionHierarchy');
+const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
 module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
+        if (isMaintenanceMode()) return;
+
         try {
             const guild = member.guild;
             const client = guild.client;

@@ -2,10 +2,13 @@ const { ChannelType } = require('discord.js');
 const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { allowVoiceChannelAccess, syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 const { isPrimaryGuild } = require('../utils/guildScope');
+const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
 module.exports = {
   name: 'channelCreate',
   async execute(channel) {
+    if (isMaintenanceMode()) return;
+
     if (!channel?.guild) return;
     if (!isPrimaryGuild(channel.guild.id)) return;
 

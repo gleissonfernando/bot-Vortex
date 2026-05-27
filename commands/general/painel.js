@@ -84,6 +84,7 @@ const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const LOGS_MANAGER_IDS = ['289227932432334869'];
 const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
+const DEFAULT_POINT_ONLINE_CHANNEL_ID = '1498087749784178708';
 const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md');
 const commandPermissionSelections = new Map();
@@ -747,6 +748,10 @@ module.exports = {
     .setDescription('VORTEX MANAGEMENT SYSTEM - Painel de Controle'),
 
   async execute(interaction) {
+    const conf = loadJSON(CONFIG_PATH);
+    if (conf.MAINTENANCE_MODE && hasMasterPermission(interaction.member)) {
+      return renderDashboard(interaction, 'tab_manutencao');
+    }
     return renderDashboard(interaction, 'tab_stats');
   },
 
@@ -1868,6 +1873,30 @@ module.exports = {
         return renderDashboard(interaction, 'tab_manutencao', true);
     }
 
+    if (interaction.customId === 'select_point_online_channel') {
+        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: 'Apenas Admin Vortex pode configurar ponto.', ephemeral: true });
+        const channelId = String(interaction.values[0]);
+        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+        if (!isTextChannel(channel)) {
+            return safeReply(interaction, { content: 'Selecione um canal de texto valido para o painel online.', ephemeral: true });
+        }
+
+        data.POINT_ONLINE_CHANNEL_ID = channelId;
+        saveJSON(CONFIG_PATH, data);
+        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
+        await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
+
+        sendVortexLog(interaction.client, {
+            title: 'Canal do Painel Online Alterado',
+            description: `O painel online do ponto foi alterado para <#${data.POINT_ONLINE_CHANNEL_ID}> por <@${interaction.user.id}>.`,
+            color: '#00D9FF',
+            type: 'CONFIGURACAO',
+            userId: interaction.user.id
+        }).catch(() => {});
+
+        return renderDashboard(interaction, 'tab_manutencao', true);
+    }
+
     if (interaction.customId === 'select_point_adjust_category') {
         if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ponto.', ephemeral: true });
         data.POINT_ADJUST_CATEGORY_ID = String(interaction.values[0]);
@@ -2572,6 +2601,7 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '🎮 Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
           { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
+          { name: 'Painel online', value: `<#${conf.POINT_ONLINE_CHANNEL_ID || DEFAULT_POINT_ONLINE_CHANNEL_ID}>`, inline: true },
           { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
           { name: 'Mudanças registradas', value: readUpdatesSummary().slice(0, 900), inline: false }
       )
@@ -2589,6 +2619,14 @@ async function renderDashboard(interaction, tab, edit = false) {
         new ChannelSelectMenuBuilder()
           .setCustomId('select_point_action_channel')
           .setPlaceholder('Selecionar canal de texto onde o ponto funciona')
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('select_point_online_channel')
+          .setPlaceholder('Selecionar canal de texto do painel online')
           .addChannelTypes(ChannelType.GuildText)
           .setMinValues(1)
           .setMaxValues(1)
@@ -3241,6 +3279,13 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setMaxValues(25)
       ),
     ];
+  }
+
+  if (tab === 'tab_manutencao' && conf.MAINTENANCE_MODE) {
+    actionRow.setComponents(
+      new ButtonBuilder().setCustomId('toggle_maint').setLabel('Desativar manutencao').setStyle(ButtonStyle.Success)
+    );
+    extraRows = [];
   }
 
   const backRow = (tab === 'tab_stats' || tab === 'tab_perfil') ? null : buildPanelBackRow(tab);

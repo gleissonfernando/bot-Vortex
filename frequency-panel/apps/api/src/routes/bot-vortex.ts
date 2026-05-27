@@ -98,7 +98,7 @@ export function getMaintenanceStatus(config: Record<string, any> = readConfig())
 
   return {
     enabled,
-    message: enabled ? 'O sistema esta em manutencao. Algumas funcoes podem ficar indisponiveis.' : '',
+    message: enabled ? 'O sistema esta em manutencao. Nenhum comando, botao, formulario ou automacao fica disponivel ate a liberacao da equipe.' : '',
     since: enabled && sinceDate ? sinceDate.toISOString() : null,
     by: enabled && config.MAINTENANCE_BY ? String(config.MAINTENANCE_BY) : null
   };

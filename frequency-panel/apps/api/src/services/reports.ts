@@ -1,4 +1,5 @@
 import { collection, dateKey, toDate } from '../db.js';
+import { ensureRegisteredMembers } from './members.js';
 import { buildRegisteredMemberFilter } from './profileRegistry.js';
 
 function monthStart() {
@@ -38,6 +39,7 @@ function rangeFilter(field: string, from?: string, to?: string) {
 export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
+  await ensureRegisteredMembers();
   const registeredMemberFilter = await buildRegisteredMemberFilter();
   const registeredMembers = await members
     .find(registeredMemberFilter, { projection: { id: 1 } })
@@ -51,14 +53,16 @@ export async function dashboardMetrics() {
     ...registeredSessionFilter
   };
 
-  const [activeMemberIds, openPoints, monthSessions, trendSessions, cityOnlineSessions] = await Promise.all([
+  const [activeMemberIds, openPointMemberIds, monthSessions, trendSessions, cityOnlineSessions] = await Promise.all([
     sessions.distinct('member_id', onlineFilter),
-    sessions.countDocuments({ closed_at: null, ...registeredSessionFilter }),
+    sessions.distinct('member_id', { closed_at: null, ...registeredSessionFilter }),
     sessions.find({ opened_at: { $gte: monthStart() }, ...registeredSessionFilter }).toArray(),
     sessions.find({ opened_at: { $gte: thirtyDaysAgo() }, ...registeredSessionFilter }).sort({ opened_at: 1 }).toArray(),
     sessions.aggregate([
       { $match: onlineFilter },
-      { $sort: { opened_at: -1 } },
+      { $sort: { opened_at: -1, updated_at: -1 } },
+      { $group: { _id: '$member_id', doc: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$doc' } },
       { $limit: 12 },
       {
         $lookup: {
@@ -102,7 +106,7 @@ export async function dashboardMetrics() {
     metrics: {
       total_members: registeredMembers.length,
       active_members: activeMemberIds.length,
-      open_points: openPoints,
+      open_points: openPointMemberIds.length,
       month_seconds: (monthSessions as any[]).reduce((sum, session) => sum + Number(session.total_seconds || 0), 0)
     },
     trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key)),

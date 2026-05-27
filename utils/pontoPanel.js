@@ -7,6 +7,7 @@ const { logger } = require('./logger');
 const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { buildThemedPanelPayload } = require('./panelTheme');
+const { isMaintenanceMode } = require('./maintenanceMode');
 
 const PANEL_PATH = path.join(__dirname, '..', 'commands', 'pontoPanels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -198,13 +199,37 @@ function getOnlinePermissionsForChannel(channel) {
   };
 }
 
+function getBotPermissionsForChannel(channel) {
+  if (isVoiceChannel(channel)) {
+    return {
+      ViewChannel: true,
+      Connect: true,
+      ManageChannels: true,
+    };
+  }
+
+  return {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+  };
+}
+
+async function ensureOnlineChannelBotAccess(guild, channel) {
+  if (!guild?.client?.user?.id || !channel?.permissionOverwrites?.edit) return false;
+  await channel.permissionOverwrites.edit(guild.client.user.id, getBotPermissionsForChannel(channel), {
+    reason: 'Garantir acesso do bot ao painel/call online do ponto',
+  });
+  return true;
+}
+
 async function getOnlinePlayers(guild) {
   const pointRoleIds = getPointAllowedRoleIds();
   if (PONTO_PANEL_FETCH_PRESENCES) {
     await guild.members.fetch({ withPresences: true }).catch(() => null);
   }
   const presences = guild.presences?.cache;
-  const onlinePlayers = [];
+  const onlinePlayersById = new Map();
 
   for (const presence of presences?.values?.() || []) {
     if (!presence?.user || presence.user.bot) continue;
@@ -214,7 +239,7 @@ async function getOnlinePlayers(guild) {
     if (!member) continue;
     if (pointRoleIds.length && !hasAnyRole(member, pointRoleIds)) continue;
     const cityName = extractCityName(activity);
-    onlinePlayers.push({
+    onlinePlayersById.set(String(member.id), {
       id: member.id,
       name: member.displayName || member.user.username || `ID ${member.id}`,
       mention: `<@${member.id}>`,
@@ -222,6 +247,7 @@ async function getOnlinePlayers(guild) {
     });
   }
 
+  const onlinePlayers = [...onlinePlayersById.values()];
   onlinePlayers.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   return onlinePlayers;
 }
@@ -272,6 +298,7 @@ async function createStatusEmbed(guild) {
 }
 
 async function updateStatusPanel(client, guildId) {
+  if (isMaintenanceMode()) return false;
   if (!isPrimaryGuild(guildId)) return false;
   const panel = getPanel(guildId);
 
@@ -286,6 +313,15 @@ async function updateStatusPanel(client, guildId) {
     const voiceChannel = await fetchOnlineVoiceChannel(guild, pointConfig);
     if (!isPrimaryGuildChannel(channel)) return false;
     if (!channel?.isTextBased?.()) return false;
+
+    await ensureOnlineChannelBotAccess(guild, channel).catch((error) => {
+      logStatusPanelError(guild.id, error);
+    });
+    if (voiceChannel) {
+      await ensureOnlineChannelBotAccess(guild, voiceChannel).catch((error) => {
+        logStatusPanelError(guild.id, error);
+      });
+    }
 
     if (shouldSyncVisibility(guild.id)) {
       await syncOnlineChannelVisibility(guild, channel).catch((error) => {
@@ -325,6 +361,7 @@ async function updateStatusPanel(client, guildId) {
 }
 
 async function setOnlineChannelAccess(client, guildId, userId, allowed) {
+  if (isMaintenanceMode()) return false;
   if (!isPrimaryGuild(guildId)) return false;
   try {
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
@@ -343,6 +380,7 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
     const isInCity = onlinePlayers.some((player) => String(player.id) === String(userId));
 
     for (const target of targets) {
+      await ensureOnlineChannelBotAccess(guild, target).catch(() => null);
       if (allowed && isInCity) {
         await target.permissionOverwrites.edit(userId, getOnlinePermissionsForChannel(target), {
           reason: 'Player detectado online no FiveM',
@@ -369,6 +407,9 @@ async function setOnlineChannelAccess(client, guildId, userId, allowed) {
 async function syncOnlineChannelVisibility(guild, channel) {
   const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
   const onlineUserIds = new Set(onlinePlayers.map((player) => String(player.id)));
+  const botId = guild.client?.user?.id ? String(guild.client.user.id) : null;
+
+  await ensureOnlineChannelBotAccess(guild, channel).catch(() => null);
 
   await channel.permissionOverwrites.edit(guild.id, {
     ViewChannel: false,
@@ -382,6 +423,7 @@ async function syncOnlineChannelVisibility(guild, channel) {
 
   for (const [targetId, overwrite] of channel.permissionOverwrites.cache) {
     if (targetId === guild.id) continue;
+    if (botId && String(targetId) === botId) continue;
     if (overwrite.type !== 1) continue;
     if (!onlineUserIds.has(targetId)) {
       await channel.permissionOverwrites.delete(targetId).catch(() => null);
@@ -429,6 +471,7 @@ module.exports = {
   createControlRow,
   getOnlinePlayers,
   createStatusEmbed,
+  ensureOnlineChannelBotAccess,
   setOnlineChannelAccess,
   syncOnlineChannelVisibility,
   updateStatusPanel,

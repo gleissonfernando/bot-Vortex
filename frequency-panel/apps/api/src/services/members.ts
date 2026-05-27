@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { collection, serializeDoc, serializeDocs, toDate } from '../db.js';
-import { buildRegisteredMemberFilter, isRegisteredProfile } from './profileRegistry.js';
+import {
+  buildRegisteredMemberFilter,
+  getRegisteredProfileMemberInputs,
+  isRegisteredProfile
+} from './profileRegistry.js';
 
 export type MemberInput = {
   guildId: string;
@@ -65,6 +69,7 @@ export async function listMembers(params: {
 }) {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
+  await ensureRegisteredMembers(params.guildId);
   const filter: Record<string, any> = {};
 
   if (params.guildId) filter.guild_id = params.guildId;
@@ -124,6 +129,25 @@ export async function listMembers(params: {
       last_point_at: stats?.last_point_at ? stats.last_point_at.toISOString() : null
     };
   });
+}
+
+export async function ensureRegisteredMembers(guildId?: string) {
+  const profileMembers = await getRegisteredProfileMemberInputs(guildId);
+  if (!profileMembers.length) return;
+
+  const members = await collection('discord_members');
+  const existing = await members.find({
+    $or: profileMembers.map((member: any) => ({
+      guild_id: member.guildId,
+      discord_user_id: member.discordUserId
+    }))
+  }, { projection: { guild_id: 1, discord_user_id: 1 } }).toArray();
+  const existingKeys = new Set(existing.map((member: any) => `${member.guild_id}:${member.discord_user_id}`));
+
+  for (const member of profileMembers as MemberInput[]) {
+    if (existingKeys.has(`${member.guildId}:${member.discordUserId}`)) continue;
+    await upsertMember(member);
+  }
 }
 
 export async function getMember(memberId: string) {

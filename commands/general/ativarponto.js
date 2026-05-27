@@ -4,6 +4,7 @@ const {
   createControlRow,
   createStatusEmbed,
   getPointConfig,
+  ensureOnlineChannelBotAccess,
   savePanel,
 } = require('../../utils/pontoPanel');
 const { isGerencia, hasCommandRole } = require('../../utils/permissions');
@@ -44,6 +45,7 @@ module.exports = {
         content: `Nao consegui encontrar o canal player-online <#${pointConfig.statusChannelId}>.`,
       });
     }
+    await ensureOnlineChannelBotAccess(interaction.guild, onlineChannel).catch(() => null);
 
     const controlPayload = buildThemedPanelPayload('ponto', createControlEmbed(), {
       components: [createControlRow()],

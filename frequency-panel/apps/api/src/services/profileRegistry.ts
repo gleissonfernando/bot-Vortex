@@ -9,6 +9,10 @@ type RegisteredProfileRef = {
   userId: string;
 };
 
+type RegisteredProfileRecord = RegisteredProfileRef & {
+  profile: any;
+};
+
 type JsonDocumentRecord = {
   key?: string;
   data?: unknown;
@@ -103,7 +107,7 @@ function hasRegistrationData(profile: any) {
   ));
 }
 
-function addProfileRef(refs: RegisteredProfileRef[], seen: Set<string>, guildId: unknown, userId: unknown, profile: any) {
+function addProfileRecord(records: RegisteredProfileRecord[], seen: Set<string>, guildId: unknown, userId: unknown, profile: any) {
   const normalizedUserId = normalizeDiscordId(userId);
   if (!normalizedUserId || !hasRegistrationData(profile)) return;
 
@@ -112,12 +116,12 @@ function addProfileRef(refs: RegisteredProfileRef[], seen: Set<string>, guildId:
   if (seen.has(key)) return;
 
   seen.add(key);
-  refs.push({ guildId: normalizedGuildId, userId: normalizedUserId });
+  records.push({ guildId: normalizedGuildId, userId: normalizedUserId, profile });
 }
 
-export async function getRegisteredProfileRefs(guildId?: string | null) {
+export async function getRegisteredProfileRecords(guildId?: string | null) {
   const data = await readProfiles();
-  const refs: RegisteredProfileRef[] = [];
+  const records: RegisteredProfileRecord[] = [];
   const seen = new Set<string>();
   const requestedGuildId = normalizeDiscordId(guildId);
 
@@ -126,19 +130,67 @@ export async function getRegisteredProfileRefs(guildId?: string | null) {
 
     const directUserId = normalizeDiscordId(topValue.userId) || normalizeDiscordId(topKey);
     if (directUserId && hasRegistrationData(topValue)) {
-      addProfileRef(refs, seen, topValue.guildId || null, directUserId, topValue);
+      addProfileRecord(records, seen, topValue.guildId || null, directUserId, topValue);
       continue;
     }
 
     for (const [profileKey, profile] of Object.entries(topValue)) {
       if (!profile || typeof profile !== 'object') continue;
       const userId = normalizeDiscordId((profile as any).userId) || normalizeDiscordId(profileKey);
-      addProfileRef(refs, seen, (profile as any).guildId || topKey, userId, profile);
+      addProfileRecord(records, seen, (profile as any).guildId || topKey, userId, profile);
     }
   }
 
-  if (!requestedGuildId) return refs;
-  return refs.filter((ref) => !ref.guildId || ref.guildId === requestedGuildId);
+  if (!requestedGuildId) return records;
+  return records.filter((record) => !record.guildId || record.guildId === requestedGuildId);
+}
+
+function profileText(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+export async function getRegisteredProfileMemberInputs(guildId?: string | null) {
+  const requestedGuildId = normalizeDiscordId(guildId);
+  return (await getRegisteredProfileRecords(guildId))
+    .map((record) => {
+      const profile = record.profile || {};
+      const resolvedGuildId = record.guildId || requestedGuildId;
+      if (!resolvedGuildId) return null;
+
+      const displayName = profileText(
+        profile.displayName,
+        profile.nomeGame && profile.idGame ? `${profile.nomeGame} | ${profile.idGame}` : '',
+        profile.nomeGame,
+        profile.discordTag,
+        record.userId
+      );
+
+      return {
+        guildId: resolvedGuildId,
+        discordUserId: record.userId,
+        username: profileText(profile.discordTag, profile.username, displayName, record.userId),
+        displayName,
+        avatarUrl: profileText(profile.avatarUrl, profile.profileImageUrl) || null,
+        highestRoleId: null,
+        highestRoleName: profileText(profile.tipo) || null,
+        roles: [],
+        joinedAt: null,
+        status: 'active' as const,
+        lastSeenAt: profileText(profile.lastProfileUpdateAt, profile.updatedAt, profile.approvedAt, profile.createdAt) || null
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function getRegisteredProfileRefs(guildId?: string | null) {
+  return (await getRegisteredProfileRecords(guildId)).map(({ guildId: profileGuildId, userId }) => ({
+    guildId: profileGuildId,
+    userId
+  }));
 }
 
 export async function buildRegisteredMemberFilter(guildId?: string | null) {

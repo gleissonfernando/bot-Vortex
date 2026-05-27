@@ -18,6 +18,7 @@ const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 const { safeReply, safeEdit, safeUpdate } = require('./safeReply');
 const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
+const { isMaintenanceMode } = require('./maintenanceMode');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STATE_PATH = path.join(__dirname, '..', 'commands', 'pointAutomationState.json');
@@ -546,6 +547,8 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
 }
 
 async function runPointAutomationCheck(client, { force = false } = {}) {
+  if (isMaintenanceMode()) return { skipped: true, reason: 'maintenance' };
+
   const state = readJSON(STATE_PATH, {});
   if (POINT_AUTOMATION_SCAN_FIVEM) {
     const { scanCurrentFiveMActivities } = require('./fivemActivityAlertManager');

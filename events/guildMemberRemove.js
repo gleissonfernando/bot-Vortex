@@ -5,12 +5,15 @@ const { sendStaffLog } = require('../utils/notifications');
 const { deleteApprovedSetChannel } = require('../utils/approvedSetChannels');
 const { deleteUserProfile } = require('../utils/profileManager');
 const { memberHasFactionHierarchyRole, updateFactionHierarchyPanel } = require('../utils/factionHierarchy');
+const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
 const SUPPORT_USER_ID = '289227932432334869';
 
 module.exports = {
     name: Events.GuildMemberRemove,
     async execute(member) {
+        if (isMaintenanceMode()) return;
+
         try {
             const guild = member.guild;
 

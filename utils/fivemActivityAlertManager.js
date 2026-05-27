@@ -5,6 +5,8 @@ const { openPoint, closePoint, getUserPoint, listGuildPoints } = require('./pont
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { isPrimaryGuild } = require('./guildScope');
 const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
+const { queuePointSnapshotSync } = require('./frequencyDashboardSync');
+const { isMaintenanceMode } = require('./maintenanceMode');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const FALLBACK_ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || '1202251715865489459';
@@ -12,9 +14,10 @@ const FIVEM_ALERT_CHANNEL_ID = process.env.FIVEM_GTA_ALERT_CHANNEL_ID || '149889
 const TARGET_SERVER_NAME = process.env.FIVEM_POINT_SERVER_NAME || 'Metrópole RP - Season 2!';
 const TARGET_SERVER_ALIASES = [
   'metropole.gg',
-  'Metrópole RP - Season 2!',
-  'Metrópole RP',
-  'Metrópole GG',
+  'Metropole RP - Season 2!',
+  'Metropole RP',
+  'Jogando Metropole RP',
+  'Jogando Metropole GG',
   ...String(process.env.FIVEM_POINT_SERVER_ALIASES || '')
     .split(',')
     .map((alias) => alias.trim())
@@ -70,9 +73,8 @@ function getFiveMActivity(presence) {
   return presence?.activities?.find(isFiveMActivity) || null;
 }
 
-function activityText(activity) {
+function targetActivityText(activity) {
   return [
-    activity?.name,
     activity?.details,
     activity?.state,
     activity?.assets?.largeText,
@@ -80,12 +82,15 @@ function activityText(activity) {
   ].map(normalizeText).join(' ');
 }
 
+function containsTargetServer(value) {
+  const haystack = normalizeComparableText(value);
+  const targets = [TARGET_SERVER_NAME, ...TARGET_SERVER_ALIASES].map(normalizeComparableText);
+  return targets.some((target) => target && haystack.includes(target));
+}
+
 function isTargetFiveMActivity(activity) {
   if (!activity || activity.type !== ActivityType.Playing) return false;
-  const haystack = normalizeComparableText(activityText(activity));
-  const targets = [TARGET_SERVER_NAME, ...TARGET_SERVER_ALIASES].map(normalizeComparableText);
-  const hasTargetServer = targets.some((target) => target && haystack.includes(target));
-  return hasTargetServer;
+  return containsTargetServer(targetActivityText(activity));
 }
 
 function getTargetFiveMActivity(presence) {
@@ -196,12 +201,15 @@ function scheduleAutoPointCheck({ guild, user, member }) {
       if (!latestActivity) {
         await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
         if (point?.activePointStartedAt && point.activePointSource === AUTO_POINT_SOURCE) {
-          await closePoint(guild.id, user.id, {
+          const result = await closePoint(guild.id, user.id, {
             enforceMinimumDuration: false,
             pointSource: AUTO_POINT_SOURCE,
             pointReason: `Nao detectado no FiveM apos ${Math.round(AUTO_POINT_CONFIRM_DELAY_MS / 1000)}s: ${TARGET_SERVER_NAME}`,
             serverName: point.activePointServerName || TARGET_SERVER_NAME,
           }).catch(() => null);
+          if (result?.action === 'closed') {
+            queuePointSnapshotSync(guild.client);
+          }
         }
         return;
       }
@@ -218,6 +226,7 @@ function scheduleAutoPointCheck({ guild, user, member }) {
       const result = await openPoint(guild.id, user.id, buildAutoPointProfile(user, resolvedMember, latestActivity, cityName));
       if (result.action !== 'opened') return;
       await syncPointOnlineChannel(guild.client, guild.id, user.id, true);
+      queuePointSnapshotSync(guild.client);
 
       const summary = await createPointActionTranscriptSummary({
         guild,
@@ -275,6 +284,7 @@ async function handleTargetFiveMAutoPoint({ guild, user, member, oldPresence, ne
   });
   if (result.action !== 'closed') return;
   await syncPointOnlineChannel(guild.client, guild.id, user.id, false);
+  queuePointSnapshotSync(guild.client);
 
   const summary = await createPointActionTranscriptSummary({
     guild,
@@ -329,6 +339,7 @@ function buildFiveMEmbed({ member, user, activity, cityName }) {
 }
 
 async function handleFiveMActivityAlert(oldPresence, newPresence) {
+  if (isMaintenanceMode()) return;
   if (!newPresence?.guild || !newPresence.user || newPresence.user.bot) return;
 
   const guild = newPresence.guild;
@@ -382,6 +393,7 @@ async function handleFiveMActivityAlert(oldPresence, newPresence) {
 }
 
 async function scanCurrentFiveMActivities(client) {
+  if (isMaintenanceMode()) return [];
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
@@ -429,6 +441,7 @@ async function scanCurrentFiveMActivities(client) {
       if (result?.action !== 'closed') continue;
       results.push({ guildId: guild.id, userId: point.userId, action: 'closed_not_detected' });
       await syncPointOnlineChannel(client, guild.id, point.userId, false);
+      queuePointSnapshotSync(client);
 
       const user = await client.users.fetch(point.userId).catch(() => null);
       if (user) {

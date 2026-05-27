@@ -95,7 +95,7 @@
     "lastSetReminderSent": true
   },
   "1201193356810780773:730925532958425240": {
-    "pointStartedAt": "2026-05-18T13:19:40.955Z",
+    "pointStartedAt": "2026-05-27T00:29:12.291Z",
     "attempts": 0,
     "lastPromptAt": null,
     "confirmedPointStartedAt": null,
@@ -109,18 +109,57 @@
     "lastConfirmedAt": null
   },
   "1201193356810780773:289227932432334869": {
-    "pointStartedAt": "2026-05-18T17:33:08.665Z",
+    "pointStartedAt": "2026-05-27T03:02:55.438Z",
+    "attempts": 3,
+    "lastPromptAt": "2026-05-27T08:07:38.740Z",
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null,
+    "lastDmSent": true
+  },
+  "1201193356810780773:1154885912170332251": {
+    "pointStartedAt": "2026-05-27T03:08:18.312Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": "2026-05-27T03:08:18.312Z",
+    "lastConfirmedAt": "2026-05-27T07:25:58.137Z",
+    "lastDmSent": true
+  },
+  "1201193356810780773:450357020038660096": {
+    "pointStartedAt": "2026-05-26T22:52:45.256Z",
     "attempts": 0,
     "lastPromptAt": null,
     "confirmedPointStartedAt": null,
     "lastConfirmedAt": null
   },
-  "1201193356810780773:1154885912170332251": {
-    "pointStartedAt": "2026-05-18T15:56:34.794Z",
+  "1201193356810780773:1111816753815752744": {
+    "pointStartedAt": "2026-05-27T00:45:14.674Z",
     "attempts": 0,
     "lastPromptAt": null,
-    "confirmedPointStartedAt": "2026-05-18T15:56:34.794Z",
-    "lastConfirmedAt": "2026-05-18T20:06:41.639Z",
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:892081865828233246": {
+    "pointStartedAt": "2026-05-27T03:08:18.303Z",
+    "attempts": 3,
+    "lastPromptAt": "2026-05-27T08:22:39.451Z",
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null,
+    "lastDmSent": false
+  },
+  "1201193356810780773:260830031289384960": {
+    "pointStartedAt": "2026-05-27T03:08:18.300Z",
+    "attempts": 3,
+    "lastPromptAt": "2026-05-27T08:22:39.134Z",
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null,
+    "lastDmSent": true
+  },
+  "1201193356810780773:997907219096010874": {
+    "pointStartedAt": "2026-05-27T04:09:33.864Z",
+    "attempts": 1,
+    "lastPromptAt": "2026-05-27T08:22:39.848Z",
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null,
     "lastDmSent": true
   }
 }

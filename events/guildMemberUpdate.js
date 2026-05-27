@@ -4,6 +4,7 @@ const {
   updateFactionHierarchyPanel,
 } = require('../utils/factionHierarchy');
 const { isPrimaryGuild } = require('../utils/guildScope');
+const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
 const pendingUpdates = new Map();
 
@@ -23,6 +24,8 @@ function scheduleFactionHierarchyUpdate(client, guildId) {
 module.exports = {
   name: Events.GuildMemberUpdate,
   async execute(oldMember, newMember) {
+    if (isMaintenanceMode()) return;
+
     if (!isPrimaryGuild(newMember.guild.id)) return;
     if (!hasRelevantFactionHierarchyRoleChange(oldMember, newMember)) return;
     scheduleFactionHierarchyUpdate(newMember.client, newMember.guild.id);
