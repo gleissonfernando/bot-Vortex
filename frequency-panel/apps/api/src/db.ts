@@ -3,6 +3,7 @@ import { env } from './env.js';
 
 let client: MongoClient | null = null;
 let database: Db | null = null;
+let connectReady: Promise<Db> | null = null;
 let indexesReady: Promise<void> | null = null;
 
 function databaseNameFromUri(uri: string) {
@@ -27,15 +28,30 @@ export async function getDb() {
     throw new Error('MongoDB not configured');
   }
 
-  if (!client) {
-    client = new MongoClient(env.mongoUri, {
-      maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),
-      minPoolSize: 0,
-      maxIdleTimeMS: readPositiveIntEnv('MONGODB_MAX_IDLE_TIME_MS', 30000),
-      serverSelectionTimeoutMS: readPositiveIntEnv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 10000)
+  if (!database) {
+    connectReady ||= (async () => {
+      const nextClient = new MongoClient(env.mongoUri, {
+        maxPoolSize: readPositiveIntEnv('MONGODB_MAX_POOL_SIZE', 5),
+        minPoolSize: 0,
+        maxIdleTimeMS: readPositiveIntEnv('MONGODB_MAX_IDLE_TIME_MS', 30000),
+        serverSelectionTimeoutMS: readPositiveIntEnv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 10000)
+      });
+
+      client = nextClient;
+      await nextClient.connect();
+      database = nextClient.db(process.env.MONGODB_DB || databaseNameFromUri(env.mongoUri));
+      return database;
+    })().catch(async (error) => {
+      const failedClient = client;
+      client = null;
+      database = null;
+      connectReady = null;
+      indexesReady = null;
+      await failedClient?.close().catch(() => undefined);
+      throw error;
     });
-    await client.connect();
-    database = client.db(process.env.MONGODB_DB || databaseNameFromUri(env.mongoUri));
+
+    database = await connectReady;
   }
 
   if (!database) throw new Error('MongoDB database unavailable');

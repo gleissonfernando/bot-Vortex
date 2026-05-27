@@ -1,29 +1,35 @@
 'use client';
 
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Download, FileText, RefreshCcw, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, downloadFile } from '@/lib/api';
 import { formatDate, formatSeconds } from '@/lib/format';
 import { subscribeDashboardEvents } from '@/lib/realtime';
 import type { Member } from '@/lib/types';
 
-export default function MembersPage() {
+export default function ReportsPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [search, setSearch] = useState('');
-  const [role, setRole] = useState('');
-  const [status, setStatus] = useState('');
-  const [error, setError] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
-    if (role) params.set('role', role);
-    if (status) params.set('status', status);
+    params.set('limit', '200');
     return params.toString();
-  }, [search, role, status]);
+  }, [search]);
+
+  const exportQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return params.toString();
+  }, [from, to]);
 
   async function load() {
     setLoading(true);
@@ -32,10 +38,14 @@ export default function MembersPage() {
       const response = await apiFetch<{ members: Member[] }>(`/members?${query}`);
       setMembers(response.members);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar membros');
+      setError(err instanceof Error ? err.message : 'Falha ao carregar relatorios');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function exportMember(member: Member) {
+    await downloadFile(`/members/${member.id}/export?${exportQuery}`, `relatorio-${member.discord_user_id}.csv`);
   }
 
   useEffect(() => {
@@ -45,18 +55,34 @@ export default function MembersPage() {
 
   useEffect(() => subscribeDashboardEvents(load), [query]);
 
+  const totals = members.reduce(
+    (acc, member) => ({
+      seconds: acc.seconds + Number(member.total_seconds || 0),
+      sessions: acc.sessions + Number(member.session_count || 0)
+    }),
+    { seconds: 0, sessions: 0 }
+  );
+
   return (
     <AppShell>
       <header className="mb-6 animate-fade-up">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-slate-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
-          Membros
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-300" />
+          Relatorios
         </div>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">Membros cadastrados</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Apenas usuarios com cadastro salvo pelo /painel aparecem aqui.</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">Relatorios dos cadastrados</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+          Exporte frequencia e acompanhe pontos apenas dos usuarios com cadastro salvo pelo /painel.
+        </p>
       </header>
 
-      <section className="soft-panel mb-4 grid gap-3 rounded-lg p-3 md:grid-cols-[1fr_220px_180px_auto]">
+      <section className="mb-4 grid gap-3 md:grid-cols-3">
+        <SummaryCard label="Cadastrados" value={loading ? '...' : String(members.length)} />
+        <SummaryCard label="Pontos" value={loading ? '...' : String(totals.sessions)} />
+        <SummaryCard label="Tempo total" value={loading ? '...' : formatSeconds(totals.seconds)} />
+      </section>
+
+      <section className="soft-panel mb-4 grid gap-3 rounded-lg p-3 lg:grid-cols-[1fr_170px_170px_auto]">
         <label className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
           <input
@@ -66,27 +92,21 @@ export default function MembersPage() {
             placeholder="Nome, ID ou usuario"
           />
         </label>
-
         <input
-          value={role}
-          onChange={(event) => setRole(event.target.value)}
-          className="rounded-lg border-white/10 bg-black/20 text-white placeholder:text-slate-500 focus:border-sky-300/50 focus:ring-sky-300/30"
-          placeholder="Cargo ou ID"
-        />
-
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value)}
+          value={from}
+          onChange={(event) => setFrom(event.target.value)}
+          type="date"
           className="rounded-lg border-white/10 bg-black/20 text-white focus:border-sky-300/50 focus:ring-sky-300/30"
-        >
-          <option value="">Todos</option>
-          <option value="active">Ativos</option>
-          <option value="inactive">Inativos</option>
-        </select>
-
+        />
+        <input
+          value={to}
+          onChange={(event) => setTo(event.target.value)}
+          type="date"
+          className="rounded-lg border-white/10 bg-black/20 text-white focus:border-sky-300/50 focus:ring-sky-300/30"
+        />
         <button onClick={load} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.1]">
-          <SlidersHorizontal size={16} />
-          Filtrar
+          <RefreshCcw size={16} />
+          Atualizar
         </button>
       </section>
 
@@ -94,49 +114,51 @@ export default function MembersPage() {
 
       <section className="panel overflow-hidden rounded-lg animate-fade-up">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h2 className="text-sm font-semibold text-white">Lista de cadastrados</h2>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">{loading ? 'Carregando' : `${members.length} registros`}</span>
+          <h2 className="text-sm font-semibold text-white">Exportacao por membro</h2>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+            {loading ? 'Carregando' : `${members.length} relatorios`}
+          </span>
         </div>
         <div className="overflow-auto">
-          <table className="w-full min-w-[920px] border-collapse">
+          <table className="w-full min-w-[860px] border-collapse">
             <thead className="bg-white/[0.035] text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Membro</th>
                 <th className="px-4 py-3">Discord ID</th>
-                <th className="px-4 py-3">Cargo</th>
                 <th className="px-4 py-3">Tempo total</th>
                 <th className="px-4 py-3">Pontos</th>
                 <th className="px-4 py-3">Ultima atividade</th>
-                <th className="px-4 py-3">Perfil</th>
+                <th className="px-4 py-3">Acoes</th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
                 <tr key={member.id} className="border-t border-white/10 text-sm text-slate-300 transition hover:bg-white/[0.04]">
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <MemberAvatar member={member} size="sm" />
-                      <div>
-                        <div className="font-medium text-white">{member.display_name}</div>
-                        <div className="text-xs text-slate-500">{member.username}</div>
-                      </div>
-                    </div>
+                    <div className="font-medium text-white">{member.display_name}</div>
+                    <div className="text-xs text-slate-500">{member.username}</div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">{member.discord_user_id}</td>
-                  <td className="px-4 py-3"><span className="rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-xs">{member.highest_role_name || 'N/A'}</span></td>
                   <td className="px-4 py-3 font-medium text-white">{formatSeconds(member.total_seconds || 0)}</td>
                   <td className="px-4 py-3">{member.session_count || 0}</td>
                   <td className="px-4 py-3">{formatDate(member.last_point_at || member.last_seen_at)}</td>
                   <td className="px-4 py-3">
-                    <Link href={`/dashboard/members/${member.id}`} className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08] hover:text-white">
-                      Abrir
-                    </Link>
+                    <div className="flex gap-2">
+                      <Link href={`/dashboard/members/${member.id}`} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08] hover:text-white">
+                        <FileText size={14} />
+                        Abrir
+                      </Link>
+                      <button onClick={() => exportMember(member)} className="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-400">
+                        <Download size={14} />
+                        CSV
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {!members.length && !loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">
                     Nenhum membro cadastrado encontrado.
                   </td>
                 </tr>
@@ -149,25 +171,11 @@ export default function MembersPage() {
   );
 }
 
-function MemberAvatar({ member, size = 'sm' }: { member: Member; size?: 'sm' | 'lg' }) {
-  const sizeClass = size === 'lg' ? 'h-14 w-14 text-lg' : 'h-9 w-9 text-sm';
-  const initials = (member.display_name || member.username || 'VX').slice(0, 2).toUpperCase();
-  const avatarUrl = member.avatar_url ? `/api/members/${member.id}/avatar` : '';
-
+function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`${sizeClass} relative shrink-0 overflow-hidden rounded-lg bg-blue-500/15 font-semibold text-blue-200`}>
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={member.display_name}
-          className="relative z-10 block h-full w-full object-cover"
-          referrerPolicy="no-referrer"
-          onError={(event) => {
-            event.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : null}
-      <span className="absolute inset-0 z-0 grid place-items-center">{initials}</span>
+    <div className="panel rounded-lg p-4">
+      <span className="text-xs font-semibold uppercase text-slate-500">{label}</span>
+      <strong className="mt-2 block text-2xl font-semibold text-white">{value}</strong>
     </div>
   );
 }

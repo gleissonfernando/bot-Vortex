@@ -1,4 +1,5 @@
 import { collection, dateKey, toDate } from '../db.js';
+import { buildRegisteredMemberFilter } from './profileRegistry.js';
 
 function monthStart() {
   const now = new Date();
@@ -37,14 +38,23 @@ function rangeFilter(field: string, from?: string, to?: string) {
 export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
-  const onlineFilter = cityOnlineFilter();
+  const registeredMembers = await members
+    .find(buildRegisteredMemberFilter(), { projection: { id: 1 } })
+    .toArray();
+  const registeredMemberIds = registeredMembers
+    .map((member: any) => String(member.id || ''))
+    .filter(Boolean);
+  const registeredSessionFilter = { member_id: { $in: registeredMemberIds } };
+  const onlineFilter = {
+    ...cityOnlineFilter(),
+    ...registeredSessionFilter
+  };
 
-  const [totalMembers, activeMemberIds, openPoints, monthSessions, trendSessions, cityOnlineSessions] = await Promise.all([
-    members.countDocuments({}),
+  const [activeMemberIds, openPoints, monthSessions, trendSessions, cityOnlineSessions] = await Promise.all([
     sessions.distinct('member_id', onlineFilter),
-    sessions.countDocuments({ closed_at: null }),
-    sessions.find({ opened_at: { $gte: monthStart() } }).toArray(),
-    sessions.find({ opened_at: { $gte: thirtyDaysAgo() } }).sort({ opened_at: 1 }).toArray(),
+    sessions.countDocuments({ closed_at: null, ...registeredSessionFilter }),
+    sessions.find({ opened_at: { $gte: monthStart() }, ...registeredSessionFilter }).toArray(),
+    sessions.find({ opened_at: { $gte: thirtyDaysAgo() }, ...registeredSessionFilter }).sort({ opened_at: 1 }).toArray(),
     sessions.aggregate([
       { $match: onlineFilter },
       { $sort: { opened_at: -1 } },
@@ -89,7 +99,7 @@ export async function dashboardMetrics() {
 
   return {
     metrics: {
-      total_members: totalMembers,
+      total_members: registeredMembers.length,
       active_members: activeMemberIds.length,
       open_points: openPoints,
       month_seconds: (monthSessions as any[]).reduce((sum, session) => sum + Number(session.total_seconds || 0), 0)

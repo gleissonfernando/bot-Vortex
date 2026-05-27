@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { collection, serializeDoc } from '../db.js';
 import { getAbsences, getFrequency, getMemberAttendance } from '../services/attendance.js';
 import { getMember, listMembers } from '../services/members.js';
+import { isRegisteredProfile } from '../services/profileRegistry.js';
 import { memberReport, secondsToLabel, toCsv } from '../services/reports.js';
 
 export const membersRouter = Router();
@@ -15,6 +16,8 @@ export async function memberAvatarHandler(req: any, res: any) {
   } catch {
     return res.status(404).end();
   }
+  if (!member || !isRegisteredProfile(member.guild_id, member.discord_user_id)) return res.status(404).end();
+
   const avatarUrl = String(member?.avatar_url || '').replace(/\.webp(\?size=\d+)?$/i, '.png$1');
   if (!avatarUrl) return res.status(404).end();
 
@@ -66,6 +69,9 @@ membersRouter.get('/:id', async (req, res) => {
 
 membersRouter.get('/:id/attendance', async (req, res) => {
   try {
+    const member = await getMember(req.params.id);
+    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
+
     const sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
     return res.json({ ok: true, sessions });
   } catch {
@@ -75,6 +81,9 @@ membersRouter.get('/:id/attendance', async (req, res) => {
 
 membersRouter.get('/:id/frequency', async (req, res) => {
   try {
+    const member = await getMember(req.params.id);
+    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
+
     const days = await getFrequency(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
     return res.json({ ok: true, days });
   } catch {
@@ -84,6 +93,9 @@ membersRouter.get('/:id/frequency', async (req, res) => {
 
 membersRouter.get('/:id/absences', async (req, res) => {
   try {
+    const member = await getMember(req.params.id);
+    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
+
     const absences = await getAbsences(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
     return res.json({ ok: true, absences: absences });
   } catch {
@@ -94,6 +106,9 @@ membersRouter.get('/:id/absences', async (req, res) => {
 membersRouter.get('/:id/export', async (req, res) => {
   let sessions: any[] = [];
   try {
+    const member = await getMember(req.params.id);
+    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
+
     sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
   } catch {
     sessions = [];

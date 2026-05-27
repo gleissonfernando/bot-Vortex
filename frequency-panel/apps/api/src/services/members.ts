@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { collection, serializeDoc, serializeDocs, toDate } from '../db.js';
+import { buildRegisteredMemberFilter, isRegisteredProfile } from './profileRegistry.js';
 
 export type MemberInput = {
   guildId: string;
@@ -89,6 +90,10 @@ export async function listMembers(params: {
       }
     ];
   }
+  filter.$and = [
+    ...(filter.$and || []),
+    buildRegisteredMemberFilter(params.guildId)
+  ];
 
   const limit = Math.min(Math.max(Number(params.limit || 80), 1), 200);
   const docs = serializeDocs(
@@ -127,6 +132,7 @@ export async function getMember(memberId: string) {
   const absences = await collection('absence_records');
   const member = serializeDoc(await members.findOne({ id: memberId }));
   if (!member) return null;
+  if (!isRegisteredProfile(member.guild_id, member.discord_user_id)) return null;
 
   const related = await sessions.find({ member_id: memberId }).toArray();
   const total_seconds = related.reduce((sum, session: any) => sum + Number(session.total_seconds || 0), 0);
