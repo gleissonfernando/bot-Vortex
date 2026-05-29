@@ -15,6 +15,15 @@ let memberSyncRunning = false;
 let pointSyncRunning = false;
 const discordProfileCache = new Map();
 
+function hasRegisteredProfile(guildId, userId) {
+  try {
+    const { getUserProfile } = require('./profileManager');
+    return Boolean(getUserProfile(guildId, userId));
+  } catch {
+    return false;
+  }
+}
+
 function getApiUrl() {
   return String(process.env.FREQUENCY_API_URL || process.env.INTERNAL_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
 }
@@ -103,7 +112,7 @@ async function syncGuildMembers(client) {
   for (const guild of getPrimaryGuilds(client).values()) {
     const members = await guild.members.fetch().catch(() => guild.members.cache);
     const payload = await Promise.all(Array.from(members.values())
-      .filter((member) => !member.user?.bot)
+      .filter((member) => !member.user?.bot && hasRegisteredProfile(guild.id, member.id))
       .map(mapMember));
 
     for (let index = 0; index < payload.length; index += MEMBER_CHUNK_SIZE) {
@@ -171,7 +180,8 @@ async function syncPointSnapshot(client) {
   let total = 0;
   let cityPresenceTotal = 0;
   for (const guild of getPrimaryGuilds(client).values()) {
-    const points = await listGuildPoints(guild.id);
+    const points = (await listGuildPoints(guild.id))
+      .filter((point) => hasRegisteredProfile(guild.id, point.userId));
     const membersById = new Map();
     const sessions = points.flatMap(pointSessionsFromRecord);
 
@@ -231,6 +241,7 @@ function buildCityPresenceDetails(presence) {
 async function syncPresence(newPresence, cityDetails = null) {
   if (!isEnabled() || !newPresence?.guild || !newPresence.userId) return null;
   if (!isPrimaryGuild(newPresence.guild.id)) return null;
+  if (!hasRegisteredProfile(newPresence.guild.id, newPresence.userId)) return null;
   const details = cityDetails || buildCityPresenceDetails(newPresence);
   return postToFrequencyApi('/ingest/presence', {
     guildId: newPresence.guild.id,
@@ -247,6 +258,7 @@ async function syncGuildCityPresences(guild) {
   let total = 0;
   for (const presence of presences.values()) {
     if (!presence?.userId || presence.user?.bot) continue;
+    if (!hasRegisteredProfile(guild.id, presence.userId)) continue;
     await syncPresence(presence, buildCityPresenceDetails(presence));
     total += 1;
   }

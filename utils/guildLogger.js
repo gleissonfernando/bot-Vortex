@@ -98,6 +98,31 @@ function emptyGuildLogs(limit = 50, skip = 0) {
   };
 }
 
+function shouldSkipUnregisteredUserLog(guildId, userId, metadata = {}) {
+  if (process.env.GUILD_LOG_SKIP_UNREGISTERED_USERS === 'false') return false;
+  const normalizedUserId = normalizeNullableString(userId);
+  if (!normalizedUserId) return false;
+
+  try {
+    const { getUserProfile } = require('./profileManager');
+    return !getUserProfile(guildId, normalizedUserId);
+  } catch {
+    return false;
+  }
+}
+
+function getLogIdentityUserIds(userId, metadata = {}) {
+  const ids = [
+    userId,
+    metadata?.userId,
+    metadata?.memberId,
+    metadata?.targetId,
+    metadata?.discordUserId,
+  ].map(normalizeNullableString).filter(Boolean);
+
+  return [...new Set(ids)];
+}
+
 /**
  * Registrar evento no log do servidor (MongoDB) e replicar para o painel em background.
  */
@@ -134,6 +159,16 @@ async function logGuildEvent(guildId, options) {
       fields = [],
       imageUrl = null,
     } = options || {};
+    const identityUserIds = getLogIdentityUserIds(userId, metadata);
+    if (identityUserIds.some((id) => shouldSkipUnregisteredUserLog(normalizedGuildId, id, metadata))) {
+      logger.debug(`Log ignorado no banco: usuario sem cadastro em ${normalizedGuildId}.`, {
+        guildId: normalizedGuildId,
+        type,
+        title,
+        identityUserIds,
+      });
+      return null;
+    }
 
     const logEntry = {
       guildId: normalizedGuildId,

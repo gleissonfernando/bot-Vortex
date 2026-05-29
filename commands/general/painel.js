@@ -1679,7 +1679,8 @@ module.exports = {
         const result = await deleteUserProfile(
             interaction.guild,
             userId,
-            `Perfil deletado no /painel por ${interaction.user.tag || interaction.user.id}`
+            `Perfil deletado no /painel por ${interaction.user.tag || interaction.user.id}`,
+            { removedBy: interaction.user.id, notifyUser: true }
         );
 
         sendVortexLog(interaction.client, {
@@ -1687,12 +1688,17 @@ module.exports = {
             description: [
                 `Usuário: <@${userId}> (${userId})`,
                 `Gerente: <@${interaction.user.id}>`,
-                `Perfil existia: ${result.deleted ? 'sim' : 'não'}`,
+                `Perfil existia: ${result.hadProfile ? 'sim' : 'não'}`,
                 `Registros removidos: ${result.deletedCount || 0}`,
                 `Canal deletado: ${result.channelDeleted ? 'sim' : 'não'}`,
                 `Cargo aprovado removido: ${result.approvedRoleRemoved ? 'sim' : 'não'}`,
                 `Cargo pendente adicionado: ${result.pendingRoleAdded ? 'sim' : 'não'}`,
-            ].join('\n'),
+                `DM enviada: ${result.dmSent ? 'sim' : 'não'}`,
+                `Arquivos limpos: ${result.localCleanup?.cleanedFiles || 0}`,
+                `Banco limpo: ${result.databaseCleanup?.ok ? 'sim' : 'não'}`,
+                result.dmError ? `Falha/obs DM: ${result.dmError}` : null,
+                result.databaseCleanup?.reason ? `Obs banco: ${result.databaseCleanup.reason}` : null,
+            ].filter(Boolean).join('\n'),
             color: '#FF0055',
             type: 'PERFIL',
             userId: interaction.user.id
@@ -1703,12 +1709,18 @@ module.exports = {
                 result.deleted
                     ? `✅ Cadastro de <@${userId}> apagado.`
                     : `⚠️ Nenhum perfil salvo encontrado para <@${userId}>.`,
+                !result.deleted ? 'Mesmo assim, cargos/acesso foram revisados e o usuario pode pedir outro /set.' : null,
                 result.deleted ? `✅ Registros removidos: ${result.deletedCount || 1}. O usuário pode pedir outro /set.` : null,
                 result.channelDeleted
                     ? '✅ Canal/call vinculado deletado.'
                     : 'ℹ️ Nenhum canal/call vinculado foi deletado.',
                 result.approvedRoleRemoved ? '✅ Cargo de aprovado removido.' : 'ℹ️ Cargo de aprovado não foi removido.',
-                result.pendingRoleAdded ? '✅ Cargo pendente adicionado.' : 'ℹ️ Cargo pendente não foi adicionado.',
+                result.pendingRoleAdded ? '✅ Cargo de liberacao/pendente adicionado.' : 'ℹ️ Cargo de liberacao/pendente revisado.',
+                result.dmSent ? '✅ DM enviada ao usuário.' : `⚠️ DM não enviada${result.dmError ? `: ${result.dmError}` : '.'}`,
+                `✅ Limpeza local: ${result.localCleanup?.cleanedFiles || 0} arquivo(s).`,
+                result.databaseCleanup?.ok
+                    ? '✅ Dados do usuário removidos do banco.'
+                    : `⚠️ Banco não limpo${result.databaseCleanup?.reason ? `: ${result.databaseCleanup.reason}` : '.'}`,
             ].filter(Boolean).join('\n'),
         });
     }

@@ -344,23 +344,33 @@ function getApprovedSetChannelRecordByUser(guildId, userId) {
   return data[String(guildId)]?.[String(userId)] || null;
 }
 
-async function deleteApprovedSetChannel(guild, userId) {
+async function deleteApprovedSetChannel(guild, userId, reason = null) {
   const data = readChannels();
-  const record = data[guild.id]?.[userId];
+  const normalizedUserId = String(userId || '').trim();
+  const record = data[guild.id]?.[normalizedUserId];
   if (!record?.channelId) return { ok: false, deleted: false, message: 'Nenhum canal aprovado registrado.' };
 
   const channel = await guild.channels.fetch(record.channelId).catch(() => null);
+  let channelDeleted = false;
   if (channel) {
-    await channel.delete(`Usuário ${userId} saiu do servidor; canal aprovado removido.`).catch((error) => {
+    await channel.delete(reason || `Usuário ${normalizedUserId} saiu do servidor; canal aprovado removido.`).then(() => {
+      channelDeleted = true;
+    }).catch((error) => {
       logger.error('Erro ao deletar canal aprovado:', error);
     });
   }
 
-  delete data[guild.id][userId];
+  delete data[guild.id][normalizedUserId];
   if (Object.keys(data[guild.id]).length === 0) delete data[guild.id];
   writeChannels(data);
 
-  return { ok: true, deleted: Boolean(channel), message: channel ? 'Canal removido.' : 'Registro removido; canal não existia.' };
+  return {
+    ok: true,
+    deleted: channelDeleted,
+    message: channelDeleted
+      ? 'Canal removido.'
+      : channel ? 'Registro removido; canal não foi deletado.' : 'Registro removido; canal não existia.',
+  };
 }
 
 module.exports = {

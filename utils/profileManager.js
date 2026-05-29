@@ -3,12 +3,13 @@ const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { formatDate, formatDuration } = require('./pontoManager');
 const { logger } = require('./logger');
-const { syncApprovedSetChannel } = require('./approvedSetChannels');
+const { deleteApprovedSetChannel, syncApprovedSetChannel } = require('./approvedSetChannels');
 const { applyApprovedHierarchy, resetToPendingHierarchy } = require('./vortexHierarchy');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { isSilentLogUser } = require('./notifications');
 const { refreshMongoJsonKeys } = require('./mongoJsonStore');
 const { queueMemberSync, queuePointSnapshotSync } = require('./frequencyDashboardSync');
+const { cleanupDeletedUserDatabaseData, cleanupLocalJsonUserData } = require('./userDataCleanup');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -587,6 +588,53 @@ async function sendProfileUpdateNotice(guild, profile, { userId, updatedBy = nul
   return true;
 }
 
+function normalizeRemovalReason(reason) {
+  const value = String(reason || '').trim();
+  if (!value) return 'Cadastro removido pela equipe Vortex.';
+  return value.length > 900 ? `${value.slice(0, 897)}...` : value;
+}
+
+async function sendProfileRemovalDm(guild, user, profile, {
+  removedBy = null,
+  reason = null,
+  approvedRoleRemoved = false,
+  pendingRoleAdded = false,
+  channelDeleted = false,
+  hadProfile = false,
+} = {}) {
+  if (!user?.send) return { sent: false, reason: 'missing_user' };
+
+  const profileName = profile ? formatProfileDisplayName(profile, user.username) : null;
+  const embed = new EmbedBuilder()
+    .setColor('#FF0055')
+    .setTitle('Cadastro removido')
+    .setDescription([
+      `Seu cadastro no sistema Vortex do servidor **${guild.name}** foi removido${hadProfile ? '' : ' ou nao foi encontrado'}.`,
+      '',
+      'A partir de agora voce nao possui mais cadastro aprovado no sistema.',
+      profileName ? `Nome que estava salvo: **${profileName}**` : null,
+      '',
+      approvedRoleRemoved ? 'O cargo de aprovado foi removido.' : 'O cargo de aprovado foi revisado.',
+      pendingRoleAdded ? 'O cargo de liberacao/pendente foi aplicado.' : 'O cargo de liberacao/pendente foi revisado.',
+      channelDeleted ? 'O canal/call vinculado ao perfil foi removido.' : null,
+      '',
+      `Motivo: ${normalizeRemovalReason(reason)}`,
+      removedBy ? `Removido por: <@${removedBy}>` : null,
+      '',
+      'Para recuperar o acesso, solicite um novo /set ou procure a gerencia.',
+      `Data/hora real: ${formatDate(new Date())}`,
+    ].filter(Boolean).join('\n'))
+    .setTimestamp();
+
+  return user.send({
+    embeds: [embed],
+    allowedMentions: { parse: [], users: removedBy ? [String(removedBy)] : [] },
+  }).then(() => ({ sent: true })).catch((error) => ({
+    sent: false,
+    reason: error?.message || 'send_failed',
+  }));
+}
+
 function buildProfileEmbed({ guild, user, member, profile }) {
   const now = Date.now();
   const lastUpdate = profile?.lastProfileUpdateAt ? new Date(profile.lastProfileUpdateAt).getTime() : 0;
@@ -1001,14 +1049,12 @@ function removeUserProfileData(guildId, userId) {
   return { ok: true, deleted: true, profile };
 }
 
-async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servidor') {
+async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servidor', options = {}) {
   const data = readProfiles();
   const normalizedGuildId = String(guild.id);
-  const normalizedUserId = String(userId);
+  const normalizedUserId = String(userId || '').trim();
   const profile = getUserProfile(normalizedGuildId, normalizedUserId);
-  if (!profile) return { ok: false, deleted: false, channelDeleted: false, message: 'Perfil não encontrado.' };
-
-  const member = await guild.members.fetch(userId).catch(() => null);
+  const member = await guild.members.fetch(normalizedUserId).catch(() => null);
   let approvedRoleRemoved = false;
   let pendingRoleAdded = false;
   if (member?.roles?.cache) {
@@ -1024,7 +1070,13 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   }
 
   let channelDeleted = false;
-  if (profile.callChannelId) {
+  const approvedChannelResult = await deleteApprovedSetChannel(guild, normalizedUserId, reason).catch((error) => {
+    logger.error('Erro ao remover registro/canal aprovado do perfil:', error);
+    return null;
+  });
+  if (approvedChannelResult?.deleted) channelDeleted = true;
+
+  if (profile?.callChannelId) {
     const channel = await guild.channels.fetch(profile.callChannelId).catch(() => null);
     if (channel) {
       await channel.delete(reason).catch((error) => {
@@ -1063,9 +1115,50 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
   }
 
   writeProfiles(data);
+  const localCleanup = await cleanupLocalJsonUserData(normalizedGuildId, normalizedUserId).catch((error) => {
+    logger.error('Erro ao limpar dados locais do usuario removido:', error);
+    return { cleanedFiles: 0, files: [], error: error.message };
+  });
+  const databaseCleanup = await cleanupDeletedUserDatabaseData(normalizedGuildId, normalizedUserId).catch((error) => {
+    logger.error('Erro ao limpar dados do usuario removido no banco:', error);
+    return { ok: false, reason: error.message };
+  });
   queueFrequencyDashboardRefresh(guild);
 
-  return { ok: true, deleted: true, deletedCount, channelDeleted, approvedRoleRemoved, pendingRoleAdded };
+  let dmSent = false;
+  let dmError = null;
+  const notifyUser = options.notifyUser !== false;
+  const targetUser = member?.user || (options.notifyUser === 'force'
+    ? await guild.client.users.fetch(normalizedUserId).catch(() => null)
+    : null);
+  if (notifyUser && targetUser) {
+    const dmResult = await sendProfileRemovalDm(guild, targetUser, profile, {
+      removedBy: options.removedBy || options.deletedBy || null,
+      reason,
+      approvedRoleRemoved,
+      pendingRoleAdded,
+      channelDeleted,
+      hadProfile: Boolean(profile),
+    });
+    dmSent = Boolean(dmResult.sent);
+    dmError = dmResult.sent ? null : dmResult.reason;
+  } else if (notifyUser) {
+    dmError = 'usuario_nao_esta_no_servidor';
+  }
+
+  return {
+    ok: true,
+    deleted: deletedCount > 0,
+    deletedCount,
+    channelDeleted,
+    approvedRoleRemoved,
+    pendingRoleAdded,
+    dmSent,
+    dmError,
+    hadProfile: Boolean(profile),
+    localCleanup,
+    databaseCleanup,
+  };
 }
 
 function parseTestPeriod(amountInput, unitInput) {
