@@ -96,6 +96,11 @@ const factionHierarchySelections = new Map();
 const mirrorMessageSelections = new Map();
 const adjustCallSelections = new Map();
 const visualThemeSelections = new Map();
+function formatOpenUntilAdjustmentLine(result) {
+  return Number.isFinite(Number(result?.openUntilAdjustmentMs))
+    ? `Tempo aberto até o ajuste: ${formatDuration(result.openUntilAdjustmentMs)}`
+    : null;
+}
 const COMMAND_PERMISSION_OPTIONS = [
     { label: '/painel', value: 'painel', description: 'Quem pode usar o painel de controle' },
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
@@ -2289,9 +2294,10 @@ module.exports = {
                     `Abertura aplicada: ${formatDate(result.startedAt)}`,
                     `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                     `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+                    formatOpenUntilAdjustmentLine(result),
                     '',
                     'O sistema foi alterado com a correção informada. Caso ainda exista divergência, fale com a gerência.',
-                ].join('\n'),
+                ].filter(Boolean).join('\n'),
             }).catch(() => null);
         }
 
@@ -2302,8 +2308,9 @@ module.exports = {
                 `Abertura aplicada: ${formatDate(result.startedAt)}`,
                 `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                 `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+                formatOpenUntilAdjustmentLine(result),
                 'O reajuste foi salvo em `commands/pontos.json`.',
-            ].join('\n'),
+            ].filter(Boolean).join('\n'),
             color: '#FEE75C',
             type: 'PONTO',
             userId: interaction.user.id
@@ -2316,8 +2323,9 @@ module.exports = {
                 `Abertura aplicada: ${formatDate(result.startedAt)}`,
                 `Fechamento aplicado: ${formatDate(result.closedAt)}`,
                 `Tempo somado: ${formatDuration(result.durationMs)}`,
+                formatOpenUntilAdjustmentLine(result),
                 'O reajuste foi salvo no JSON.',
-            ].join('\n'),
+            ].filter(Boolean).join('\n'),
             ephemeral: true
         });
     }

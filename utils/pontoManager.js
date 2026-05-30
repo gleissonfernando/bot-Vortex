@@ -485,13 +485,17 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
   }
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
-  const nowIso = new Date().toISOString();
+  const adjustedAt = new Date();
+  const nowIso = adjustedAt.toISOString();
+  const openUntilAdjustmentMs = Math.max(0, adjustedAt.getTime() - startedAt.getTime());
   const pointId = getPointRecordId(current, guildId, userId, current.activePointStartedAt, closedAt.toISOString());
   const session = {
     pointId,
     startedAt: current.activePointStartedAt,
     closedAt: closedAt.toISOString(),
     durationMs,
+    openUntilAdjustmentMs,
+    openUntilAdjustmentAt: nowIso,
     ...buildSessionMetadata(current.activePointStartedAt, closedAt),
     ...buildPointSourceMetadata({
       source: current.activePointSource,
@@ -516,6 +520,8 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
     newClosedAt: closedAt.toISOString(),
     durationMs,
     extra: {
+      openUntilAdjustmentMs,
+      openUntilAdjustmentAt: nowIso,
       previousActiveStartedAt: current.activePointStartedAt,
       currentPointSource: current.activePointSource || null,
       currentPointReason: current.activePointReason || null,
@@ -535,7 +541,7 @@ async function correctOpenPointCloseTime(guildId, userId, closedAtInput, correct
     adjustments: appendAdjustment(current, adjustmentRecord),
   });
 
-  return { ok: true, action: 'corrected_closed', durationMs, closedAt: closedAt.toISOString(), data: next };
+  return { ok: true, action: 'corrected_closed', durationMs, openUntilAdjustmentMs, closedAt: closedAt.toISOString(), data: next };
 }
 
 async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput, adjustedBy = null, reason = null) {
@@ -574,13 +580,17 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
   }
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
-  const nowIso = new Date().toISOString();
+  const adjustedAt = new Date();
+  const nowIso = adjustedAt.toISOString();
+  const openUntilAdjustmentMs = Math.max(0, adjustedAt.getTime() - startedAt.getTime());
   const pointId = getPointRecordId(current, guildId, userId, startedAt.toISOString(), closedAt.toISOString());
   const session = {
     pointId,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     durationMs,
+    openUntilAdjustmentMs,
+    openUntilAdjustmentAt: nowIso,
     ...buildSessionMetadata(startedAt, closedAt),
     adjusted: true,
     corrected: true,
@@ -603,6 +613,8 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
     newClosedAt: closedAt.toISOString(),
     durationMs,
     extra: {
+      openUntilAdjustmentMs,
+      openUntilAdjustmentAt: nowIso,
       previousActiveStartedAt,
       originalInput: {
         startedAtInput: String(startedAtInput || '').trim(),
@@ -633,6 +645,7 @@ async function adjustPointSession(guildId, userId, startedAtInput, closedAtInput
     ok: true,
     action: 'readjusted',
     durationMs,
+    openUntilAdjustmentMs,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     data: next,
@@ -658,13 +671,17 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
   }
 
   const durationMs = Math.max(0, closedAt.getTime() - startedAt.getTime());
-  const nowIso = new Date().toISOString();
+  const adjustedAt = new Date();
+  const nowIso = adjustedAt.toISOString();
+  const openUntilAdjustmentMs = Math.max(0, adjustedAt.getTime() - startedAt.getTime());
   const pointId = getPointRecordId(current, guildId, userId, startedAt.toISOString(), closedAt.toISOString());
   const session = {
     pointId,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     durationMs,
+    openUntilAdjustmentMs,
+    openUntilAdjustmentAt: nowIso,
     ...buildSessionMetadata(startedAt, closedAt),
     adjusted: true,
     corrected: true,
@@ -691,6 +708,8 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
     newClosedAt: closedAt.toISOString(),
     durationMs,
     extra: {
+      openUntilAdjustmentMs,
+      openUntilAdjustmentAt: nowIso,
       previousActiveStartedAt,
       flexibleInput: session.flexibleInput,
     },
@@ -718,6 +737,7 @@ async function adjustPointSessionFlexible(guildId, userId, dateInput, timeRangeI
     ok: true,
     action: 'readjusted',
     durationMs,
+    openUntilAdjustmentMs,
     startedAt: startedAt.toISOString(),
     closedAt: closedAt.toISOString(),
     data: next,

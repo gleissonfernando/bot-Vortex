@@ -230,6 +230,12 @@ function validateManualRangeInput(requestInput) {
   return { ok: true, parsed };
 }
 
+function formatOpenUntilAdjustmentLine(result) {
+  return Number.isFinite(Number(result?.openUntilAdjustmentMs))
+    ? `Tempo aberto até o ajuste: ${formatDuration(result.openUntilAdjustmentMs)}`
+    : null;
+}
+
 async function createAdjustmentRequest(interaction, pointDateInput, startedAtInput, closedAtInput, reason) {
   if (arguments.length === 3) {
     reason = startedAtInput;
@@ -339,6 +345,7 @@ async function decideAdjustment(interaction, requestId, approved) {
     startedAt: result.startedAt || null,
     closedAt: result.closedAt,
     durationMs: result.durationMs,
+    openUntilAdjustmentMs: result.openUntilAdjustmentMs || null,
   });
 
   await sendAdjustmentDecisionDm(interaction, request, true, result).catch(() => {});
@@ -352,6 +359,7 @@ async function decideAdjustment(interaction, requestId, approved) {
       result.startedAt ? `Entrada aplicada: ${formatDate(result.startedAt)}` : null,
       `Saida aplicada: ${formatDate(result.closedAt)}`,
       `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+      formatOpenUntilAdjustmentLine(result),
     ].filter(Boolean).join('\n'),
     result,
     request,
@@ -397,6 +405,7 @@ async function decideAdjustmentWithManualRange(interaction, requestId, pointDate
     startedAt: result.startedAt || null,
     closedAt: result.closedAt,
     durationMs: result.durationMs,
+    openUntilAdjustmentMs: result.openUntilAdjustmentMs || null,
   });
 
   await sendAdjustmentDecisionDm(interaction, requestForDecision, true, result).catch(() => {});
@@ -410,7 +419,8 @@ async function decideAdjustmentWithManualRange(interaction, requestId, pointDate
       `Entrada aplicada: ${formatDate(result.startedAt)}`,
       `Saida aplicada: ${formatDate(result.closedAt)}`,
       `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-    ].join('\n'),
+      formatOpenUntilAdjustmentLine(result),
+    ].filter(Boolean).join('\n'),
     result,
     request: requestForDecision,
   };
@@ -435,9 +445,10 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
           : '✅ Ajuste de ponto aprovado e ponto fechado automaticamente.',
         `Aprovado por: <@${interaction.user.id}>`,
         `Motivo informado: ${request.reason}`,
+        formatOpenUntilAdjustmentLine(result),
         '',
         summary.content,
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
       allowedMentions: { users: [interaction.user.id] },
     });
     return true;
@@ -454,6 +465,7 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
       approved && result?.startedAt ? `Entrada aplicada: ${formatDate(result.startedAt)}` : null,
       approved && result ? `Saida aplicada: ${formatDate(result.closedAt)}` : null,
       approved && result ? `Tempo contabilizado: ${formatDuration(result.durationMs)}` : null,
+      approved && result ? formatOpenUntilAdjustmentLine(result) : null,
     ].filter(Boolean).join('\n'))
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)
     .setTimestamp()
