@@ -21,7 +21,7 @@ const REQUESTS_PATH = path.join(__dirname, '..', 'commands', 'pontoAdjustRequest
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const VORTEX_PANEL_IMAGE = path.join(__dirname, '..', 'foto', 'IMG_4234.png');
 const VORTEX_PANEL_IMAGE_NAME = 'IMG_4234.png';
-const MASTER_ROLE_ID = '1497703127074345040';
+const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
 
 function ensureFile() {
   if (!fs.existsSync(REQUESTS_PATH)) {
@@ -46,16 +46,67 @@ function getStaffRoleIds() {
   const config = readJSON(CONFIG_PATH);
   const pointConfig = getPointConfig();
   const levels = config.VORTEX_ROLE_LEVELS || {};
+  const commandPermissions = config.COMMAND_ROLE_PERMISSIONS || {};
   return [...new Set([
-    MASTER_ROLE_ID,
+    ...MASTER_ROLE_IDS,
+    ...(Array.isArray(config.STAFF_ROLES) ? config.STAFF_ROLES : []),
     ...(Array.isArray(levels.admin) ? levels.admin : []),
+    ...(Array.isArray(levels.medio) ? levels.medio : []),
+    ...(Array.isArray(commandPermissions.painel) ? commandPermissions.painel : []),
     ...pointConfig.adjustStaffRoleIds,
   ].filter(Boolean).map(String))];
 }
 
+function getMemberRoleIds(member) {
+  if (member?.roles?.cache) return Array.from(member.roles.cache.keys()).map(String);
+  if (Array.isArray(member?.roles)) return member.roles.map(String);
+  if (Array.isArray(member?._roles)) return member._roles.map(String);
+  return [];
+}
+
+function memberHasAnyRole(member, roleIds) {
+  const memberRoleIds = new Set(getMemberRoleIds(member));
+  return roleIds.some((roleId) => memberRoleIds.has(String(roleId)));
+}
+
+function hasElevatedGuildPermission(member) {
+  return Boolean(
+    member?.permissions?.has?.(PermissionFlagsBits.Administrator)
+    || member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)
+    || member?.permissions?.has?.(PermissionFlagsBits.ManageRoles)
+    || member?.permissions?.has?.(PermissionFlagsBits.ManageChannels)
+  );
+}
+
+function getMemberHighestRolePosition(member) {
+  if (Number.isFinite(member?.roles?.highest?.position)) return member.roles.highest.position;
+  const roleIds = getMemberRoleIds(member);
+  const rolesCache = member?.guild?.roles?.cache;
+  if (!rolesCache) return null;
+  const positions = roleIds
+    .map((roleId) => rolesCache.get(roleId)?.position)
+    .filter(Number.isFinite);
+  return positions.length ? Math.max(...positions) : null;
+}
+
+function hasRoleAtOrAboveStaff(member, staffRoleIds) {
+  const rolesCache = member?.guild?.roles?.cache;
+  if (!rolesCache) return false;
+  const staffPositions = staffRoleIds
+    .map((roleId) => rolesCache.get(String(roleId))?.position)
+    .filter(Number.isFinite);
+  const memberHighestPosition = getMemberHighestRolePosition(member);
+  return staffPositions.length > 0
+    && Number.isFinite(memberHighestPosition)
+    && memberHighestPosition >= Math.max(...staffPositions);
+}
+
 function hasPointStaffPermission(member) {
-  if (!member?.roles?.cache) return false;
-  return getStaffRoleIds().some((roleId) => member.roles.cache.has(roleId));
+  if (!member) return false;
+  const staffRoleIds = getStaffRoleIds();
+  return hasElevatedGuildPermission(member)
+    || memberHasAnyRole(member, staffRoleIds)
+    || hasRoleAtOrAboveStaff(member, staffRoleIds);
 }
 
 function normalizeChannelName(user) {
@@ -219,6 +270,9 @@ async function decideAdjustment(interaction, requestId, approved) {
   const request = getRequest(requestId);
   if (!request) return { ok: false, message: 'Solicitação de ajuste não encontrada.' };
   if (request.status !== 'pending') return { ok: false, message: 'Esta solicitação já foi analisada.' };
+  if (String(request.userId) === String(interaction.user.id)) {
+    return { ok: false, message: 'Você não pode analisar o próprio ajuste de ponto.' };
+  }
 
   if (!approved) {
     updateRequest(requestId, {
