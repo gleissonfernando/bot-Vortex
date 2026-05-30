@@ -307,6 +307,7 @@ function formatProfileDisplayName(profile = {}, fallback = 'N/A') {
 function getSaoPauloDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('pt-BR', {
     timeZone: PROFILE_TIME_ZONE,
+    weekday: 'long',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -331,8 +332,9 @@ function chunkArray(items, size) {
 }
 
 function canSendScheduledProfileReminder(date = new Date()) {
-  const hour = Number(getSaoPauloDateParts(date).hour);
-  return Number.isFinite(hour) && hour >= PROFILE_REMINDER_HOUR;
+  const parts = getSaoPauloDateParts(date);
+  const hour = Number(parts.hour);
+  return String(parts.weekday || '').toLowerCase() === 'segunda-feira' && Number.isFinite(hour) && hour >= PROFILE_REMINDER_HOUR;
 }
 
 function canSendMissingProfileAlert(date = new Date()) {
@@ -684,17 +686,19 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
   const config = readProfileConfig();
   if (!config.billingDmEnabled) return { sent: false, reason: 'billing_disabled' };
   if (!force && !canSendScheduledProfileReminder(new Date())) {
-    return { sent: false, reason: 'before_19h' };
+    return { sent: false, reason: 'not_monday_or_before_19h' };
   }
 
   const now = Date.now();
   const lastUpdateMs = profile.lastProfileUpdateAt ? new Date(profile.lastProfileUpdateAt).getTime() : 0;
   const lastReminderMs = profile.lastReminderAt ? new Date(profile.lastReminderAt).getTime() : 0;
+  const todayKey = getSaoPauloDateKey(new Date());
+  const lastReminderDateKey = lastReminderMs ? getSaoPauloDateKey(new Date(lastReminderMs)) : null;
   const effectiveThresholdMs = Math.max(Number(thresholdMs) || 0, PROFILE_UPDATE_INTERVAL_MS);
   if (!lastUpdateMs) return { sent: false, reason: 'missing_update' };
   if (now - lastUpdateMs < effectiveThresholdMs) return { sent: false, reason: 'not_due' };
-  if (!force && lastReminderMs && now - lastReminderMs < PROFILE_UPDATE_INTERVAL_MS) {
-    return { sent: false, reason: 'already_reminded_this_week' };
+  if (!force && lastReminderDateKey === todayKey) {
+    return { sent: false, reason: 'already_reminded_this_monday' };
   }
 
   const user = await client.users.fetch(profile.userId).catch(() => null);
@@ -709,6 +713,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Última atualização:** ${formatDate(profile.lastProfileUpdateAt)}`,
       `**Tempo sem atualizar:** ${formatDuration(now - lastUpdateMs)}`,
       `**Horário do aviso:** ${formatDate(new Date())}`,
+      '**Cobrança automática:** toda segunda-feira a partir das 19:00',
       '',
       'Use `/perfil link:<link da mídia> nivel:<numero>` para atualizar.',
       'O prazo para atualizar o nível após o /set é de 1 semana.',
@@ -764,6 +769,7 @@ async function sendProfileManagementSummary(client, guild, dueProfiles) {
             '',
             lines.join('\n'),
             '',
+            'Cobrança automática: toda segunda-feira a partir das 19:00.',
             `Horário da cobrança: ${formatDate(new Date())}`,
           ].join('\n'))
           .setTimestamp(),

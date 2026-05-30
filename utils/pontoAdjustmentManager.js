@@ -7,7 +7,13 @@ const {
   EmbedBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const { correctOpenPointCloseTime, formatDate, formatDuration } = require('./pontoManager');
+const {
+  adjustPointSessionFlexible,
+  correctOpenPointCloseTime,
+  formatDate,
+  formatDuration,
+  parseFlexiblePointAdjustment,
+} = require('./pontoManager');
 const { getPointConfig } = require('./pontoPanel');
 const { createPointActionTranscriptSummary } = require('./pointTranscriptNotifier');
 
@@ -60,20 +66,44 @@ function normalizeChannelName(user) {
     .slice(0, 90);
 }
 
-function buildRequestEmbed(interaction, closedAtInput, reason) {
+function hasRangeAdjustment(request = {}) {
+  return Boolean(request.pointDateInput && request.startedAtInput && request.closedAtInput);
+}
+
+function buildTimeRangeInput(request = {}) {
+  return `${request.startedAtInput || ''} ate ${request.closedAtInput || ''}`.trim();
+}
+
+function buildRequestDataLines(request = {}) {
+  const lines = hasRangeAdjustment(request)
+    ? [
+        `Data do ponto: \`${request.pointDateInput}\``,
+        `Entrada informada: \`${request.startedAtInput}\``,
+        `Saida informada: \`${request.closedAtInput}\``,
+      ]
+    : [
+        `Horario correto de saida: \`${request.closedAtInput || 'N/A'}\``,
+      ];
+
+  lines.push(`Motivo: ${request.reason || 'N/A'}`);
+  return lines;
+}
+
+function buildRequestEmbed(interaction, request) {
   return new EmbedBuilder()
     .setColor('#FEE75C')
     .setAuthor({ name: 'VORTEX | Ajuste de Ponto', iconURL: interaction.client.user.displayAvatarURL() })
     .setTitle('🛠️ Pedido de ajuste de ponto')
     .setDescription([
-      '<@' + interaction.user.id + '> solicitou correção no fechamento do ponto.',
+      '<@' + interaction.user.id + '> solicitou correção de ponto.',
       '',
       '**Dados informados**',
-      `Horário correto de saída: \`${closedAtInput}\``,
-      `Motivo: ${reason}`,
+      ...buildRequestDataLines(request),
       '',
       '**Para a staff**',
-      'Ao aceitar, o ponto aberto será fechado automaticamente no horário informado.',
+      hasRangeAdjustment(request)
+        ? 'Ao aceitar, o ponto sera reajustado com a entrada e saida informadas, mesmo se nao estiver aberto.'
+        : 'Ao aceitar, o ponto aberto sera fechado automaticamente no horario informado.',
     ].join('\n'))
     .setTimestamp()
     .setFooter({ text: 'Vortex • Sistema de Ponto' });
@@ -110,7 +140,31 @@ function updateRequest(requestId, patch) {
   return data[requestId];
 }
 
-async function createAdjustmentRequest(interaction, closedAtInput, reason) {
+async function createAdjustmentRequest(interaction, pointDateInput, startedAtInput, closedAtInput, reason) {
+  if (arguments.length === 3) {
+    reason = startedAtInput;
+    closedAtInput = pointDateInput;
+    pointDateInput = null;
+    startedAtInput = null;
+  }
+
+  const requestInput = {
+    pointDateInput: String(pointDateInput || '').trim(),
+    startedAtInput: String(startedAtInput || '').trim(),
+    closedAtInput: String(closedAtInput || '').trim(),
+    reason: String(reason || '').trim(),
+  };
+
+  if (hasRangeAdjustment(requestInput)) {
+    const parsed = parseFlexiblePointAdjustment(requestInput.pointDateInput, buildTimeRangeInput(requestInput));
+    if (!parsed.ok) {
+      return { ok: false, message: parsed.message };
+    }
+    if (parsed.closedAt.getTime() > Date.now()) {
+      return { ok: false, message: 'O horario de saida nao pode estar no futuro.' };
+    }
+  }
+
   const pointConfig = getPointConfig();
   const category = await interaction.guild.channels.fetch(pointConfig.adjustCategoryId).catch(() => null);
   if (!category) {
@@ -140,8 +194,7 @@ async function createAdjustmentRequest(interaction, closedAtInput, reason) {
     guildId: interaction.guild.id,
     channelId: channel.id,
     userId: interaction.user.id,
-    closedAtInput,
-    reason,
+    ...requestInput,
     status: 'pending',
     createdBy: interaction.user.id,
     createdAt: new Date().toISOString(),
@@ -150,7 +203,7 @@ async function createAdjustmentRequest(interaction, closedAtInput, reason) {
 
   await channel.send({
     content: `<@${interaction.user.id}> ${staffRoleIds.map((roleId) => `<@&${roleId}>`).join(' ')}`,
-    embeds: [buildRequestEmbed(interaction, closedAtInput, reason)],
+    embeds: [buildRequestEmbed(interaction, request)],
     components: [buildDecisionRow(requestId)],
     allowedMentions: { users: [interaction.user.id], roles: staffRoleIds },
   });
@@ -177,13 +230,22 @@ async function decideAdjustment(interaction, requestId, approved) {
     return { ok: true, status: 'rejected', message: `Ajuste recusado.\nUsuário: <@${request.userId}>\nNegado por: <@${interaction.user.id}>` };
   }
 
-  const result = await correctOpenPointCloseTime(
-    request.guildId,
-    request.userId,
-    request.closedAtInput,
-    interaction.member,
-    request.reason
-  );
+  const result = hasRangeAdjustment(request)
+    ? await adjustPointSessionFlexible(
+        request.guildId,
+        request.userId,
+        request.pointDateInput,
+        buildTimeRangeInput(request),
+        interaction.member,
+        request.reason
+      )
+    : await correctOpenPointCloseTime(
+        request.guildId,
+        request.userId,
+        request.closedAtInput,
+        interaction.member,
+        request.reason
+      );
 
   if (!result.ok) {
     return { ok: false, message: result.message };
@@ -193,6 +255,7 @@ async function decideAdjustment(interaction, requestId, approved) {
     status: 'approved',
     decidedBy: interaction.user.id,
     decidedAt: new Date().toISOString(),
+    startedAt: result.startedAt || null,
     closedAt: result.closedAt,
     durationMs: result.durationMs,
   });
@@ -203,11 +266,12 @@ async function decideAdjustment(interaction, requestId, approved) {
     ok: true,
     status: 'approved',
     message: [
-      'Ajuste aprovado e ponto fechado automaticamente.',
+      hasRangeAdjustment(request) ? 'Ajuste aprovado e ponto reajustado.' : 'Ajuste aprovado e ponto fechado automaticamente.',
       `Usuário: <@${request.userId}>`,
-      `Fechamento aplicado: ${formatDate(result.closedAt)}`,
+      result.startedAt ? `Entrada aplicada: ${formatDate(result.startedAt)}` : null,
+      `Saida aplicada: ${formatDate(result.closedAt)}`,
       `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
     result,
     request,
   };
@@ -227,7 +291,9 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
     });
     await user.send({
       content: [
-        '✅ Ajuste de ponto aprovado e ponto fechado automaticamente.',
+        hasRangeAdjustment(request)
+          ? '✅ Ajuste de ponto aprovado e reajustado.'
+          : '✅ Ajuste de ponto aprovado e ponto fechado automaticamente.',
         `Aprovado por: <@${interaction.user.id}>`,
         `Motivo informado: ${request.reason}`,
         '',
@@ -244,10 +310,10 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
     .setTitle(approved ? '✅ Ajuste de ponto aprovado' : '❌ Ajuste de ponto recusado')
     .setDescription([
       `Usuário: <@${request.userId}>`,
-      `Horário solicitado: \`${request.closedAtInput}\``,
-      `Motivo informado: ${request.reason}`,
+      ...buildRequestDataLines(request),
       approved ? `Aprovado por: <@${interaction.user.id}>` : `Recusado por: <@${interaction.user.id}>`,
-      approved && result ? `Fechamento aplicado: ${formatDate(result.closedAt)}` : null,
+      approved && result?.startedAt ? `Entrada aplicada: ${formatDate(result.startedAt)}` : null,
+      approved && result ? `Saida aplicada: ${formatDate(result.closedAt)}` : null,
       approved && result ? `Tempo contabilizado: ${formatDuration(result.durationMs)}` : null,
     ].filter(Boolean).join('\n'))
     .setImage(`attachment://${VORTEX_PANEL_IMAGE_NAME}`)

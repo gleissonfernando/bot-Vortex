@@ -115,7 +115,7 @@ function createControlEmbed() {
       '`3.` Esqueceu de fechar? Use **Solicitar ajuste**.',
       '',
       '**Ajuste de ponto**',
-      'Informe o horário correto de saída e o motivo. A staff vai analisar antes de aplicar.',
+      'Informe a data, a hora que entrou, a hora que saiu e o motivo. Funciona mesmo se o ponto ja estiver fechado.',
     ].join('\n'))
     .setTimestamp()
     .setFooter({ text: 'Vortex - Sistema de Ponto' });

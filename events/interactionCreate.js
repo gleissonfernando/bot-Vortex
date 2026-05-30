@@ -260,14 +260,30 @@ module.exports = {
         if (interaction.isButton() && interaction.customId === 'ponto_adjust_request') {
             const modal = new ModalBuilder()
                 .setCustomId('modal_ponto_adjust_request')
-                .setTitle('Ajuste de ponto');
+                .setTitle('Corrigir ponto');
 
             modal.addComponents(
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
+                        .setCustomId('point_date')
+                        .setLabel('Data do ponto')
+                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('started_at')
+                        .setLabel('Hora que entrou')
+                        .setPlaceholder('Ex: 18:30 ou 18h30')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
                         .setCustomId('closed_at')
-                        .setLabel('Horário correto de saída')
-                        .setPlaceholder('Exemplo: 27/04/2026 18:30')
+                        .setLabel('Hora que saiu')
+                        .setPlaceholder('Ex: 23:00 ou 02h')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
@@ -287,9 +303,11 @@ module.exports = {
 
         if (interaction.isModalSubmit() && interaction.customId === 'modal_ponto_adjust_request') {
             await safeDeferReply(interaction, { ephemeral: true });
+            const pointDateInput = interaction.fields.getTextInputValue('point_date').trim();
+            const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
             const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
             const reason = interaction.fields.getTextInputValue('reason').trim();
-            const result = await createAdjustmentRequest(interaction, closedAtInput, reason);
+            const result = await createAdjustmentRequest(interaction, pointDateInput, startedAtInput, closedAtInput, reason);
             if (!result.ok) {
                 return safeEdit(interaction, { content: `❌ ${result.message}` });
             }

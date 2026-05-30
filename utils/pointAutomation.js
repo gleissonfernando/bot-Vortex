@@ -34,6 +34,7 @@ const CHECK_INTERVAL_MS = Math.max(
 const POINT_AUTOMATION_FETCH_PRESENCES = process.env.POINT_AUTOMATION_FETCH_PRESENCES !== 'false';
 const POINT_AUTOMATION_SCAN_FIVEM = process.env.POINT_AUTOMATION_SCAN_FIVEM !== 'false';
 const AUTOMATION_TIME_ZONE = 'America/Sao_Paulo';
+const WEEKLY_BILLING_WEEKDAY = 'segunda-feira';
 
 let interval = null;
 let scheduledAutomationRunning = false;
@@ -384,6 +385,17 @@ function getAutomationHour(date = new Date()) {
   return Number(hour);
 }
 
+function getAutomationWeekday(date = new Date()) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: AUTOMATION_TIME_ZONE,
+    weekday: 'long',
+  }).format(date).toLowerCase();
+}
+
+function isWeeklyBillingTime(date = new Date(), hour = 19) {
+  return getAutomationWeekday(date) === WEEKLY_BILLING_WEEKDAY && getAutomationHour(date) === Number(hour);
+}
+
 function getAutomationDateKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat('pt-BR', {
     timeZone: AUTOMATION_TIME_ZONE,
@@ -398,14 +410,15 @@ function getAutomationDateKey(date = new Date()) {
 async function checkOfflineUsers(client, guild, state, force = false, points = null) {
   const config = readAutomationConfig();
   if (!config.offlineChargeEnabled) return;
-  if (!force && getAutomationHour() !== config.offlineChargeHour) return;
+  if (!force && !isWeeklyBillingTime(new Date(), config.offlineChargeHour)) return;
 
   const profiles = Object.values(getGuildProfiles(guild.id));
   const billingExemptUserIds = new Set(getBillingExemptUserIds());
   const activeAbsences = new Set(getActiveGuildAbsences(guild.id).map((absence) => absence.userId));
   const guildPoints = points || await listGuildPoints(guild.id);
   const pointByUser = new Map(guildPoints.map((point) => [point.userId, point]));
-  const intervalMs = Math.max(1, config.offlineChargeIntervalDays) * 24 * 60 * 60 * 1000;
+  const thresholdMs = Math.max(1, Number(config.offlineThresholdHours || 12)) * 60 * 60 * 1000;
+  const todayKey = getAutomationDateKey();
 
   for (const profile of profiles) {
     if (billingExemptUserIds.has(String(profile?.userId))) continue;
@@ -413,20 +426,23 @@ async function checkOfflineUsers(client, guild, state, force = false, points = n
     const point = pointByUser.get(profile.userId);
     if (point?.activePointStartedAt) continue;
     const lastActivity = point?.lastPointCloseAt || point?.lastPointOpenAt || profile.approvedAt || profile.updatedAt;
-    if (!lastActivity || Date.now() - new Date(lastActivity).getTime() < intervalMs) continue;
+    const lastActivityMs = lastActivity ? new Date(lastActivity).getTime() : NaN;
+    const inactiveMs = Number.isNaN(lastActivityMs) ? 0 : Date.now() - lastActivityMs;
+    if (!lastActivity || Number.isNaN(lastActivityMs) || inactiveMs < thresholdMs) continue;
 
     const key = `${getStateKey(guild.id, profile.userId)}:offline`;
     const item = state[key] || {};
-    if (!force && item.lastChargeAt && Date.now() - new Date(item.lastChargeAt).getTime() < intervalMs) continue;
+    const lastChargeDateKey = item.lastChargeDateKey || (item.lastChargeAt ? getAutomationDateKey(new Date(item.lastChargeAt)) : null);
+    if (!force && lastChargeDateKey === todayKey) continue;
 
     const embed = new EmbedBuilder()
       .setColor('#ED4245')
       .setTitle('Alerta de login ausente')
       .setDescription([
-        `Você está há ${config.offlineChargeIntervalDays} dias sem login/ponto registrado e não está em ausência.`,
+        `Você está há ${formatDuration(inactiveMs)} sem login/ponto registrado e não está em ausência.`,
         '',
         `Último login/ponto registrado: **${formatDate(lastActivity)}**`,
-        `Cobrança automática: **a cada ${config.offlineChargeIntervalDays} dias às ${String(config.offlineChargeHour).padStart(2, '0')}:00**`,
+        `Cobrança automática: **toda segunda-feira às ${String(config.offlineChargeHour).padStart(2, '0')}:00**`,
         '',
         'Se aconteceu algo ou você precisa ficar afastado, solicite ausência pelo `/ausencia`. Ao entrar no FiveM Metrópole RP - Season 2!, seu ponto será aberto automaticamente.',
       ].join('\n'))
@@ -434,7 +450,7 @@ async function checkOfflineUsers(client, guild, state, force = false, points = n
 
     const user = await client.users.fetch(profile.userId).catch(() => null);
     const sent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
-    state[key] = { ...item, lastChargeAt: new Date().toISOString(), lastDmSent: sent };
+    state[key] = { ...item, lastChargeAt: new Date().toISOString(), lastChargeDateKey: todayKey, lastDmSent: sent };
   }
 }
 

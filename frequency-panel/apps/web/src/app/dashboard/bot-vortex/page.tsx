@@ -583,7 +583,7 @@ export default function BotVortexPage() {
 
             {config && selected === 'billing' ? (
               <ToolPanel title="Cobrancas" description="Regras automaticas de perfil e ponto offline." icon={CreditCard}>
-                <ControlGroup title="Regras ativas" description="As cobrancas entram no mesmo fluxo automatico usado pelo bot.">
+                <ControlGroup title="Regras ativas" description="As cobrancas automaticas rodam toda segunda-feira no bot.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <SwitchRow label="Cobrancas de perfil" value={config.PROFILE_BILLING_ENABLED} onChange={(value) => update('PROFILE_BILLING_ENABLED', value)} />
                     <SwitchRow label="Cobranca offline" value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />

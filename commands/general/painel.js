@@ -1486,7 +1486,7 @@ module.exports = {
         const selectedUserId = pointReadjustSelections.get(getSelectionKey(interaction));
         const modal = new ModalBuilder()
             .setCustomId(customId === 'clear_point_user' ? 'modal_clear_point_user' : 'modal_correct_point_close')
-            .setTitle(customId === 'clear_point_user' ? 'Deletar Dados de Ponto' : 'Reajustar Ponto');
+            .setTitle(customId === 'clear_point_user' ? 'Deletar Dados de Ponto' : 'Corrigir Ponto');
 
         modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder()
@@ -1504,15 +1504,23 @@ module.exports = {
                     new TextInputBuilder()
                         .setCustomId('point_date')
                         .setLabel('DATA DO PONTO')
-                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 até 24')
+                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
-                        .setCustomId('time_range')
-                        .setLabel('HORÁRIO DO PONTO')
-                        .setPlaceholder('Ex: 23 às 02, 23:00 até 02:00 ou 12 às 23')
+                        .setCustomId('started_at')
+                        .setLabel('HORA QUE ENTROU')
+                        .setPlaceholder('Ex: 18:30 ou 18h30')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('closed_at')
+                        .setLabel('HORA QUE SAIU')
+                        .setPlaceholder('Ex: 23:00 ou 02h')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                 ),
@@ -2259,14 +2267,15 @@ module.exports = {
     if (interaction.customId === 'modal_correct_point_close') {
         const userId = interaction.fields.getTextInputValue('user_id').trim();
         const dateInput = interaction.fields.getTextInputValue('point_date').trim();
-        const timeRangeInput = interaction.fields.getTextInputValue('time_range').trim();
+        const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
+        const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
         const reason = interaction.fields.getTextInputValue('reason').trim();
 
         if (!/^\d{15,25}$/.test(userId)) {
             return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
         }
 
-        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, timeRangeInput, interaction.member, reason);
+        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, `${startedAtInput} ate ${closedAtInput}`, interaction.member, reason);
         if (!result.ok) {
             return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
         }
@@ -2819,7 +2828,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '',
         '**Como funciona**',
         'Use esta aba para deletar dados de ponto ou fazer um reajuste manual.',
-        'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Reajustar ponto`.',
+        'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Corrigir ponto`.',
         '',
         `**Usuário selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
         `**Pontos abertos:** ${openPointOptions.length}`,
@@ -2827,15 +2836,16 @@ async function renderDashboard(interaction, tab, edit = false) {
         `**Call liberada no game:** ${onlineVoiceChannelId ? `<#${onlineVoiceChannelId}>` : '`Não configurada`'}`,
         '',
         '**Reajuste de ponto**',
-        'Informe a hora que abriu o ponto e a hora que fechou o ponto. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
+        'Informe a data, a hora que entrou e a hora que saiu. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
+        'Esse ajuste pode ser feito mesmo quando o usuário não está com ponto aberto.',
         '',
-        'Formato obrigatório: `DD/MM/AAAA HH:mm:ss`. Os segundos são opcionais.',
+        'Use data como `23/04/2026` e horários como `18:30` e `02h`. Se virar o dia, informe a data como `23 ate 24`.',
       ].join('\n'));
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('show_user_point_sheet').setLabel('Folha do usuário').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('correct_point_close').setLabel('Reajustar ponto').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('correct_point_close').setLabel('Corrigir ponto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger)
     );
@@ -2877,7 +2887,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
         `Cobrança por offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
         `Confirmação: **a cada ${automationConfig.pointMonitorDmIntervalHours}h**, até **${automationConfig.pointMonitorMaxDmAttempts} DMs** por ciclo.`,
-        `Cobrança offline: **${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00**, a cada **${automationConfig.offlineChargeIntervalDays} dias**.`,
+        `Cobrança offline: **toda segunda-feira às ${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00**.`,
+        `Limite para considerar offline: **${automationConfig.offlineThresholdHours}h sem login/ponto**.`,
         '',
         `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
         `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
@@ -3249,6 +3260,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Perfis devem ser atualizados pelo `/perfil` com mídia e nível em game.',
         `Cadastrados: **${profileList.length}** | aprovados no /set: **${setProfileCount}** | manuais: **${manualProfileCount}**`,
         `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
+        'Cobrança de perfil: **toda segunda-feira a partir das 19:00**.',
         `Notificação de atualização: **${profileConfig.profileUpdateNotificationsEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
