@@ -80,6 +80,18 @@ function buildManualAdjustmentApprovalModal(requestId, request = {}) {
     return modal;
 }
 
+async function schedulePointAdjustmentChannelDelete(channel) {
+    if (!channel?.delete || !channel?.guild) return;
+
+    await channel.send({
+        content: '🗑️ Ajuste finalizado. Este canal será apagado em **15 segundos**.',
+    }).catch(() => {});
+
+    setTimeout(() => {
+        channel.delete('Ajuste de ponto finalizado.').catch(() => null);
+    }, 15 * 1000);
+}
+
 function hasMasterPermission(member) {
     return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
 }
@@ -390,6 +402,7 @@ module.exports = {
                     `Analisado por: <@${interaction.user.id}>`,
                 ].join('\n'),
             }).catch(() => {});
+            await schedulePointAdjustmentChannelDelete(interaction.channel);
 
             return safeEdit(interaction, { content: result.message });
         }
@@ -413,6 +426,7 @@ module.exports = {
                     `Analisado por: <@${interaction.user.id}>`,
                 ].join('\n'),
             }).catch(() => {});
+            await schedulePointAdjustmentChannelDelete(interaction.channel);
 
             return safeEdit(interaction, { content: result.message });
         }
