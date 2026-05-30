@@ -6,7 +6,12 @@ const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReen
 const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
 const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
 const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
-const { createAdjustmentRequest, decideAdjustment } = require('../utils/pontoAdjustmentManager');
+const {
+    createAdjustmentRequest,
+    decideAdjustment,
+    decideAdjustmentWithManualRange,
+    getAdjustmentApprovalContext,
+} = require('../utils/pontoAdjustmentManager');
 const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
 const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
@@ -33,6 +38,46 @@ function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2));
 
 function hasStaffPermission(member) {
     return hasVortexLevel(member, ['admin', 'medio']);
+}
+
+function buildManualAdjustmentApprovalModal(requestId, request = {}) {
+    const legacyCloseInput = String(request.closedAtInput || '').trim();
+    const closePlaceholder = legacyCloseInput
+        ? `Ex: 03:00 | Saida pedida: ${legacyCloseInput}`.slice(0, 100)
+        : 'Ex: 03:00 ou 03h';
+
+    const modal = new ModalBuilder()
+        .setCustomId(`modal_ponto_adjust_accept_range_${requestId}`)
+        .setTitle('Corrigir ponto');
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('point_date')
+                .setLabel('Data do ponto')
+                .setPlaceholder('Ex: 28/05/2026 ou 28 ate 29')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('started_at')
+                .setLabel('Hora que entrou')
+                .setPlaceholder('Ex: 22:00 ou 22h')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId('closed_at')
+                .setLabel('Hora que saiu')
+                .setPlaceholder(closePlaceholder)
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+        )
+    );
+
+    return modal;
 }
 
 function hasMasterPermission(member) {
@@ -317,9 +362,20 @@ module.exports = {
         }
 
         if (interaction.isButton() && (interaction.customId.startsWith('ponto_adjust_accept_') || interaction.customId.startsWith('ponto_adjust_reject_'))) {
-            await safeDeferReply(interaction, { ephemeral: true });
             const approved = interaction.customId.startsWith('ponto_adjust_accept_');
             const requestId = interaction.customId.replace(approved ? 'ponto_adjust_accept_' : 'ponto_adjust_reject_', '');
+
+            if (approved) {
+                const approvalContext = await getAdjustmentApprovalContext(interaction, requestId);
+                if (!approvalContext.ok) {
+                    return safeReply(interaction, { content: `❌ ${approvalContext.message}`, ephemeral: true });
+                }
+                if (approvalContext.needsManualRange) {
+                    return safeShowModal(interaction, buildManualAdjustmentApprovalModal(requestId, approvalContext.request));
+                }
+            }
+
+            await safeDeferReply(interaction, { ephemeral: true });
             const result = await decideAdjustment(interaction, requestId, approved);
             if (!result.ok) {
                 return safeEdit(interaction, { content: `❌ ${result.message}` });
@@ -330,6 +386,29 @@ module.exports = {
             await interaction.channel.send({
                 content: [
                     approved ? '✅ Ajuste aprovado.' : '❌ Ajuste recusado.',
+                    result.message,
+                    `Analisado por: <@${interaction.user.id}>`,
+                ].join('\n'),
+            }).catch(() => {});
+
+            return safeEdit(interaction, { content: result.message });
+        }
+
+        if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_ponto_adjust_accept_range_')) {
+            await safeDeferReply(interaction, { ephemeral: true });
+            const requestId = interaction.customId.replace('modal_ponto_adjust_accept_range_', '');
+            const pointDateInput = interaction.fields.getTextInputValue('point_date').trim();
+            const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
+            const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
+            const result = await decideAdjustmentWithManualRange(interaction, requestId, pointDateInput, startedAtInput, closedAtInput);
+            if (!result.ok) {
+                return safeEdit(interaction, { content: `❌ ${result.message}` });
+            }
+
+            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
+            await interaction.channel.send({
+                content: [
+                    '✅ Ajuste aprovado.',
                     result.message,
                     `Analisado por: <@${interaction.user.id}>`,
                 ].join('\n'),

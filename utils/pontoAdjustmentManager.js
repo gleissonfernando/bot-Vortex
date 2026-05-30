@@ -191,6 +191,45 @@ function updateRequest(requestId, patch) {
   return data[requestId];
 }
 
+function canDecideAdjustment(interaction, request) {
+  if (!hasPointStaffPermission(interaction.member)) {
+    return { ok: false, message: 'Sem permissão para analisar ajuste de ponto.' };
+  }
+  if (!request) return { ok: false, message: 'Solicitação de ajuste não encontrada.' };
+  if (request.status !== 'pending') return { ok: false, message: 'Esta solicitação já foi analisada.' };
+  if (String(request.userId) === String(interaction.user.id)) {
+    return { ok: false, message: 'Você não pode analisar o próprio ajuste de ponto.' };
+  }
+  return { ok: true };
+}
+
+async function getAdjustmentApprovalContext(interaction, requestId) {
+  const request = getRequest(requestId);
+  const permission = canDecideAdjustment(interaction, request);
+  if (!permission.ok) return permission;
+
+  if (hasRangeAdjustment(request)) {
+    return { ok: true, request, needsManualRange: false };
+  }
+
+  return {
+    ok: true,
+    request,
+    needsManualRange: true,
+  };
+}
+
+function validateManualRangeInput(requestInput) {
+  const parsed = parseFlexiblePointAdjustment(requestInput.pointDateInput, buildTimeRangeInput(requestInput));
+  if (!parsed.ok) {
+    return { ok: false, message: parsed.message };
+  }
+  if (parsed.closedAt.getTime() > Date.now()) {
+    return { ok: false, message: 'O horario de saida nao pode estar no futuro.' };
+  }
+  return { ok: true, parsed };
+}
+
 async function createAdjustmentRequest(interaction, pointDateInput, startedAtInput, closedAtInput, reason) {
   if (arguments.length === 3) {
     reason = startedAtInput;
@@ -207,13 +246,8 @@ async function createAdjustmentRequest(interaction, pointDateInput, startedAtInp
   };
 
   if (hasRangeAdjustment(requestInput)) {
-    const parsed = parseFlexiblePointAdjustment(requestInput.pointDateInput, buildTimeRangeInput(requestInput));
-    if (!parsed.ok) {
-      return { ok: false, message: parsed.message };
-    }
-    if (parsed.closedAt.getTime() > Date.now()) {
-      return { ok: false, message: 'O horario de saida nao pode estar no futuro.' };
-    }
+    const validation = validateManualRangeInput(requestInput);
+    if (!validation.ok) return validation;
   }
 
   const pointConfig = getPointConfig();
@@ -263,16 +297,9 @@ async function createAdjustmentRequest(interaction, pointDateInput, startedAtInp
 }
 
 async function decideAdjustment(interaction, requestId, approved) {
-  if (!hasPointStaffPermission(interaction.member)) {
-    return { ok: false, message: 'Sem permissão para analisar ajuste de ponto.' };
-  }
-
   const request = getRequest(requestId);
-  if (!request) return { ok: false, message: 'Solicitação de ajuste não encontrada.' };
-  if (request.status !== 'pending') return { ok: false, message: 'Esta solicitação já foi analisada.' };
-  if (String(request.userId) === String(interaction.user.id)) {
-    return { ok: false, message: 'Você não pode analisar o próprio ajuste de ponto.' };
-  }
+  const permission = canDecideAdjustment(interaction, request);
+  if (!permission.ok) return permission;
 
   if (!approved) {
     updateRequest(requestId, {
@@ -331,6 +358,64 @@ async function decideAdjustment(interaction, requestId, approved) {
   };
 }
 
+async function decideAdjustmentWithManualRange(interaction, requestId, pointDateInput, startedAtInput, closedAtInput) {
+  const request = getRequest(requestId);
+  const permission = canDecideAdjustment(interaction, request);
+  if (!permission.ok) return permission;
+
+  const requestInput = {
+    pointDateInput: String(pointDateInput || '').trim(),
+    startedAtInput: String(startedAtInput || '').trim(),
+    closedAtInput: String(closedAtInput || '').trim(),
+  };
+  const validation = validateManualRangeInput(requestInput);
+  if (!validation.ok) return validation;
+
+  const requestForDecision = {
+    ...request,
+    ...requestInput,
+  };
+
+  const result = await adjustPointSessionFlexible(
+    request.guildId,
+    request.userId,
+    requestForDecision.pointDateInput,
+    buildTimeRangeInput(requestForDecision),
+    interaction.member,
+    request.reason
+  );
+
+  if (!result.ok) {
+    return { ok: false, message: result.message };
+  }
+
+  updateRequest(requestId, {
+    ...requestInput,
+    status: 'approved',
+    decidedBy: interaction.user.id,
+    decidedAt: new Date().toISOString(),
+    startedAt: result.startedAt || null,
+    closedAt: result.closedAt,
+    durationMs: result.durationMs,
+  });
+
+  await sendAdjustmentDecisionDm(interaction, requestForDecision, true, result).catch(() => {});
+
+  return {
+    ok: true,
+    status: 'approved',
+    message: [
+      'Ajuste aprovado e ponto reajustado.',
+      `Usuário: <@${request.userId}>`,
+      `Entrada aplicada: ${formatDate(result.startedAt)}`,
+      `Saida aplicada: ${formatDate(result.closedAt)}`,
+      `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
+    ].join('\n'),
+    result,
+    request: requestForDecision,
+  };
+}
+
 async function sendAdjustmentDecisionDm(interaction, request, approved, result) {
   const user = await interaction.client.users.fetch(request.userId).catch(() => null);
   if (!user) return false;
@@ -384,5 +469,7 @@ async function sendAdjustmentDecisionDm(interaction, request, approved, result) 
 module.exports = {
   createAdjustmentRequest,
   decideAdjustment,
+  decideAdjustmentWithManualRange,
+  getAdjustmentApprovalContext,
   hasPointStaffPermission,
 };
