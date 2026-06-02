@@ -6,6 +6,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
+  EmbedBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
@@ -566,12 +567,62 @@ async function sendLiveAlert(client, live, settings, status, { test = false, end
   if (!channel?.isTextBased?.()) return { ok: false, error: 'Canal invalido.' };
   const payload = buildLivePanelPayload(live, settings, status, { test, ended });
   const existing = await fetchLiveAlertMessage(channel, messageId);
+  try {
+    if (existing) {
+      const message = await existing.edit(payload);
+      return { ok: true, messageId: message.id };
+    }
+    const message = await channel.send(payload);
+    return { ok: true, messageId: message.id };
+  } catch (error) {
+    logger.warn(`Lives: falha ao enviar painel Components V2 (${error.message}). Tentando embed classico.`);
+  }
+
+  const fallbackPayload = buildClassicLivePayload(live, settings, status, { test, ended });
   if (existing) {
-    const message = await existing.edit(payload);
+    const message = await existing.edit(fallbackPayload);
     return { ok: true, messageId: message.id };
   }
-  const message = await channel.send(payload);
+  const message = await channel.send(fallbackPayload);
   return { ok: true, messageId: message.id };
+}
+
+function buildClassicLivePayload(live, settings, status, { test = false, ended = false } = {}) {
+  const roleId = liveAlertRoleId(live, settings);
+  const streamUrl = status.url || live.url;
+  const previewUrl = !ended ? twitchPreviewUrl(status) : null;
+  const embed = new EmbedBuilder()
+    .setColor(ended ? 0x6b7280 : test ? 0x7c3aed : 0x9146ff)
+    .setAuthor({
+      name: ended ? `${live.streamerName} encerrou a live` : `${live.streamerName} esta ao vivo na Twitch!`,
+      iconURL: live.avatarUrl || undefined,
+      url: streamUrl,
+    })
+    .setTitle(ended ? 'Live encerrada' : (status.title || live.lastLiveTitle || 'Live na Twitch'))
+    .setURL(streamUrl)
+    .addFields(
+      { name: 'Categoria/Jogo', value: String(status.game || 'Grand Theft Auto V'), inline: true },
+      { name: 'Viewers', value: String(Number(status.viewerCount || 0)), inline: true },
+      { name: 'Tempo ao vivo', value: ended ? 'Encerrada' : formatLiveDuration(status.startedAt || live.lastLiveStartedAt), inline: true }
+    )
+    .setFooter({ text: `Vortex Lives • atualizado em ${formatDateTime(new Date())}` })
+    .setTimestamp();
+
+  if (previewUrl) embed.setImage(previewUrl);
+
+  return {
+    content: liveAlertContent(roleId, live, status, live.customMessage || settings.defaultMessage) || undefined,
+    embeds: [embed],
+    components: ended ? [] : [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('Assistir Live')
+          .setStyle(ButtonStyle.Link)
+          .setURL(streamUrl)
+      ),
+    ],
+    allowedMentions: liveAlertAllowedMentions(roleId, live.guildId),
+  };
 }
 
 async function runLiveAlertCheck(client) {
@@ -684,7 +735,10 @@ async function runLiveAlertCheck(client) {
 
 function initLiveAlertMonitor(client) {
   if (monitorInterval) clearInterval(monitorInterval);
-  const intervalMs = Math.max(MIN_INTERVAL_MS, Number(process.env.LIVE_ALERT_CHECK_INTERVAL_MS || MIN_INTERVAL_MS));
+  const configuredIntervalMs = Number(process.env.LIVE_ALERT_CHECK_INTERVAL_MS || MIN_INTERVAL_MS);
+  const intervalMs = Number.isFinite(configuredIntervalMs)
+    ? Math.max(MIN_INTERVAL_MS, Math.min(configuredIntervalMs, MIN_INTERVAL_MS))
+    : MIN_INTERVAL_MS;
   setTimeout(() => runLiveAlertCheck(client).catch((error) => logger.error('Erro no monitor de lives:', error)), 20_000);
   monitorInterval = setInterval(() => {
     runLiveAlertCheck(client).catch((error) => logger.error('Erro no monitor de lives:', error));
