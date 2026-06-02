@@ -6,6 +6,7 @@ import { requireManager } from '../middleware.js';
 
 const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
 const DEFAULT_CHECK_INTERVAL_SECONDS = 30;
+const TWITCH_LIVE_LIMIT = 100;
 const PLATFORMS = ['twitch', 'youtube', 'kick', 'custom'] as const;
 let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 
@@ -175,6 +176,41 @@ async function resolveTwitchChannel(url: string) {
     console.warn(`[frequency-api] Falha ao consultar canal Twitch ${login}:`, error);
     return null;
   }
+}
+
+async function hydrateMissingTwitchProfiles(rows: LiveDoc[]) {
+  const twitchRows = rows.filter((row) => row.platform === 'twitch' && row.twitch_login && (!row.avatar_url || !row.banner_url || !row.twitch_user_id));
+  if (!twitchRows.length) return rows;
+
+  const lives = await collection<LiveDoc>('live_alert_configs');
+  await Promise.all(twitchRows.map(async (row) => {
+    const twitch = await resolveTwitchChannel(row.twitch_login || row.url);
+    if (!twitch || !row._id) return;
+
+    row.twitch_user_id = twitch.id;
+    row.twitch_login = twitch.login;
+    row.streamer_name = twitch.displayName;
+    row.avatar_url = twitch.avatarUrl;
+    row.banner_url = twitch.bannerUrl;
+    row.url = twitch.url;
+
+    await lives.updateOne(
+      { _id: row._id },
+      {
+        $set: {
+          twitch_user_id: twitch.id,
+          twitch_login: twitch.login,
+          streamer_name: twitch.displayName,
+          avatar_url: twitch.avatarUrl,
+          banner_url: twitch.bannerUrl,
+          url: twitch.url,
+          updated_at: new Date()
+        }
+      }
+    );
+  }));
+
+  return rows;
 }
 
 function normalizeLive(doc: LiveDoc) {
@@ -383,6 +419,7 @@ livesRouter.get('/', asyncRoute(async (req, res) => {
   try {
     const lives = await collection<LiveDoc>('live_alert_configs');
     const rows = await lives.find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
+    await hydrateMissingTwitchProfiles(rows);
     const settings = await getSettings(guildId);
     return res.json({ ok: true, lives: rows.map(normalizeLive), settings: normalizeSettings(settings) });
   } catch (error) {
@@ -443,6 +480,12 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     updated_at: now
   };
   const lives = await collection<LiveDoc>('live_alert_configs');
+  if (platform === 'twitch') {
+    const totalTwitchLives = await lives.countDocuments({ guild_id: guildId, platform: 'twitch' });
+    if (totalTwitchLives >= TWITCH_LIVE_LIMIT) {
+      return res.status(400).json({ ok: false, error: `Limite de ${TWITCH_LIVE_LIMIT} lives Twitch atingido.` });
+    }
+  }
   const duplicateQuery = twitchLogin
     ? { guild_id: guildId, platform, twitch_login: twitchLogin }
     : { guild_id: guildId, platform, url: doc.url };

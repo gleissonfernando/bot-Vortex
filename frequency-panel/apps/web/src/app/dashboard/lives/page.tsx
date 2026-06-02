@@ -38,6 +38,7 @@ type DiscordOption = {
 };
 
 const defaultMessage = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+const TWITCH_LIVE_LIMIT = 100;
 
 const platformCards = [
   { id: 'twitch', name: 'Twitch', description: 'Cadastro validado pela Twitch Helix API.', action: 'Cadastrar live', mark: 'TW', color: 'bg-violet-500', enabled: true },
@@ -106,6 +107,10 @@ export default function LivesPage() {
 
   function openAdd(platform: string) {
     if (platform !== 'twitch') return;
+    if ((byPlatform.twitch || []).length >= TWITCH_LIVE_LIMIT) {
+      setMessage(`Limite de ${TWITCH_LIVE_LIMIT} lives Twitch atingido.`);
+      return;
+    }
     resetForm(platform);
     setShowForm(true);
   }
@@ -245,7 +250,7 @@ export default function LivesPage() {
                       <h2 className="text-lg font-semibold text-white">{platform.name}</h2>
                       {platform.id === 'twitch' ? (
                         <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-xs font-semibold text-slate-300">
-                          {(byPlatform.twitch || []).length}/5
+                          {(byPlatform.twitch || []).length}/{TWITCH_LIVE_LIMIT}
                         </span>
                       ) : null}
                     </div>
