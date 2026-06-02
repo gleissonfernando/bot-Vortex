@@ -112,22 +112,27 @@ async function getTwitchToken() {
   if (!clientId || !clientSecret) return null;
   if (twitchTokenCache && twitchTokenCache.expiresAt > Date.now() + 60_000) return twitchTokenCache.token;
 
-  const response = await fetch('https://id.twitch.tv/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: 'client_credentials'
-    })
-  });
-  if (!response.ok) return null;
-  const data = await response.json();
-  twitchTokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 3600) - 60) * 1000
-  };
-  return twitchTokenCache.token;
+  try {
+    const response = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    twitchTokenCache = {
+      token: data.access_token,
+      expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 3600) - 60) * 1000
+    };
+    return twitchTokenCache.token;
+  } catch (error) {
+    console.warn('[frequency-api] Falha ao obter token da Twitch:', error);
+    return null;
+  }
 }
 
 async function resolveTwitchChannel(url: string) {
@@ -136,23 +141,28 @@ async function resolveTwitchChannel(url: string) {
   const clientId = process.env.TWITCH_CLIENT_ID;
   if (!login || !token || !clientId) return null;
 
-  const response = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Client-Id': clientId
-    }
-  });
-  if (!response.ok) return null;
-  const data = await response.json();
-  const user = Array.isArray(data.data) ? data.data[0] : null;
-  if (!user) return null;
-  return {
-    id: String(user.id),
-    login: String(user.login || login),
-    displayName: String(user.display_name || login),
-    avatarUrl: user.profile_image_url || null,
-    url: `https://www.twitch.tv/${user.login || login}`
-  };
+  try {
+    const response = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Client-Id': clientId
+      }
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const user = Array.isArray(data.data) ? data.data[0] : null;
+    if (!user) return null;
+    return {
+      id: String(user.id),
+      login: String(user.login || login),
+      displayName: String(user.display_name || login),
+      avatarUrl: user.profile_image_url || null,
+      url: `https://www.twitch.tv/${user.login || login}`
+    };
+  } catch (error) {
+    console.warn(`[frequency-api] Falha ao consultar canal Twitch ${login}:`, error);
+    return null;
+  }
 }
 
 function normalizeLive(doc: LiveDoc) {
@@ -390,12 +400,9 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
   const platform = input.platform || detectPlatform(input.url);
   const normalizedUrl = normalizeChannelInput(input.url, platform);
   const twitch = platform === 'twitch' ? await resolveTwitchChannel(normalizedUrl) : null;
-  if (platform === 'twitch' && !twitch) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Canal Twitch nao encontrado ou credenciais TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET invalidas.'
-    });
-  }
+  const twitchLogin = platform === 'twitch'
+    ? (twitch?.login || extractChannelSlug(normalizedUrl).toLowerCase() || null)
+    : null;
   const doc: LiveDoc = {
     guild_id: guildId,
     platform,
@@ -409,7 +416,7 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     last_live_title: null,
     last_live_url: null,
     twitch_user_id: twitch?.id || null,
-    twitch_login: twitch?.login || null,
+    twitch_login: twitchLogin,
     avatar_url: twitch?.avatarUrl || null,
     last_announced_live_id: null,
     last_alert_message_id: null,
@@ -420,8 +427,8 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     updated_at: now
   };
   const lives = await collection<LiveDoc>('live_alert_configs');
-  const duplicateQuery = twitch?.login
-    ? { guild_id: guildId, platform, twitch_login: twitch.login }
+  const duplicateQuery = twitchLogin
+    ? { guild_id: guildId, platform, twitch_login: twitchLogin }
     : { guild_id: guildId, platform, url: doc.url };
   const existing = await lives.findOne(duplicateQuery);
   if (existing) {
@@ -439,17 +446,12 @@ livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
     update.url = normalizeChannelInput(input.url, update.platform);
     if (update.platform === 'twitch') {
       const twitch = await resolveTwitchChannel(update.url);
-      if (!twitch) {
-        return res.status(400).json({
-          ok: false,
-          error: 'Canal Twitch nao encontrado ou credenciais TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET invalidas.'
-        });
-      }
-      update.url = twitch.url;
-      update.streamer_name = twitch.displayName;
-      update.twitch_user_id = twitch.id;
-      update.twitch_login = twitch.login;
-      update.avatar_url = twitch.avatarUrl;
+      const twitchLogin = twitch?.login || extractChannelSlug(update.url).toLowerCase() || null;
+      update.url = twitch?.url || update.url;
+      update.streamer_name = twitch?.displayName || fallbackStreamerName({ ...input, url: update.url }, update.platform);
+      update.twitch_user_id = twitch?.id || null;
+      update.twitch_login = twitchLogin;
+      update.avatar_url = twitch?.avatarUrl || null;
     }
   } else if (input.platform) {
     update.platform = input.platform;
