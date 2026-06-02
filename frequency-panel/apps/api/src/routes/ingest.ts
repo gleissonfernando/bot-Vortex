@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { collection, toDate } from '../db.js';
+import { collection, serializeDoc, toDate } from '../db.js';
 import { requireIngestSecret } from '../middleware.js';
 import { publishDashboardEvent } from '../events.js';
 import { registerPoint } from '../services/attendance.js';
@@ -10,6 +11,38 @@ import { getMemberByDiscord, upsertMember } from '../services/members.js';
 export const ingestRouter = Router();
 
 ingestRouter.use(requireIngestSecret);
+
+const DEFAULT_LIVE_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+
+function detectLivePlatform(url: string) {
+  try {
+    const host = new URL(url.includes('://') ? url : `https://${url}`).hostname.toLowerCase();
+    if (host.includes('twitch.tv')) return 'twitch';
+    if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+    if (host.includes('kick.com')) return 'kick';
+  } catch {
+    return 'custom';
+  }
+  return 'custom';
+}
+
+function liveSlug(url: string) {
+  try {
+    const parsed = new URL(url.includes('://') ? url : `https://twitch.tv/${url}`);
+    return (parsed.pathname.split('/').filter(Boolean)[0] || parsed.hostname).replace(/^@/, '');
+  } catch {
+    return String(url || '').trim().replace(/^@/, '');
+  }
+}
+
+function normalizeLiveUrl(value: string, platform: string) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.includes('://')) return raw;
+  const clean = raw.replace(/^@/, '').replace(/^\/+/, '');
+  if (platform === 'twitch') return `https://www.twitch.tv/${clean}`;
+  if (platform === 'kick') return `https://kick.com/${clean}`;
+  return raw;
+}
 
 function ingestUnavailable(res: any, error: unknown) {
   console.warn('[frequency-api] Ingest indisponivel sem MongoDB:', error);
@@ -263,6 +296,171 @@ ingestRouter.post('/point-snapshot', async (req, res) => {
 
     publishDashboardEvent({ type: 'points.snapshot', payload: { count: savedCount } });
     return res.json({ ok: true, count: savedCount });
+  } catch (error) {
+    return ingestUnavailable(res, error);
+  }
+});
+
+ingestRouter.get('/live-alerts', async (req, res) => {
+  const guildId = String(req.query.guildId || process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || 'global');
+
+  try {
+    const [lives, settings] = await Promise.all([
+      (await collection('live_alert_configs')).find({ guild_id: guildId }).sort({ created_at: -1 }).toArray(),
+      (await collection('live_alert_settings')).findOne({ guild_id: guildId })
+    ]);
+
+    return res.json({
+      ok: true,
+      guildId,
+      lives: (lives as any[]).map((live: any) => ({
+        ...(serializeDoc(live) as any),
+        id: String(live._id || live.id || '')
+      })),
+      settings: settings ? { ...settings, _id: undefined } : {
+        guild_id: guildId,
+        enabled: true,
+        default_alert_channel_id: null,
+        default_mention_role_id: null,
+        default_message: null,
+        check_interval_seconds: 30
+      }
+    });
+  } catch (error) {
+    return ingestUnavailable(res, error);
+  }
+});
+
+ingestRouter.post('/live-alerts', async (req, res) => {
+  const parsed = z.object({
+    guildId: z.string().min(1),
+    platform: z.enum(['twitch', 'youtube', 'kick', 'custom']).optional(),
+    url: z.string().min(1).max(240),
+    streamerName: z.string().max(80).optional().nullable(),
+    alertChannelId: z.string().optional().nullable(),
+    mentionRoleId: z.string().optional().nullable(),
+    enabled: z.boolean().optional(),
+    customMessage: z.string().max(1200).optional().nullable(),
+    twitchLogin: z.string().optional().nullable(),
+    twitchUserId: z.string().optional().nullable(),
+    avatarUrl: z.string().optional().nullable(),
+    bannerUrl: z.string().optional().nullable()
+  }).safeParse(req.body);
+
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid live alert payload' });
+
+  try {
+    const input = parsed.data;
+    const platform = input.platform || detectLivePlatform(input.url);
+    const url = normalizeLiveUrl(input.url, platform);
+    const twitchLogin = platform === 'twitch' ? String(input.twitchLogin || liveSlug(url)).toLowerCase() : null;
+    const now = new Date();
+    const doc = {
+      guild_id: input.guildId,
+      platform,
+      url,
+      streamer_name: input.streamerName || liveSlug(url) || 'Streamer',
+      alert_channel_id: input.alertChannelId || null,
+      mention_role_id: input.mentionRoleId || null,
+      enabled: input.enabled !== false,
+      custom_message: input.customMessage || null,
+      status: 'unknown',
+      last_live_title: null,
+      last_live_url: null,
+      last_announced_live_id: null,
+      last_alert_message_id: null,
+      last_alert_updated_at: null,
+      last_live_started_at: null,
+      last_checked_at: null,
+      twitch_login: twitchLogin,
+      twitch_user_id: input.twitchUserId || null,
+      avatar_url: input.avatarUrl || null,
+      banner_url: input.bannerUrl || null,
+      created_at: now,
+      updated_at: now
+    };
+
+    const lives = await collection('live_alert_configs');
+    const duplicateQuery = twitchLogin
+      ? { guild_id: input.guildId, platform, twitch_login: twitchLogin }
+      : { guild_id: input.guildId, platform, url };
+    const existing = await lives.findOne(duplicateQuery);
+    if (existing) return res.status(409).json({ ok: false, error: 'Esta live ja esta cadastrada neste servidor.' });
+
+    const result = await lives.insertOne(doc);
+    return res.status(201).json({ ok: true, live: { ...(serializeDoc(doc) as any), id: String(result.insertedId) } });
+  } catch (error) {
+    return ingestUnavailable(res, error);
+  }
+});
+
+ingestRouter.patch('/live-alert-settings/:guildId', async (req, res) => {
+  const parsed = z.object({
+    enabled: z.boolean().optional(),
+    defaultAlertChannelId: z.string().optional().nullable(),
+    defaultMentionRoleId: z.string().optional().nullable(),
+    defaultMessage: z.string().optional().nullable(),
+    checkIntervalSeconds: z.number().int().min(30).max(3600).optional()
+  }).safeParse(req.body);
+
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid live settings payload' });
+
+  try {
+    const guildId = String(req.params.guildId || 'global');
+    const current = await (await collection('live_alert_settings')).findOne({ guild_id: guildId });
+    const next = {
+      guild_id: guildId,
+      enabled: parsed.data.enabled ?? current?.enabled ?? true,
+      default_alert_channel_id: parsed.data.defaultAlertChannelId ?? current?.default_alert_channel_id ?? null,
+      default_mention_role_id: parsed.data.defaultMentionRoleId ?? current?.default_mention_role_id ?? null,
+      default_message: parsed.data.defaultMessage ?? current?.default_message ?? DEFAULT_LIVE_MESSAGE,
+      check_interval_seconds: parsed.data.checkIntervalSeconds ?? current?.check_interval_seconds ?? 30,
+      updated_at: new Date()
+    };
+
+    await (await collection('live_alert_settings')).updateOne(
+      { guild_id: guildId },
+      { $set: next, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+    return res.json({ ok: true, settings: next });
+  } catch (error) {
+    return ingestUnavailable(res, error);
+  }
+});
+
+ingestRouter.patch('/live-alerts/:id/status', async (req, res) => {
+  const parsed = z.object({
+    status: z.enum(['online', 'offline', 'unknown']).optional(),
+    lastLiveTitle: z.string().nullable().optional(),
+    lastLiveUrl: z.string().nullable().optional(),
+    lastAnnouncedLiveId: z.string().nullable().optional(),
+    lastAlertMessageId: z.string().nullable().optional(),
+    lastAlertUpdatedAt: z.string().nullable().optional(),
+    lastLiveStartedAt: z.string().nullable().optional()
+  }).safeParse(req.body);
+
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'Invalid live status payload' });
+
+  try {
+    const id = String(req.params.id || '');
+    if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: 'Invalid live id' });
+
+    const input = parsed.data;
+    const update = {
+      status: input.status || 'unknown',
+      last_live_title: input.lastLiveTitle || null,
+      last_live_url: input.lastLiveUrl || null,
+      last_announced_live_id: input.lastAnnouncedLiveId ?? null,
+      last_alert_message_id: input.lastAlertMessageId ?? null,
+      last_alert_updated_at: toDate(input.lastAlertUpdatedAt) || null,
+      last_live_started_at: toDate(input.lastLiveStartedAt) || null,
+      last_checked_at: new Date(),
+      updated_at: new Date()
+    };
+
+    await (await collection('live_alert_configs')).updateOne({ _id: new ObjectId(id) }, { $set: update });
+    return res.json({ ok: true });
   } catch (error) {
     return ingestUnavailable(res, error);
   }

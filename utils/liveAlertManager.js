@@ -25,6 +25,60 @@ let monitorInterval = null;
 let liveAlertCheckRunning = false;
 let twitchTokenCache = null;
 const lastGuildCheckAt = new Map();
+const liveApiCache = new Map();
+
+function liveApiBaseUrl() {
+  return String(
+    process.env.FREQUENCY_API_URL
+    || process.env.INTERNAL_API_URL
+    || process.env.BOT_API_URL
+    || 'http://127.0.0.1:4100'
+  ).replace(/\/+$/, '');
+}
+
+function liveApiSecret() {
+  return String(process.env.BOT_INGEST_SECRET || process.env.INGEST_SECRET || '').trim();
+}
+
+function allowLocalLiveFallback() {
+  return String(process.env.LIVE_ALERT_ALLOW_LOCAL_FALLBACK || '').toLowerCase() === 'true';
+}
+
+async function liveApiFetch(pathname, { method = 'GET', body } = {}) {
+  const secret = liveApiSecret();
+  if (!secret) throw new Error('BOT_INGEST_SECRET/INGEST_SECRET ausente para Live API.');
+
+  const response = await fetch(`${liveApiBaseUrl()}${pathname}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-ingest-secret': secret,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: 'no-store',
+  }).catch((error) => {
+    throw new Error(`Live API indisponivel: ${error.message}`);
+  });
+
+  const data = await response.json().catch(() => ({ ok: false, error: `Live API HTTP ${response.status}` }));
+  if (!response.ok || !data.ok) throw new Error(data.error || `Live API HTTP ${response.status}`);
+  return data;
+}
+
+async function getLiveApiSnapshot(guildId, { force = false } = {}) {
+  const targetGuildId = String(guildId || process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || 'global');
+  const cached = liveApiCache.get(targetGuildId);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const data = await liveApiFetch(`/ingest/live-alerts?guildId=${encodeURIComponent(targetGuildId)}`);
+  liveApiCache.set(targetGuildId, { data, expiresAt: Date.now() + 5000 });
+  return data;
+}
+
+function clearLiveApiSnapshot(guildId) {
+  if (guildId) liveApiCache.delete(String(guildId));
+  else liveApiCache.clear();
+}
 
 function chunkArray(items, size) {
   const chunks = [];
@@ -151,6 +205,14 @@ function normalizeSettings(row = {}) {
 }
 
 async function listLiveAlerts(guildId = null) {
+  try {
+    const data = await getLiveApiSnapshot(guildId);
+    return (data.lives || []).map(normalizeLive);
+  } catch (error) {
+    logger.warn(`Lives: falha ao carregar pela API: ${error.message}`);
+    if (!allowLocalLiveFallback()) return [];
+  }
+
   const collection = await mongoCollection('live_alert_configs');
   if (collection) {
     const query = guildId ? { guild_id: String(guildId) } : {};
@@ -164,6 +226,14 @@ async function listLiveAlerts(guildId = null) {
 }
 
 async function getLiveSettings(guildId) {
+  try {
+    const data = await getLiveApiSnapshot(guildId);
+    return normalizeSettings(data.settings || { guild_id: String(guildId) });
+  } catch (error) {
+    logger.warn(`Lives: falha ao carregar configuracao pela API: ${error.message}`);
+    if (!allowLocalLiveFallback()) return normalizeSettings({ guild_id: String(guildId) });
+  }
+
   const collection = await mongoCollection('live_alert_settings');
   if (collection) {
     const row = await collection.findOne({ guild_id: String(guildId) });
@@ -174,6 +244,18 @@ async function getLiveSettings(guildId) {
 }
 
 async function saveLiveSettings(guildId, patch) {
+  try {
+    const data = await liveApiFetch(`/ingest/live-alert-settings/${encodeURIComponent(String(guildId))}`, {
+      method: 'PATCH',
+      body: patch,
+    });
+    clearLiveApiSnapshot(guildId);
+    return normalizeSettings(data.settings || { ...patch, guildId });
+  } catch (error) {
+    logger.warn(`Lives: falha ao salvar configuracao pela API: ${error.message}`);
+    if (!allowLocalLiveFallback()) throw error;
+  }
+
   const current = await getLiveSettings(guildId);
   const next = { ...current, ...patch, guildId: String(guildId) };
   const collection = await mongoCollection('live_alert_settings');
@@ -203,6 +285,18 @@ async function saveLiveSettings(guildId, patch) {
 }
 
 async function createLiveAlert(guildId, input) {
+  try {
+    const data = await liveApiFetch('/ingest/live-alerts', {
+      method: 'POST',
+      body: { ...input, guildId: String(guildId) },
+    });
+    clearLiveApiSnapshot(guildId);
+    return normalizeLive(data.live);
+  } catch (error) {
+    logger.warn(`Lives: falha ao criar live pela API: ${error.message}`);
+    if (!allowLocalLiveFallback()) throw error;
+  }
+
   const now = new Date();
   const platform = input.platform || detectPlatform(input.url);
   const url = normalizeChannelInput(input.url, platform);
@@ -244,6 +338,26 @@ async function createLiveAlert(guildId, input) {
 }
 
 async function updateLiveAlertStatus(live, patch) {
+  try {
+    await liveApiFetch(`/ingest/live-alerts/${encodeURIComponent(String(live.id))}/status`, {
+      method: 'PATCH',
+      body: {
+        status: patch.status || live.status || 'unknown',
+        lastLiveTitle: patch.lastLiveTitle || null,
+        lastLiveUrl: patch.lastLiveUrl || null,
+        lastAnnouncedLiveId: patch.lastAnnouncedLiveId ?? live.lastAnnouncedLiveId ?? null,
+        lastAlertMessageId: patch.lastAlertMessageId ?? live.lastAlertMessageId ?? null,
+        lastAlertUpdatedAt: patch.lastAlertUpdatedAt ? new Date(patch.lastAlertUpdatedAt).toISOString() : null,
+        lastLiveStartedAt: patch.lastLiveStartedAt ? new Date(patch.lastLiveStartedAt).toISOString() : null,
+      },
+    });
+    clearLiveApiSnapshot(live.guildId);
+    return;
+  } catch (error) {
+    logger.warn(`Lives: falha ao atualizar status pela API: ${error.message}`);
+    if (!allowLocalLiveFallback()) return;
+  }
+
   const collection = await mongoCollection('live_alert_configs');
   const update = {
     status: patch.status || live.status || 'unknown',
