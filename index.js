@@ -112,6 +112,13 @@ client.commands = new Collection();
 setDiscordClient(client);
 setupErrorHandlers(client, { notifyError, notifyBotDown });
 
+const DISCORD_REPORT_COMMANDS_DISABLED = new Set([
+    'relatorio',
+    'relatorio-ponto',
+    'ponto',
+    'painelponto',
+]);
+
 app.get(['/api/database/status', '/api/db/status'], (req, res) => {
     const status = getDatabaseStatus();
     res.status(status.required && !status.connected ? 503 : 200).json({
@@ -267,7 +274,13 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         try {
             const command = require(filePath);
-            if (command.data && command.execute) client.commands.set(command.data.name, command);
+            if (command.data && command.execute) {
+                if (DISCORD_REPORT_COMMANDS_DISABLED.has(command.data.name)) {
+                    console.log(`[VORTEX] Comando de relatorio desativado no Discord: /${command.data.name}`);
+                    continue;
+                }
+                client.commands.set(command.data.name, command);
+            }
         } catch (error) { console.error(`Erro comando ${file}:`, error.message); }
     }
 }

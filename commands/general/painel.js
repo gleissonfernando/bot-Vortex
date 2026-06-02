@@ -106,11 +106,9 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/avisos', value: 'avisos', description: 'Quem pode abrir e enviar avisos' },
     { label: '/clear', value: 'clear', description: 'Quem pode limpar mensagens no chat' },
     { label: '/clipe', value: 'clipe', description: 'Quem pode enviar clipes' },
-    { label: '/painelponto', value: 'painelponto', description: 'Quem pode abrir o painel de ponto' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/serve', value: 'serve', description: 'Quem pode consultar ou usar serve' },
     { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
-    { label: '/ponto', value: 'ponto', description: 'Quem pode gerar relatório de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
@@ -862,6 +860,10 @@ module.exports = {
     }
 
     if (customId === 'show_all_points') {
+      return safeReply(interaction, {
+        content: 'Relatorios de ponto foram movidos para o site.',
+        ephemeral: true,
+      });
       await safeDeferReply(interaction, { ephemeral: true });
       const payload = await buildAllPointsReportPayload(interaction.guild);
 
@@ -877,6 +879,10 @@ module.exports = {
     }
 
     if (customId === 'show_user_point_sheet') {
+      return safeReply(interaction, {
+        content: 'Folhas e relatorios de ponto foram movidos para o site.',
+        ephemeral: true,
+      });
       await safeDeferReply(interaction, { ephemeral: true });
       const userId = pointReadjustSelections.get(getSelectionKey(interaction));
       if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
@@ -2851,8 +2857,6 @@ async function renderDashboard(interaction, tab, edit = false) {
       ].join('\n'));
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('show_all_points').setLabel('Mostrar todos os pontos').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('show_user_point_sheet').setLabel('Folha do usuário').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('correct_point_close').setLabel('Corrigir ponto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger)

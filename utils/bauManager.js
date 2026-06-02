@@ -4,7 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -19,7 +18,6 @@ const { logger } = require('./logger');
 const STORAGE_PATH = path.join(__dirname, '..', 'commands', 'bauStorage.json');
 const BAU_BANNER_FILE_NAME = 'sistema-de-bau-banner.png';
 const BAU_BANNER_PATH = path.join(__dirname, '..', 'public', BAU_BANNER_FILE_NAME);
-const BAU_LOG_CHANNEL_ID = '1508602673203642418';
 const TIME_ZONE = 'America/Sao_Paulo';
 const MAX_EVENTS = 1500;
 const MAX_REPORTS = 90;
@@ -409,45 +407,6 @@ function actionLabel(action) {
   return 'Movimento';
 }
 
-function actionColor(action) {
-  if (action === 'withdraw') return '#ED4245';
-  if (action === 'deposit') return '#57F287';
-  if (action === 'register') return '#5865F2';
-  return '#00D9FF';
-}
-
-async function sendBauLog(client, event) {
-  const channel = await client.channels.fetch(BAU_LOG_CHANNEL_ID).catch(() => null);
-  if (!channel?.isTextBased?.()) return false;
-
-  const memberLine = [
-    `<@${event.userId}>`,
-    event.profileName ? `Nome cadastrado: **${event.profileName}**` : null,
-    `Discord ID: \`${event.userId}\``,
-  ].filter(Boolean).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor(actionColor(event.action))
-    .setTitle(`Bau | ${actionLabel(event.action)}`)
-    .setDescription([
-      `Bau: **${event.chestLabel || CHESTS[event.chest]?.label || event.chest}**`,
-      `Item: **${event.itemName}**`,
-      `Quantidade: **${formatQuantity(event.quantity)}**`,
-      `Estoque antes: **${formatQuantity(event.quantityBefore)}**`,
-      `Estoque depois: **${formatQuantity(event.quantityAfter)}**`,
-      event.note ? `Observacao: ${event.note}` : null,
-    ].filter(Boolean).join('\n'))
-    .addFields({ name: 'Membro identificado', value: memberLine, inline: false })
-    .setTimestamp(new Date(event.createdAt || Date.now()))
-    .setFooter({ text: 'Vortex | Sistema de Bau' });
-
-  const message = await channel.send({
-    embeds: [embed],
-    allowedMentions: { parse: [] },
-  }).catch(() => null);
-  return Boolean(message);
-}
-
 function registerBauPanel(guildId, chestKey, channelId, messageId) {
   const data = readStorage();
   const guildData = ensureGuildData(data, guildId);
@@ -575,9 +534,6 @@ async function handleBauModal(interaction) {
     return safeEdit(interaction, { content: result.message });
   }
 
-  await sendBauLog(interaction.client, result.event).catch((error) => {
-    logger.error('Erro ao enviar log do bau:', error);
-  });
   await updateBauPanels(interaction.client, interaction.guildId, result.chestKey).catch((error) => {
     logger.error('Erro ao atualizar painel do bau:', error);
   });
@@ -654,25 +610,7 @@ async function sendDailyBauReportForGuild(client, guild, force = false) {
   guildData.reports = guildData.reports.slice(-MAX_REPORTS);
   writeStorage(data);
 
-  const channel = await client.channels.fetch(BAU_LOG_CHANNEL_ID).catch(() => null);
-  if (!channel?.isTextBased?.()) return false;
-
-  await channel.send({
-    content: [
-      '**VORTEX | RELATORIO DIARIO DO BAU**',
-      '',
-      `Data: **${formatDate(now)}**`,
-      '',
-      buildReportLines(guildData),
-      '',
-      '**Movimentos nas ultimas 24h**',
-      `Retirado: **${formatQuantity(summary.withdrawQuantity)}**`,
-      `Colocado: **${formatQuantity(summary.depositQuantity)}**`,
-      `Cadastrado: **${formatQuantity(summary.registeredItems)}** item(ns) / **${formatQuantity(summary.registerQuantity)}** unidade(s)`,
-    ].join('\n'),
-    allowedMentions: { parse: [] },
-  });
-
+  logger.info(`Relatorio diario do bau gerado apenas no site: ${report.id}`);
   return true;
 }
 
@@ -691,7 +629,6 @@ function initDailyBauReport(client) {
 }
 
 module.exports = {
-  BAU_LOG_CHANNEL_ID,
   CHESTS,
   STORAGE_PATH,
   buildBauPanelPayload,

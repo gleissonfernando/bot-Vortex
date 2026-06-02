@@ -16,6 +16,12 @@ if (!token || !clientId) {
 const commands = [];
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
+const DISCORD_REPORT_COMMANDS_DISABLED = new Set([
+    'relatorio',
+    'relatorio-ponto',
+    'ponto',
+    'painelponto',
+]);
 
 for (const folder of commandFolders) {
     const commandsPath = path.join(foldersPath, folder);
@@ -25,6 +31,10 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
+            if (DISCORD_REPORT_COMMANDS_DISABLED.has(command.data.name)) {
+                console.log(`Ignorado no Discord: /${command.data.name}`);
+                continue;
+            }
             commands.push(command.data.toJSON());
             console.log(`✅ Carregado comando: ${command.data.name}`);
         }

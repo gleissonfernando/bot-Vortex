@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { Bell, CircleHelp, Edit3, PlayCircle, Plus, Radio, Save, Trash2, Tv } from 'lucide-react';
+import { Bell, CircleHelp, Edit3, PlayCircle, Plus, Radio, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type LiveItem = {
@@ -157,20 +157,6 @@ export default function LivesPage() {
     }
   }
 
-  async function saveSettings() {
-    setMessage('');
-    try {
-      const data = await apiFetch<{ settings: Settings }>('/lives/settings/general', {
-        method: 'PUT',
-        body: JSON.stringify({ ...settings, checkIntervalSeconds: Number(settings.checkIntervalSeconds || 120) })
-      });
-      setSettings(data.settings);
-      setMessage('Configuracao geral salva.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Falha ao salvar configuracoes');
-    }
-  }
-
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl space-y-5">
@@ -300,48 +286,6 @@ export default function LivesPage() {
           </section>
         ) : null}
 
-        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-5 backdrop-blur">
-          <div className="mb-4 flex items-center gap-2">
-            <Tv className="text-sky-300" size={20} />
-            <h2 className="text-lg font-semibold text-white">Padroes da Vortex</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Select
-              label="Canal padrao de alertas"
-              value={settings.defaultAlertChannelId || ''}
-              onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value })}
-              placeholder="Selecione o canal"
-              options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
-            />
-            <Select
-              label="Cargo padrao para mencionar"
-              value={settings.defaultMentionRoleId || ''}
-              onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value })}
-              placeholder="Selecione o cargo"
-              options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
-            />
-            <Input label="Tempo de verificacao" value={String(settings.checkIntervalSeconds)} onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Number(value) })} placeholder="120" />
-            <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
-              <span className="text-slate-300">Monitoramento ativo</span>
-              <input type="checkbox" checked={settings.enabled} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-sky-500" />
-            </label>
-            <label className="block md:col-span-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Mensagem padrao</span>
-              <textarea
-                value={settings.defaultMessage || defaultMessage}
-                onChange={(event) => setSettings({ ...settings, defaultMessage: event.target.value })}
-                className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-300/60"
-              />
-            </label>
-          </div>
-          {discordOptions.error ? (
-            <p className="mt-3 text-xs text-amber-200">Nao consegui carregar canais/cargos do Discord: {discordOptions.error}</p>
-          ) : null}
-          <button onClick={saveSettings} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/15">
-            <Save size={16} />
-            Salvar padroes
-          </button>
-        </section>
       </div>
     </AppShell>
   );

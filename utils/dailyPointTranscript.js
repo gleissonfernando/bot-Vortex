@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { resetGuildPoints, formatDate } = require('./pontoManager');
+const { resetGuildPoints } = require('./pontoManager');
 const { updateStatusPanel } = require('./pontoPanel');
 const { logger } = require('./logger');
-const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
+const { isPrimaryGuild } = require('./guildScope');
 const { createDailyPointReportRecord } = require('./pointTranscriptStore');
 
 const DAILY_POINT_CHANNEL_ID = '1498473417144533255';
@@ -61,13 +61,10 @@ function shiftDateKey(dateKey, offsetDays) {
 
 async function sendDailyPointTranscriptForGuild(client, guild) {
   if (!isPrimaryGuild(guild.id)) return false;
-  const channel = await client.channels.fetch(DAILY_POINT_CHANNEL_ID).catch(() => null);
-  if (!isPrimaryGuildChannel(channel)) return false;
-  if (!channel?.isTextBased?.()) return false;
 
   const nowParts = getSaoPauloParts();
   const reportDateKey = nowParts.hour === '00' ? shiftDateKey(nowParts.dateKey, -1) : nowParts.dateKey;
-  const { record, report, url } = await createDailyPointReportRecord({
+  const { record, url } = await createDailyPointReportRecord({
     guild,
     generatedBy: client.user,
     dateKey: reportDateKey,
@@ -75,30 +72,7 @@ async function sendDailyPointTranscriptForGuild(client, guild) {
     includeOnlyActive: true,
   });
 
-  const content = [
-    '📊 **VORTEX | RELATÓRIO DIÁRIO**',
-    '',
-    `📅 Data: **${record.periodLabel || report.dateLabel}**`,
-    '',
-    `👥 Total de usuários ativos: **${report.summary.activeUsers}**`,
-    `⏱ Horas registradas: **${report.summary.totalFormatted}**`,
-    '',
-    '🏆 Usuário com maior atividade:',
-    `**${report.summary.topUserName}** (${report.summary.topUserTotal})`,
-    '',
-    `📈 Média diária: **${report.summary.averageFormatted}**`,
-    '',
-    '🔗 Ver relatório completo:',
-    url,
-    '',
-    `Gerado em: **${formatDate(new Date())}**`,
-    'Depois deste envio, o ciclo de ponto foi reiniciado automaticamente.',
-  ].join('\n');
-
-  await channel.send({
-    content,
-    allowedMentions: { parse: [] },
-  });
+  logger.info(`Relatorio diario de ponto gerado apenas no site: ${record.id} (${url})`);
 
   await resetGuildPoints(guild.id);
   await updateStatusPanel(client, guild.id).catch(() => null);
