@@ -225,8 +225,9 @@ function normalizeSettings(doc: any) {
   };
 }
 
-function objectId(value: unknown) {
-  return new ObjectId(String(value || ''));
+function parseObjectId(value: unknown) {
+  const id = String(value || '');
+  return ObjectId.isValid(id) ? new ObjectId(id) : null;
 }
 
 async function fetchDiscordGuildOptions(guildId: string) {
@@ -438,48 +439,6 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
   res.status(201).json({ ok: true, live: normalizeLive({ ...doc, _id: result.insertedId }) });
 }));
 
-livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
-  const input = liveSchema.partial().parse(req.body);
-  const update: any = { updated_at: new Date() };
-  if (input.url) {
-    update.platform = input.platform || detectPlatform(input.url);
-    update.url = normalizeChannelInput(input.url, update.platform);
-    if (update.platform === 'twitch') {
-      const twitch = await resolveTwitchChannel(update.url);
-      const twitchLogin = twitch?.login || extractChannelSlug(update.url).toLowerCase() || null;
-      update.url = twitch?.url || update.url;
-      update.streamer_name = twitch?.displayName || fallbackStreamerName({ ...input, url: update.url }, update.platform);
-      update.twitch_user_id = twitch?.id || null;
-      update.twitch_login = twitchLogin;
-      update.avatar_url = twitch?.avatarUrl || null;
-    }
-  } else if (input.platform) {
-    update.platform = input.platform;
-  }
-  if (input.streamerName !== undefined) {
-    const name = String(input.streamerName || '').trim();
-    if (name) update.streamer_name = name;
-  }
-  if (input.alertChannelId !== undefined) update.alert_channel_id = input.alertChannelId || null;
-  if (input.mentionRoleId !== undefined) update.mention_role_id = input.mentionRoleId || null;
-  if (input.enabled !== undefined) update.enabled = input.enabled;
-  if (input.customMessage !== undefined) update.custom_message = input.customMessage || null;
-  const lives = await collection<LiveDoc>('live_alert_configs');
-  const row = await lives.findOneAndUpdate(
-    { _id: objectId(req.params.id) },
-    { $set: update },
-    { returnDocument: 'after' }
-  );
-  if (!row) return res.status(404).json({ ok: false, error: 'Live nao encontrada.' });
-  res.json({ ok: true, live: normalizeLive(row) });
-}));
-
-livesRouter.delete('/:id', requireManager, asyncRoute(async (req, res) => {
-  const lives = await collection('live_alert_configs');
-  await lives.deleteOne({ _id: objectId(req.params.id) });
-  res.json({ ok: true });
-}));
-
 livesRouter.get('/settings', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   try {
@@ -517,9 +476,60 @@ livesRouter.put('/settings/general', requireManager, asyncRoute(async (req, res)
   res.json({ ok: true, settings: normalizeSettings(update) });
 }));
 
-livesRouter.post('/:id/test', requireManager, asyncRoute(async (req, res) => {
+livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
+  const id = parseObjectId(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'ID de live invalido.' });
+
+  const input = liveSchema.partial().parse(req.body);
+  const update: any = { updated_at: new Date() };
+  if (input.url) {
+    update.platform = input.platform || detectPlatform(input.url);
+    update.url = normalizeChannelInput(input.url, update.platform);
+    if (update.platform === 'twitch') {
+      const twitch = await resolveTwitchChannel(update.url);
+      const twitchLogin = twitch?.login || extractChannelSlug(update.url).toLowerCase() || null;
+      update.url = twitch?.url || update.url;
+      update.streamer_name = twitch?.displayName || fallbackStreamerName({ ...input, url: update.url }, update.platform);
+      update.twitch_user_id = twitch?.id || null;
+      update.twitch_login = twitchLogin;
+      update.avatar_url = twitch?.avatarUrl || null;
+    }
+  } else if (input.platform) {
+    update.platform = input.platform;
+  }
+  if (input.streamerName !== undefined) {
+    const name = String(input.streamerName || '').trim();
+    if (name) update.streamer_name = name;
+  }
+  if (input.alertChannelId !== undefined) update.alert_channel_id = input.alertChannelId || null;
+  if (input.mentionRoleId !== undefined) update.mention_role_id = input.mentionRoleId || null;
+  if (input.enabled !== undefined) update.enabled = input.enabled;
+  if (input.customMessage !== undefined) update.custom_message = input.customMessage || null;
   const lives = await collection<LiveDoc>('live_alert_configs');
-  const live = await lives.findOne({ _id: objectId(req.params.id) });
+  const row = await lives.findOneAndUpdate(
+    { _id: id },
+    { $set: update },
+    { returnDocument: 'after' }
+  );
+  if (!row) return res.status(404).json({ ok: false, error: 'Live nao encontrada.' });
+  res.json({ ok: true, live: normalizeLive(row) });
+}));
+
+livesRouter.delete('/:id', requireManager, asyncRoute(async (req, res) => {
+  const id = parseObjectId(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'ID de live invalido.' });
+
+  const lives = await collection('live_alert_configs');
+  await lives.deleteOne({ _id: id });
+  res.json({ ok: true });
+}));
+
+livesRouter.post('/:id/test', requireManager, asyncRoute(async (req, res) => {
+  const id = parseObjectId(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'ID de live invalido.' });
+
+  const lives = await collection<LiveDoc>('live_alert_configs');
+  const live = await lives.findOne({ _id: id });
   if (!live) return res.status(404).json({ ok: false, error: 'Live nao encontrada.' });
   const settings = await getSettings(live.guild_id);
   const result = await sendDiscordAlert({
