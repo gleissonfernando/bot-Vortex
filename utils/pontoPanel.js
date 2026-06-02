@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder } = require('discord.js');
-const { listGuildPoints, formatPanelDate } = require('./pontoManager');
+const { listGuildPoints, formatPanelDate, closePoint } = require('./pontoManager');
 const { getPointAllowedRoleIds } = require('./pointRoleConfig');
 const { logger } = require('./logger');
-const { extractCityName, getTargetFiveMActivity } = require('./fivemActivityAlertManager');
+const { extractCityName, getTargetFiveMActivity, AUTO_POINT_SOURCE, TARGET_SERVER_NAME } = require('./fivemActivityAlertManager');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { buildThemedPanelPayload } = require('./panelTheme');
 const { isMaintenanceMode } = require('./maintenanceMode');
@@ -26,7 +26,7 @@ const STATUS_PANEL_INTERVAL_MS = Math.max(
   30 * 1000,
   Number(process.env.PONTO_PANEL_INTERVAL_MS || 60 * 1000) || 60 * 1000
 );
-const PONTO_PANEL_FETCH_PRESENCES = process.env.PONTO_PANEL_FETCH_PRESENCES === 'true';
+const PONTO_PANEL_FETCH_PRESENCES = process.env.PONTO_PANEL_FETCH_PRESENCES !== 'false';
 
 function pad(value, size) {
   const text = String(value || '');
@@ -243,14 +243,18 @@ async function ensureOnlineChannelBotAccess(guild, channel) {
 
 async function getOnlinePlayers(guild) {
   const pointRoleIds = getPointAllowedRoleIds();
+  let presenceFetchOk = false;
   if (PONTO_PANEL_FETCH_PRESENCES) {
-    await guild.members.fetch({ withPresences: true }).catch(() => null);
+    presenceFetchOk = await guild.members.fetch({ withPresences: true })
+      .then(() => true)
+      .catch(() => false);
   }
   const presences = guild.presences?.cache;
   const onlinePlayersById = new Map();
 
   for (const presence of presences?.values?.() || []) {
     if (!presence?.user || presence.user.bot) continue;
+    if (presence.status === 'offline' || presence.status === 'invisible') continue;
     const activity = getTargetFiveMActivity(presence);
     if (!activity) continue;
     const member = presence.member || await guild.members.fetch(presence.user.id).catch(() => null);
@@ -267,23 +271,54 @@ async function getOnlinePlayers(guild) {
 
   const onlinePlayers = [...onlinePlayersById.values()];
   onlinePlayers.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  Object.defineProperty(onlinePlayers, 'presenceFetchOk', {
+    value: presenceFetchOk,
+    enumerable: false,
+  });
   return onlinePlayers;
 }
 
-async function getActivePointUserIds(guildId) {
-  const points = await listGuildPoints(guildId).catch(() => []);
+async function closeStaleAutoPoints(guild, onlinePlayers) {
+  if (!PONTO_PANEL_FETCH_PRESENCES || !onlinePlayers?.presenceFetchOk) return false;
+
+  const onlineUserIds = new Set(onlinePlayers.map((player) => String(player.id)));
+  const points = await listGuildPoints(guild.id).catch(() => []);
+  let changed = false;
+
+  for (const point of points) {
+    if (!point?.activePointStartedAt || point.activePointSource !== AUTO_POINT_SOURCE) continue;
+    if (onlineUserIds.has(String(point.userId))) continue;
+
+    const result = await closePoint(guild.id, point.userId, {
+      enforceMinimumDuration: false,
+      pointSource: AUTO_POINT_SOURCE,
+      pointReason: `Nao detectado na cidade pelo painel de status: ${TARGET_SERVER_NAME}`,
+      serverName: point.activePointServerName || TARGET_SERVER_NAME,
+    }).catch((error) => {
+      logger.error('Erro ao fechar ponto automatico ausente do painel:', error, { guildId: guild.id, userId: point.userId });
+      return null;
+    });
+
+    if (result?.action === 'closed') changed = true;
+  }
+
+  return changed;
+}
+
+async function getActivePointUserIds(guildId, points = null) {
+  const pointList = points || await listGuildPoints(guildId).catch(() => []);
   return new Set(
-    points
+    pointList
       .filter((point) => point?.activePointStartedAt)
       .map((point) => String(point.userId))
       .filter(Boolean)
   );
 }
 
-async function createStatusEmbed(guild) {
+async function createStatusEmbed(guild, detectedOnlinePlayers = null) {
+  const onlinePlayers = detectedOnlinePlayers || await getOnlinePlayers(guild).catch(() => []);
   const allPoints = await listGuildPoints(guild.id);
   const pointByUserId = new Map(allPoints.map((item) => [String(item.userId), item]));
-  const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
   const onlineCount = onlinePlayers.length;
 
   const rows = onlinePlayers.map((player) => {
@@ -351,6 +386,9 @@ async function updateStatusPanel(client, guildId, options = {}) {
       });
     }
 
+    const onlinePlayers = await getOnlinePlayers(guild).catch(() => []);
+    await closeStaleAutoPoints(guild, onlinePlayers);
+
     if (options.forceVisibilitySync || shouldSyncVisibility(guild.id)) {
       await syncOnlineChannelVisibility(guild, channel).catch((error) => {
         logStatusPanelError(guild.id, error);
@@ -362,7 +400,7 @@ async function updateStatusPanel(client, guildId, options = {}) {
       }
     }
 
-    const embed = await createStatusEmbed(guild);
+    const embed = await createStatusEmbed(guild, onlinePlayers);
     const message = panel?.statusMessageId && panel?.statusChannelId === configuredStatusChannelId
       ? channel.messages.cache.get(panel.statusMessageId)
         || await channel.messages.fetch(panel.statusMessageId).catch(() => null)
