@@ -21,19 +21,19 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   if (user.discordId) {
     const siteUser = await findSiteUser(user.guildId || env.discordGuildId, user.discordId).catch(() => null);
-    if (siteUser && siteUser.status !== 'active') {
+    if (!siteUser || siteUser.status !== 'active') {
       res.clearCookie('vortex_access_token', { path: '/' });
       res.clearCookie('vortex_refresh_token', { path: '/' });
-      const error = siteUser.status === 'banned'
-        ? 'Acesso negado. Sua conta foi banida do sistema.'
-        : 'Acesso negado. Sua conta esta suspensa temporariamente.';
+      const error = !siteUser
+        ? 'Acesso negado. Sua conta nao foi cadastrada pela administracao.'
+        : siteUser.status === 'banned'
+          ? 'Acesso negado. Sua conta foi banida do sistema.'
+          : 'Acesso negado. Sua conta esta suspensa temporariamente.';
       return res.status(403).json({ ok: false, error });
     }
 
-    if (siteUser) {
-      user.role = siteUser.system_role;
-      user.name = siteUser.discord_name || user.name;
-    }
+    user.role = siteUser.system_role;
+    user.name = siteUser.discord_name || user.name;
   }
 
   req.user = user;

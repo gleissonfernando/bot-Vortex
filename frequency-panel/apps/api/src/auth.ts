@@ -146,23 +146,26 @@ export async function sessionFromDiscordOAuthUser(input: {
   guilds: string[];
 }) {
   const siteUser = await findSiteUser(input.guildId, input.discordId).catch(() => null);
-  if (siteUser?.status === 'suspended') {
-    return { ok: false as const, error: 'Acesso negado. Sua conta estÃ¡ suspensa temporariamente.' };
+  if (!siteUser) {
+    return { ok: false as const, error: 'Acesso negado. Sua conta nao foi cadastrada pela administracao.' };
   }
-  if (siteUser?.status === 'banned') {
+  if (siteUser.status === 'suspended') {
+    return { ok: false as const, error: 'Acesso negado. Sua conta esta suspensa temporariamente.' };
+  }
+  if (siteUser.status === 'banned') {
     return { ok: false as const, error: 'Acesso negado. Sua conta foi banida do sistema.' };
   }
 
-  if (siteUser) await markSiteUserLogin(input.discordId, input.guildId);
+  await markSiteUserLogin(input.discordId, input.guildId);
 
   const sessionUser: SessionUser = {
-    id: siteUser?.id || `discord:${input.discordId}`,
-    email: input.email || siteUser?.discord_email || `${input.discordId}@discord.local`,
-    name: input.displayName || siteUser?.discord_name || input.username || input.discordId,
-    role: siteUser?.system_role || 'viewer',
+    id: siteUser.id,
+    email: input.email || siteUser.discord_email || `${input.discordId}@discord.local`,
+    name: input.displayName || siteUser.discord_name || input.username || input.discordId,
+    role: siteUser.system_role,
     discordId: input.discordId,
     username: input.username,
-    avatar: input.avatar || siteUser?.discord_avatar_url || null,
+    avatar: input.avatar || siteUser.discord_avatar_url || null,
     guilds: input.guilds,
     guildId: input.guildId
   };
@@ -211,3 +214,4 @@ export function refreshSession(refreshToken: string) {
     return null;
   }
 }
+
