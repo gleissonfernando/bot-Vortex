@@ -178,6 +178,88 @@ async function resolveTwitchChannel(url: string) {
   }
 }
 
+function twitchLookupForLive(live: LiveDoc) {
+  return {
+    live,
+    userId: String(live.twitch_user_id || '').trim(),
+    login: String(live.twitch_login || extractChannelSlug(live.url || '') || '').trim().toLowerCase()
+  };
+}
+
+async function refreshTwitchLiveStatuses(rows: LiveDoc[]) {
+  const token = await getTwitchToken();
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const twitchRows = rows.filter((row) => row.platform === 'twitch' && row.enabled !== false);
+  if (!token || !clientId || !twitchRows.length) return rows;
+
+  const lookups = twitchRows.map(twitchLookupForLive).filter((item) => item.userId || item.login);
+  if (!lookups.length) return rows;
+
+  const streamsByKey = new Map<string, any>();
+  const params = new URLSearchParams();
+  for (const item of lookups.slice(0, 100)) {
+    if (item.userId) params.append('user_id', item.userId);
+    else params.append('user_login', item.login);
+  }
+
+  try {
+    const response = await fetch(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Client-Id': clientId
+      }
+    });
+    if (!response.ok) {
+      console.warn(`[frequency-api] Twitch streams HTTP ${response.status}`);
+      return rows;
+    }
+
+    const data = await response.json();
+    for (const stream of Array.isArray(data.data) ? data.data : []) {
+      if (stream.user_id) streamsByKey.set(`id:${stream.user_id}`, stream);
+      if (stream.user_login) streamsByKey.set(`login:${String(stream.user_login).toLowerCase()}`, stream);
+    }
+  } catch (error) {
+    console.warn('[frequency-api] Falha ao consultar streams Twitch:', error);
+    return rows;
+  }
+
+  const lives = await collection<LiveDoc>('live_alert_configs');
+  await Promise.all(lookups.map(async ({ live, userId, login }) => {
+    if (!live._id) return;
+    const stream = (userId && streamsByKey.get(`id:${userId}`)) || (login && streamsByKey.get(`login:${login}`));
+    if (stream) {
+      const update = {
+        status: 'online' as const,
+        last_live_title: stream.title || 'Live na Twitch',
+        last_live_url: live.url || null,
+        last_live_started_at: stream.started_at ? new Date(stream.started_at) : live.last_live_started_at || null,
+        last_checked_at: new Date(),
+        updated_at: new Date()
+      };
+
+      live.status = update.status;
+      live.last_live_title = update.last_live_title;
+      live.last_live_url = update.last_live_url;
+      live.last_live_started_at = update.last_live_started_at;
+      live.last_checked_at = update.last_checked_at;
+      await lives.updateOne({ _id: live._id }, { $set: update });
+      return;
+    }
+
+    const update = {
+      status: 'offline' as const,
+      last_checked_at: new Date(),
+      updated_at: new Date()
+    };
+    live.status = update.status;
+    live.last_checked_at = update.last_checked_at;
+    await lives.updateOne({ _id: live._id }, { $set: update });
+  }));
+
+  return rows;
+}
+
 async function hydrateMissingTwitchProfiles(rows: LiveDoc[]) {
   const twitchRows = rows.filter((row) => row.platform === 'twitch' && row.twitch_login && (!row.avatar_url || !row.banner_url || !row.twitch_user_id));
   if (!twitchRows.length) return rows;
@@ -420,6 +502,7 @@ livesRouter.get('/', asyncRoute(async (req, res) => {
     const lives = await collection<LiveDoc>('live_alert_configs');
     const rows = await lives.find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
     await hydrateMissingTwitchProfiles(rows);
+    await refreshTwitchLiveStatuses(rows);
     const settings = await getSettings(guildId);
     return res.json({ ok: true, lives: rows.map(normalizeLive), settings: normalizeSettings(settings) });
   } catch (error) {
