@@ -102,10 +102,13 @@ LOGIN_RATE_LIMIT_WINDOW_MS=600000
 LOGIN_RATE_LIMIT_MAX=8
 
 NEXT_PUBLIC_API_URL=/api
+SITE_ORIGIN=https://bot-vortex.shardweb.app
 
 DISCORD_TOKEN=put-your-discord-bot-token
-DISCORD_CLIENT_ID=put-your-discord-client-id
+DISCORD_CLIENT_ID=1505924330490695800
+DISCORD_CLIENT_SECRET=valor_real_do_client_secret
 DISCORD_GUILD_ID=put-your-discord-guild-id
+DISCORD_OAUTH_REDIRECT_URI=https://bot-vortex.shardweb.app/api/auth/discord/callback
 BOT_API_URL=http://localhost:4100
 BOT_INGEST_SECRET=replace-with-the-same-value-as-ingest-secret
 BOT_LIGHT_MODE=true
@@ -113,6 +116,8 @@ FIVEM_SYSTEM_ENABLED=true
 ```
 
 `INGEST_SECRET` e `BOT_INGEST_SECRET` precisam ter o mesmo valor.
+
+Para o login com Discord OAuth2, cadastre exatamente a URL de callback acima em Discord Developer Portal > sua aplicacao > OAuth2 > Redirects. O `DISCORD_CLIENT_SECRET` fica na mesma pagina do portal e deve ser mantido privado. Se `DISCORD_OAUTH_REDIRECT_URI` nao for definido, a API usa `SITE_ORIGIN` + `/api/auth/discord/callback`.
 
 ## Login inicial
 

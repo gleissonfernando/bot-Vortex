@@ -11,6 +11,9 @@ export type SessionUser = {
   name: string;
   role: 'admin' | 'manager' | 'viewer';
   discordId?: string;
+  username?: string;
+  avatar?: string | null;
+  guilds?: string[];
   guildId?: string;
 };
 
@@ -133,6 +136,43 @@ export async function sessionFromRegisteredDiscordUser(input: {
   };
 }
 
+export async function sessionFromDiscordOAuthUser(input: {
+  guildId: string;
+  discordId: string;
+  username: string;
+  displayName: string;
+  email?: string | null;
+  avatar?: string | null;
+  guilds: string[];
+}) {
+  const siteUser = await findSiteUser(input.guildId, input.discordId).catch(() => null);
+  if (siteUser?.status === 'suspended') {
+    return { ok: false as const, error: 'Acesso negado. Sua conta estÃ¡ suspensa temporariamente.' };
+  }
+  if (siteUser?.status === 'banned') {
+    return { ok: false as const, error: 'Acesso negado. Sua conta foi banida do sistema.' };
+  }
+
+  if (siteUser) await markSiteUserLogin(input.discordId, input.guildId);
+
+  const sessionUser: SessionUser = {
+    id: siteUser?.id || `discord:${input.discordId}`,
+    email: input.email || siteUser?.discord_email || `${input.discordId}@discord.local`,
+    name: input.displayName || siteUser?.discord_name || input.username || input.discordId,
+    role: siteUser?.system_role || 'viewer',
+    discordId: input.discordId,
+    username: input.username,
+    avatar: input.avatar || siteUser?.discord_avatar_url || null,
+    guilds: input.guilds,
+    guildId: input.guildId
+  };
+
+  return {
+    ok: true as const,
+    session: signSession(sessionUser)
+  };
+}
+
 function siteUserToSession(siteUser: SiteUser, discordName: string): SessionUser {
   return {
     id: siteUser.id,
@@ -160,7 +200,12 @@ export function refreshSession(refreshToken: string) {
       id: payload.id,
       email: payload.email,
       name: payload.name,
-      role: payload.role
+      role: payload.role,
+      discordId: payload.discordId,
+      username: payload.username,
+      avatar: payload.avatar,
+      guilds: payload.guilds,
+      guildId: payload.guildId
     });
   } catch {
     return null;

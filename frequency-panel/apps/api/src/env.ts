@@ -36,6 +36,8 @@ function optionalEmail(name: string): string {
 }
 
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL || '';
+const siteOrigin = process.env.SITE_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || 'https://bot-vortex.shardweb.app';
+const defaultDiscordOauthRedirectUri = `${siteOrigin.replace(/\/+$/, '')}/api/auth/discord/callback`;
 
 export const env = {
   mongoUri,
@@ -49,11 +51,11 @@ export const env = {
   adminPasswordHash: optionalSecret('ADMIN_PASSWORD_HASH', 30),
   apiPort: Number(process.env.API_PORT || 4100),
   apiOrigin: process.env.API_ORIGIN || 'http://localhost:3000',
-  siteOrigin: process.env.SITE_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || 'https://bot-vortex.shardweb.app',
+  siteOrigin,
   ingestSecret: requiredSecret('INGEST_SECRET', 32),
   discordClientId: process.env.DISCORD_CLIENT_ID || '',
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
-  discordOauthRedirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || '',
+  discordOauthRedirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || defaultDiscordOauthRedirectUri,
   discordBotToken: process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || '',
   discordGuildId: process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || '',
   discordIdLoginEnabled: String(process.env.DISCORD_ID_LOGIN_ENABLED || '').toLowerCase() === 'true',

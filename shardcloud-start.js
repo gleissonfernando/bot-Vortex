@@ -146,6 +146,9 @@ function stopManagedChildren(signal) {
 
 process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
 process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
+process.env.SITE_ORIGIN ||= publicBaseUrl || 'https://bot-vortex.shardweb.app';
+process.env.DISCORD_CLIENT_ID ||= '1505924330490695800';
+process.env.DISCORD_OAUTH_REDIRECT_URI ||= `${process.env.SITE_ORIGIN.replace(/\/+$/, '')}/api/auth/discord/callback`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 process.env.MONGODB_URI ||= process.env.MONGO_URI || process.env.DATABASE_URL;

@@ -27,7 +27,7 @@ export default function LoginPage() {
   }, []);
 
   function loginWithDiscord() {
-    window.location.href = `${API_URL}/auth/discord/start?next=${encodeURIComponent('/dashboard')}`;
+    window.location.href = `${API_URL}/auth/discord/start?next=/dashboard`;
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

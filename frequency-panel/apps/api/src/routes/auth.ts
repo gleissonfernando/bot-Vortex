@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import type { NextFunction, Request, Response } from 'express';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { login, refreshSession, sessionFromRegisteredDiscordUser } from '../auth.js';
+import { login, refreshSession, sessionFromDiscordOAuthUser, sessionFromRegisteredDiscordUser } from '../auth.js';
 import { requireAuth } from '../middleware.js';
 import { auditLog } from '../security.js';
 import { env } from '../env.js';
@@ -84,18 +85,24 @@ authRouter.post('/login', limitLoginAttempts, async (req, res) => {
 });
 
 authRouter.get('/discord/start', (req, res) => {
-  if (!env.discordClientId || !env.discordOauthRedirectUri) {
-    return res.status(503).json({ ok: false, error: 'OAuth2 do Discord nao configurado.' });
-  }
+  const missing = firstMissingEnv(['SITE_ORIGIN', 'DISCORD_CLIENT_ID', 'DISCORD_OAUTH_REDIRECT_URI']);
+  if (missing) return res.status(503).json({ ok: false, error: `Variavel ${missing} nao configurada.` });
 
-  const state = encodeURIComponent(String(req.query.next || '/dashboard'));
+  const next = decodeNext(req.query.next);
+  const state = encodeState(next);
   const params = new URLSearchParams({
     client_id: env.discordClientId,
     redirect_uri: env.discordOauthRedirectUri,
     response_type: 'code',
     scope: 'identify email guilds',
-    prompt: 'none',
+    prompt: 'consent',
     state
+  });
+
+  console.info('[frequency-api] OAuth Discord start', {
+    clientId: maskValue(env.discordClientId),
+    redirectUri: env.discordOauthRedirectUri,
+    next
   });
 
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
@@ -104,46 +111,68 @@ authRouter.get('/discord/start', (req, res) => {
 authRouter.get('/discord/callback', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
+  const missing = firstMissingEnv(['SITE_ORIGIN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_OAUTH_REDIRECT_URI']);
+  if (missing) return res.redirect(`${loginUrl()}?error=${encodeURIComponent(`Variavel ${missing} nao configurada.`)}`);
+
   const code = String(req.query.code || '');
-  const next = decodeNext(req.query.state);
-  if (!code) return res.redirect(`${env.siteOrigin}/?error=${encodeURIComponent('Login Discord invalido.')}`);
+  const discordError = String(req.query.error_description || req.query.error || '');
+  const state = decodeState(req.query.state);
+  const next = state.next;
+  if (!code) {
+    if (discordError) console.warn('[frequency-api] OAuth Discord callback sem code', { discordError });
+    return res.redirect(`${loginUrl()}?error=missing_code`);
+  }
+  if (!state.ok) return res.redirect(`${loginUrl()}?error=${encodeURIComponent('invalid_state')}`);
 
   try {
+    console.info('[frequency-api] OAuth Discord callback recebido', { next, codeLength: code.length });
     const token = await exchangeDiscordCode(code);
     const discordUser = await fetchDiscordUser(token.access_token);
     const discordGuilds = await fetchDiscordGuilds(token.access_token);
     const guildMember = await fetchDiscordGuildMember(discordUser.id);
-    if (!guildMember.ok) {
-      await auditLog(req, 'auth.discord.guild_check.failed', { discord_id: discordUser.id });
-      return res.redirect(`${env.siteOrigin}/?error=${encodeURIComponent('Acesso negado. Voce nao esta no servidor Discord autorizado.')}`);
-    }
 
-    const result = await sessionFromRegisteredDiscordUser({
+    const avatarUrl = discordAvatarUrl(discordUser);
+    const result = await sessionFromDiscordOAuthUser({
       guildId: env.discordGuildId,
       discordId: discordUser.id,
-      discordName: discordUser.global_name || discordUser.username || discordUser.id
+      username: discordUser.username || discordUser.id,
+      displayName: discordUser.global_name || discordUser.username || discordUser.id,
+      email: discordUser.email || null,
+      avatar: avatarUrl,
+      guilds: discordGuilds.map((guild) => guild.id)
     });
 
     if (!result.ok) {
       await auditLog(req, 'auth.discord.denied', { discord_id: discordUser.id, reason: result.error });
-      return res.redirect(`${env.siteOrigin}/?error=${encodeURIComponent(result.error)}`);
+      return res.redirect(`${loginUrl()}?error=${encodeURIComponent(result.error)}`);
     }
 
     req.user = result.session.user;
     await updateSiteUser(discordUser.id, {
       discord_name: discordUser.global_name || discordUser.username || discordUser.id,
       discord_email: discordUser.email || null,
-      discord_avatar_url: discordAvatarUrl(discordUser),
+      discord_avatar_url: avatarUrl,
       discord_roles: Array.isArray(guildMember.member?.roles) ? guildMember.member.roles.map(String) : [],
       discord_guilds: discordGuilds.map((guild) => guild.id)
-    } as any, env.discordGuildId);
+    } as any, env.discordGuildId).catch((error) => {
+      console.warn('[frequency-api] OAuth Discord nao atualizou site_user existente', {
+        discordId: discordUser.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
     setSessionCookies(res, result.session.token, result.session.refreshToken);
     await auditLog(req, 'auth.discord.success', { discord_id: discordUser.id });
+    console.info('[frequency-api] OAuth Discord login concluido', {
+      discordId: discordUser.id,
+      username: discordUser.username,
+      guildCount: discordGuilds.length,
+      redirectTo: `${env.siteOrigin}${next}`
+    });
     return res.redirect(`${env.siteOrigin}${next}`);
   } catch (error) {
     console.warn('[frequency-api] Falha no OAuth Discord:', error);
     await auditLog(req, 'auth.discord.failed');
-    return res.redirect(`${env.siteOrigin}/?error=${encodeURIComponent('Falha ao validar login Discord.')}`);
+    return res.redirect(`${loginUrl()}?error=${encodeURIComponent('Falha ao validar login Discord.')}`);
   }
 });
 
@@ -243,12 +272,60 @@ function decodeNext(value: unknown) {
   return next;
 }
 
+function firstMissingEnv(names: string[]) {
+  return names.find((name) => !process.env[name]?.trim()) || '';
+}
+
+function encodeState(next: string) {
+  const payload = {
+    next: decodeNext(next),
+    nonce: randomBytes(16).toString('hex'),
+    iat: Date.now()
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = signStateData(data);
+  return `${data}.${signature}`;
+}
+
+function decodeState(value: unknown): { ok: boolean; next: string } {
+  const raw = String(value || '');
+  const [data, signature] = raw.split('.');
+  if (!data || !signature || !safeEqual(signature, signStateData(data))) return { ok: false, next: '/dashboard' };
+
+  try {
+    const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8')) as { next?: string; iat?: number };
+    if (!payload.iat || Date.now() - payload.iat > 15 * 60 * 1000) return { ok: false, next: '/dashboard' };
+    return { ok: true, next: decodeNext(payload.next) };
+  } catch {
+    return { ok: false, next: '/dashboard' };
+  }
+}
+
+function signStateData(data: string) {
+  return createHmac('sha256', env.jwtSecret).update(data).digest('base64url');
+}
+
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function loginUrl() {
+  return `${env.siteOrigin}/login`;
+}
+
+function maskValue(value: string) {
+  if (value.length <= 8) return '***';
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
 async function exchangeDiscordCode(code: string) {
   if (!env.discordClientId || !env.discordClientSecret || !env.discordOauthRedirectUri) {
     throw new Error('Discord OAuth2 nao configurado');
   }
 
-  const response = await fetch('https://discord.com/api/v10/oauth2/token', {
+  const response = await fetch('https://discord.com/api/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -260,12 +337,21 @@ async function exchangeDiscordCode(code: string) {
     })
   });
 
-  if (!response.ok) throw new Error(`Discord token HTTP ${response.status}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    console.warn('[frequency-api] Discord token exchange falhou', {
+      status: response.status,
+      clientId: maskValue(env.discordClientId),
+      redirectUri: env.discordOauthRedirectUri,
+      body: body.slice(0, 500)
+    });
+    throw new Error(`Discord token HTTP ${response.status}`);
+  }
   return response.json() as Promise<{ access_token: string }>;
 }
 
 async function fetchDiscordUser(accessToken: string) {
-  const response = await fetch('https://discord.com/api/v10/users/@me', {
+  const response = await fetch('https://discord.com/api/users/@me', {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok) throw new Error(`Discord user HTTP ${response.status}`);
@@ -273,7 +359,7 @@ async function fetchDiscordUser(accessToken: string) {
 }
 
 async function fetchDiscordGuilds(accessToken: string) {
-  const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+  const response = await fetch('https://discord.com/api/users/@me/guilds', {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok) return [];
