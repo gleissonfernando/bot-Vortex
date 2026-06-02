@@ -143,7 +143,6 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
     { label: 'Cobranças', value: 'tab_cobrancas', description: 'Cobranças e penalidades automáticas', emoji: '💸' },
     { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
-    { label: 'Ajuste', value: 'tab_adjust_calls', description: 'Ativar ou desativar calls de ajuste', emoji: '🔧' },
     { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
     { label: 'Hierarquia FAC', value: 'tab_fac_hierarchy', description: 'Painel automatico da hierarquia da fac', emoji: '🏛️' },
     { label: 'Acesso ao site', value: 'tab_site_access', description: 'Cadastrar usuarios liberados para o dashboard web' },
