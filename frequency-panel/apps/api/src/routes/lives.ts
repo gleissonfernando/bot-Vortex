@@ -61,6 +61,7 @@ type LiveDoc = {
   twitch_user_id?: string | null;
   twitch_login?: string | null;
   avatar_url?: string | null;
+  banner_url?: string | null;
   last_announced_live_id: string | null;
   last_alert_message_id?: string | null;
   last_alert_updated_at?: Date | null;
@@ -167,6 +168,7 @@ async function resolveTwitchChannel(url: string) {
       login: String(user.login || login),
       displayName: String(user.display_name || login),
       avatarUrl: user.profile_image_url || null,
+      bannerUrl: user.offline_image_url || null,
       url: `https://www.twitch.tv/${user.login || login}`
     };
   } catch (error) {
@@ -188,6 +190,7 @@ function normalizeLive(doc: LiveDoc) {
   item.twitchUserId = doc.twitch_user_id || null;
   item.twitchLogin = doc.twitch_login || null;
   item.avatarUrl = doc.avatar_url || null;
+  item.bannerUrl = doc.banner_url || null;
   item.lastAlertMessageId = doc.last_alert_message_id || null;
   item.lastCheckedAt = doc.last_checked_at;
   delete item._id;
@@ -201,6 +204,7 @@ function normalizeLive(doc: LiveDoc) {
   delete item.twitch_user_id;
   delete item.twitch_login;
   delete item.avatar_url;
+  delete item.banner_url;
   delete item.last_announced_live_id;
   delete item.last_alert_message_id;
   delete item.last_alert_updated_at;
@@ -429,6 +433,7 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     twitch_user_id: twitch?.id || null,
     twitch_login: twitchLogin,
     avatar_url: twitch?.avatarUrl || null,
+    banner_url: twitch?.bannerUrl || null,
     last_announced_live_id: null,
     last_alert_message_id: null,
     last_alert_updated_at: null,
@@ -503,6 +508,7 @@ livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
       update.twitch_user_id = twitch?.id || null;
       update.twitch_login = twitchLogin;
       update.avatar_url = twitch?.avatarUrl || null;
+      update.banner_url = twitch?.bannerUrl || null;
     }
   } else if (input.platform) {
     update.platform = input.platform;

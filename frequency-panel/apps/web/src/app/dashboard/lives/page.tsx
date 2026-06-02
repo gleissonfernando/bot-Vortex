@@ -18,6 +18,7 @@ type LiveItem = {
   lastLiveTitle?: string | null;
   twitchLogin?: string | null;
   avatarUrl?: string | null;
+  bannerUrl?: string | null;
   lastAlertMessageId?: string | null;
 };
 
@@ -353,28 +354,45 @@ function LiveChannelRow({ live, settings, onEdit, onDelete, onTest }: {
 }) {
   const initials = (live.streamerName || live.twitchLogin || 'VX').slice(0, 2).toUpperCase();
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-black/15 p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-violet-500/15 text-sm font-semibold text-violet-100">
-          {live.avatarUrl ? <img src={live.avatarUrl} alt={live.streamerName} className="relative z-10 h-full w-full object-cover" /> : null}
-          <span className="absolute inset-0 grid place-items-center">{initials}</span>
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate font-semibold text-white">@{live.twitchLogin || live.streamerName}</p>
-            <StatusBadge status={live.status} enabled={live.enabled} />
+    <div className="overflow-hidden rounded-lg border border-white/10 bg-black/15">
+      <div className="relative h-28 bg-slate-950 sm:h-32">
+        {live.bannerUrl ? (
+          <img src={live.bannerUrl} alt={`Banner de ${live.streamerName}`} className="h-full w-full object-cover" />
+        ) : (
+          <div className="h-full w-full bg-[radial-gradient(circle_at_20%_20%,rgba(139,92,246,0.28),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(49,46,129,0.55),rgba(2,6,23,0.95))]" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+          <div className="flex min-w-0 items-end gap-3">
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border border-white/20 bg-violet-500/20 text-sm font-semibold text-violet-100 shadow-lg shadow-black/30">
+              {live.avatarUrl ? <img src={live.avatarUrl} alt={live.streamerName} className="relative z-10 h-full w-full object-cover" /> : null}
+              <span className="absolute inset-0 grid place-items-center">{initials}</span>
+            </div>
+            <div className="min-w-0 pb-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate font-semibold text-white">@{live.twitchLogin || live.streamerName}</p>
+                <StatusBadge status={live.status} enabled={live.enabled} />
+              </div>
+              <p className="truncate text-sm text-slate-300">{live.url}</p>
+            </div>
           </div>
-          <p className="truncate text-sm text-slate-500">{live.url}</p>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
-            <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.alertChannelId || settings.defaultAlertChannelId || 'Sem canal'}</span>
-            <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.mentionRoleId || settings.defaultMentionRoleId || 'Sem cargo'}</span>
+          <div className="hidden shrink-0 gap-2 sm:flex">
+            <IconButton label="Configurar" onClick={onEdit}><Edit3 size={15} /></IconButton>
+            <IconButton label="Testar alerta" onClick={onTest}><PlayCircle size={15} /></IconButton>
+            <IconButton label="Excluir" onClick={onDelete}><Trash2 size={15} /></IconButton>
           </div>
         </div>
       </div>
-      <div className="flex shrink-0 gap-2">
-        <IconButton label="Configurar" onClick={onEdit}><Edit3 size={15} /></IconButton>
-        <IconButton label="Testar alerta" onClick={onTest}><PlayCircle size={15} /></IconButton>
-        <IconButton label="Excluir" onClick={onDelete}><Trash2 size={15} /></IconButton>
+      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-400">
+          <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.alertChannelId || settings.defaultAlertChannelId || 'Sem canal'}</span>
+          <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5">{live.mentionRoleId || settings.defaultMentionRoleId || 'Sem cargo'}</span>
+        </div>
+        <div className="flex shrink-0 gap-2 sm:hidden">
+          <IconButton label="Configurar" onClick={onEdit}><Edit3 size={15} /></IconButton>
+          <IconButton label="Testar alerta" onClick={onTest}><PlayCircle size={15} /></IconButton>
+          <IconButton label="Excluir" onClick={onDelete}><Trash2 size={15} /></IconButton>
+        </div>
       </div>
     </div>
   );

@@ -131,6 +131,7 @@ function normalizeLive(row) {
     twitchUserId: row.twitch_user_id || row.twitchUserId || null,
     twitchLogin: row.twitch_login || row.twitchLogin || null,
     avatarUrl: row.avatar_url || row.avatarUrl || null,
+    bannerUrl: row.banner_url || row.bannerUrl || null,
   };
 }
 
@@ -220,6 +221,7 @@ async function createLiveAlert(guildId, input) {
     twitch_login: twitchLogin,
     twitch_user_id: input.twitchUserId || input.twitch_user_id || null,
     avatar_url: input.avatarUrl || input.avatar_url || null,
+    banner_url: input.bannerUrl || input.banner_url || null,
     created_at: now,
     updated_at: now,
   };
