@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const {
   getUserProfile,
   registerApprovedProfile,
@@ -10,22 +10,6 @@ const {
 const { getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../../utils/approvedSetChannels');
 const { hasVortexLevel } = require('../../utils/permissions');
 const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
-
-async function sendMissingProfileDm(user, guild) {
-  const embed = new EmbedBuilder()
-    .setColor('#ED4245')
-    .setTitle('Cadastro pendente')
-    .setDescription([
-      `Você ainda não possui cadastro aprovado no **${guild.name}**.`,
-      '',
-      'Solicite seu set usando `/set` para liberar seu perfil.',
-      'Depois que o set for aprovado, seus dados poderão ser consultados pelo `/perfil`.',
-    ].join('\n'))
-    .setFooter({ text: 'Vortex - Sistema de Set' })
-    .setTimestamp();
-
-  return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
-}
 
 function isMissingProfileResult(result) {
   return String(result?.message || '').toLowerCase().includes('perfil aprovado');
@@ -124,7 +108,6 @@ module.exports = {
       );
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
-          await sendMissingProfileDm(target, interaction.guild);
           return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });
         }
         return safeEdit(interaction, { content: `❌ ${result.message}` });
@@ -136,7 +119,6 @@ module.exports = {
       const result = await updateProfileLevel(interaction.guild, target, nivel, interaction.user.id);
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
-          await sendMissingProfileDm(target, interaction.guild);
           return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });
         }
         return safeEdit(interaction, { content: `❌ ${result.message}` });
@@ -147,7 +129,6 @@ module.exports = {
     const profile = getUserProfile(interaction.guild.id, target.id)
       || await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
     if (!profile) {
-      await sendMissingProfileDm(target, interaction.guild);
       return safeEdit(interaction, {
         content: '❌ Usuário não possui cadastro.',
       });

@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { Bell, CircleHelp, Edit3, PlayCircle, Plus, Radio, Save, Trash2 } from 'lucide-react';
+import { Bell, Edit3, PlayCircle, Plus, Radio, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type LiveItem = {
@@ -142,6 +142,26 @@ export default function LivesPage() {
     }
   }
 
+  async function saveSettings(nextSettings = settings) {
+    setMessage('');
+    try {
+      const data = await apiFetch<{ settings: Settings }>('/lives/settings/general', {
+        method: 'PUT',
+        body: JSON.stringify(nextSettings)
+      });
+      setSettings(data.settings);
+      setMessage('Configuracao de lives salva.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao salvar configuracao');
+    }
+  }
+
+  async function toggleSystem() {
+    const next = { ...settings, enabled: !settings.enabled };
+    setSettings(next);
+    await saveSettings(next);
+  }
+
   async function deleteLive(id: string) {
     await apiFetch(`/lives/${id}`, { method: 'DELETE' });
     await load();
@@ -171,11 +191,8 @@ export default function LivesPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button title="Ajuda" className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-300">
-              <CircleHelp size={18} />
-            </button>
             <button
-              onClick={() => setSettings({ ...settings, enabled: !settings.enabled })}
+              onClick={toggleSystem}
               className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
                 settings.enabled ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-200' : 'border-slate-300/10 bg-white/[0.04] text-slate-300'
               }`}
@@ -186,6 +203,35 @@ export default function LivesPage() {
         </header>
 
         {message ? <div className="rounded-lg border border-sky-300/15 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">{message}</div> : null}
+
+        <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel backdrop-blur">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_160px_auto] md:items-end">
+            <Select
+              label="Canal padrao"
+              value={settings.defaultAlertChannelId || ''}
+              onChange={(value) => setSettings({ ...settings, defaultAlertChannelId: value || null })}
+              placeholder="Escolha o canal dos alertas"
+              options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
+            />
+            <Select
+              label="Cargo padrao"
+              value={settings.defaultMentionRoleId || ''}
+              onChange={(value) => setSettings({ ...settings, defaultMentionRoleId: value || null })}
+              placeholder="Sem mencao padrao"
+              options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+            />
+            <Input
+              label="Intervalo"
+              value={String(settings.checkIntervalSeconds || 120)}
+              onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Math.max(30, Number(value.replace(/\D/g, '') || 120)) })}
+              placeholder="120"
+            />
+            <button onClick={() => saveSettings()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 text-sm font-semibold text-white transition hover:bg-white/[0.12]">
+              <Save size={16} />
+              Salvar
+            </button>
+          </div>
+        </section>
 
         <section className="space-y-3">
           {platformCards.map((platform) => (

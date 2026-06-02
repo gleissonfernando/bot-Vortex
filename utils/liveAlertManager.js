@@ -63,7 +63,7 @@ function mongoCollection(name) {
 
 function detectPlatform(url) {
   try {
-    const host = new URL(url).hostname.toLowerCase();
+    const host = new URL(String(url || '').includes('://') ? url : `https://${url}`).hostname.toLowerCase();
     if (host.includes('twitch.tv')) return 'twitch';
     if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
     if (host.includes('kick.com')) return 'kick';
@@ -73,18 +73,30 @@ function detectPlatform(url) {
 
 function extractSlug(url) {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url || '').includes('://') ? url : `https://twitch.tv/${url}`);
+    const host = parsed.hostname.toLowerCase();
     const parts = parsed.pathname.split('/').filter(Boolean);
+    if (!parts.length && !host.includes('.')) return host.replace(/^@/, '');
     if (parsed.hostname.includes('youtu.be')) return parts[0] || '';
     if (parsed.hostname.includes('youtube.com') && parts[0] === '@') return parts[0] || '';
-    return parts[0] || '';
+    return (parts[0] || '').replace(/^@/, '');
   } catch {
-    return '';
+    return String(url || '').trim().replace(/^@/, '');
   }
 }
 
 function normalizeTwitchLogin(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function normalizeChannelInput(value, platform) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (raw.includes('://')) return raw;
+  const clean = raw.replace(/^@/, '').replace(/^\/+/, '');
+  if (platform === 'twitch') return `https://www.twitch.tv/${clean}`;
+  if (platform === 'kick') return `https://kick.com/${clean}`;
+  return raw;
 }
 
 function normalizeLive(row) {
@@ -171,11 +183,14 @@ async function saveLiveSettings(guildId, patch) {
 
 async function createLiveAlert(guildId, input) {
   const now = new Date();
+  const platform = input.platform || detectPlatform(input.url);
+  const url = normalizeChannelInput(input.url, platform);
+  const twitchLogin = platform === 'twitch' ? normalizeTwitchLogin(input.twitchLogin || extractSlug(url)) : null;
   const doc = {
     guild_id: String(guildId),
-    platform: input.platform || detectPlatform(input.url),
-    url: String(input.url || '').trim(),
-    streamer_name: String(input.streamerName || input.streamer_name || extractSlug(input.url) || 'Streamer').trim(),
+    platform,
+    url,
+    streamer_name: String(input.streamerName || input.streamer_name || extractSlug(url) || 'Streamer').trim(),
     alert_channel_id: input.alertChannelId || input.alert_channel_id || null,
     mention_role_id: input.mentionRoleId || input.mention_role_id || null,
     enabled: input.enabled !== false,
@@ -185,6 +200,9 @@ async function createLiveAlert(guildId, input) {
     last_live_url: null,
     last_announced_live_id: null,
     last_checked_at: null,
+    twitch_login: twitchLogin,
+    twitch_user_id: input.twitchUserId || input.twitch_user_id || null,
+    avatar_url: input.avatarUrl || input.avatar_url || null,
     created_at: now,
     updated_at: now,
   };
@@ -391,14 +409,27 @@ function renderMessage(template, live, status) {
     .replaceAll('{url}', status.url || live.url);
 }
 
+function isEveryoneMention(roleId, guildId) {
+  return Boolean(roleId && guildId && String(roleId) === String(guildId));
+}
+
+function formatAlertMention(roleId, guildId) {
+  if (!roleId) return null;
+  return isEveryoneMention(roleId, guildId) ? '@everyone' : `<@&${roleId}>`;
+}
+
+function liveAlertAllowedMentions(roleId, guildId) {
+  if (!roleId) return { parse: [] };
+  if (isEveryoneMention(roleId, guildId)) return { parse: ['everyone'] };
+  return { parse: [], roles: [String(roleId)] };
+}
+
 function liveAlertContent(roleId, live, status, template) {
+  const mention = formatAlertMention(roleId, live.guildId);
   if (template && template !== DEFAULT_MESSAGE) {
-    return [roleId ? `<@&${roleId}>` : null, renderMessage(template, live, status)].filter(Boolean).join('\n\n');
+    return [mention, renderMessage(template, live, status)].filter(Boolean).join('\n\n');
   }
-  return [
-    `${live.streamerName} vem pra live familia`,
-    roleId ? `<@&${roleId}>` : null,
-  ].filter(Boolean).join(' ');
+  return mention || '';
 }
 
 function twitchPreviewUrl(status) {
@@ -446,10 +477,10 @@ async function sendLiveAlert(client, live, settings, status, { test = false } = 
     ),
   ];
   await channel.send({
-    content,
+    content: content || undefined,
     embeds: [embed],
     components,
-    allowedMentions: { roles: roleId ? [roleId] : [] },
+    allowedMentions: liveAlertAllowedMentions(roleId, live.guildId),
   });
   return { ok: true };
 }

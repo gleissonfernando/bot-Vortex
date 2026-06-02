@@ -10,6 +10,7 @@ const { isSilentLogUser } = require('./notifications');
 const { refreshMongoJsonKeys } = require('./mongoJsonStore');
 const { queueMemberSync, queuePointSnapshotSync } = require('./frequencyDashboardSync');
 const { cleanupDeletedUserDatabaseData, cleanupLocalJsonUserData } = require('./userDataCleanup');
+const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -685,6 +686,7 @@ function buildProfileEmbed({ guild, user, member, profile }) {
 async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE_UPDATE_INTERVAL_MS, force = false) {
   const config = readProfileConfig();
   if (!config.billingDmEnabled) return { sent: false, reason: 'billing_disabled' };
+  if (!profile?.userId || !hasApprovedProfileData(profile)) return { sent: false, reason: 'not_registered' };
   if (!force && !canSendScheduledProfileReminder(new Date())) {
     return { sent: false, reason: 'not_monday_or_before_19h' };
   }
@@ -798,6 +800,10 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
 
     for (const profile of Object.values(guildProfiles || {})) {
       if (userId && profile.userId !== String(userId)) continue;
+      if (!profile?.userId || !hasApprovedProfileData(profile)) {
+        results.push({ userId: profile?.userId || userId || null, sent: false, reason: 'not_registered' });
+        continue;
+      }
       if (exemptUserIds.has(String(profile.userId))) {
         results.push({ userId: profile.userId, sent: false, reason: 'billing_exempt' });
         continue;
@@ -821,93 +827,7 @@ async function checkProfileUpdates(client, { guildId = null, userId = null, thre
 }
 
 async function sendMissingProfileDailyAlert(client, { force = false } = {}) {
-  if (!force && !canSendMissingProfileAlert(new Date())) return { sent: false, reason: 'before_22h' };
-
-  const config = readProfileConfig();
-  const todayKey = getSaoPauloDateKey(new Date());
-  const sentByGuild = config.missingProfileAlertSentByGuild || {};
-  const results = [];
-
-  for (const guild of client.guilds.cache.values()) {
-    if (!isPrimaryGuild(guild.id)) continue;
-    if (!force && sentByGuild[guild.id] === todayKey) {
-      results.push({ guildId: guild.id, sent: false, reason: 'already_sent_today' });
-      continue;
-    }
-
-    const channel = await client.channels.fetch(MISSING_PROFILE_ALERT_CHANNEL_ID).catch(() => null);
-    if (!isPrimaryGuildChannel(channel) || !channel?.isTextBased?.() || channel.guildId !== guild.id) {
-      results.push({ guildId: guild.id, sent: false, reason: 'missing_channel' });
-      continue;
-    }
-
-    const members = await guild.members.fetch().catch(() => null);
-    if (!members) {
-      results.push({ guildId: guild.id, sent: false, reason: 'missing_members' });
-      continue;
-    }
-
-    const missingMembers = members
-      .filter((member) => !member.user.bot && !getUserProfile(guild.id, member.id))
-      .map((member) => member.user);
-
-    if (!missingMembers.length) {
-      await channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor('#57F287')
-            .setTitle('Cadastro no sistema')
-            .setDescription([
-              'Todos os membros humanos do servidor possuem cadastro no sistema Vortex.',
-              '',
-              `Verificação diária: ${formatDate(new Date())}`,
-            ].join('\n'))
-            .setTimestamp(),
-        ],
-        allowedMentions: { parse: [] },
-      }).catch(() => null);
-      sentByGuild[guild.id] = todayKey;
-      results.push({ guildId: guild.id, sent: true, missing: 0 });
-      continue;
-    }
-
-    const chunks = chunkArray(missingMembers, 40);
-    for (const [chunkIndex, chunk] of chunks.entries()) {
-      const lines = chunk.map((user, index) => `${chunkIndex * 40 + index + 1}. <@${user.id}> - \`${user.id}\``);
-      await channel.send({
-        content: chunk.map((user) => `<@${user.id}>`).join(' '),
-        embeds: [
-          new EmbedBuilder()
-            .setColor('#FEE75C')
-            .setTitle('Usuários sem cadastro no sistema')
-            .setDescription([
-              'Os usuários abaixo ainda não possuem cadastro no sistema Vortex.',
-              '',
-              lines.join('\n'),
-              '',
-              `Total sem cadastro: **${missingMembers.length}**`,
-              `Verificação diária: ${formatDate(new Date())}`,
-            ].join('\n'))
-            .setTimestamp(),
-        ],
-        allowedMentions: {
-          users: chunk.map((user) => String(user.id)),
-          roles: [],
-        },
-      }).catch(() => null);
-    }
-
-    sentByGuild[guild.id] = todayKey;
-    results.push({ guildId: guild.id, sent: true, missing: missingMembers.length });
-  }
-
-  writeProfileConfig({
-    ...config,
-    missingProfileAlertSentByGuild: sentByGuild,
-    missingProfileAlertLastRunAt: new Date().toISOString(),
-  });
-
-  return { sent: results.some((result) => result.sent), results };
+  return { sent: false, reason: 'missing_profile_messages_disabled' };
 }
 
 async function ensureAllProfileChannelAccess(client) {
@@ -1129,11 +1049,17 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
     logger.error('Erro ao limpar dados do usuario removido no banco:', error);
     return { ok: false, reason: error.message };
   });
+  await setOnlineChannelAccess(guild.client, normalizedGuildId, normalizedUserId, false).catch((error) => {
+    logger.error('Erro ao remover acesso do usuario ao canal online:', error);
+  });
+  await updateStatusPanel(guild.client, normalizedGuildId, { forceVisibilitySync: true }).catch((error) => {
+    logger.error('Erro ao atualizar painel de ponto apos apagar cadastro:', error);
+  });
   queueFrequencyDashboardRefresh(guild);
 
   let dmSent = false;
   let dmError = null;
-  const notifyUser = options.notifyUser !== false;
+  const notifyUser = options.notifyUser === true || options.notifyUser === 'force';
   const targetUser = member?.user || (options.notifyUser === 'force'
     ? await guild.client.users.fetch(normalizedUserId).catch(() => null)
     : null);

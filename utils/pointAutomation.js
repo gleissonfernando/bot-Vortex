@@ -102,6 +102,17 @@ function getStateKey(guildId, userId) {
   return `${guildId}:${userId}`;
 }
 
+function hasRegisteredProfile(profile) {
+  return Boolean(profile?.userId && (
+    profile.approvedAt
+    || profile.registeredManually
+    || profile.registeredBy
+    || profile.createdAt
+    || profile.nomeGame
+    || profile.idGame
+  ));
+}
+
 function buildConfirmRow(guildId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -342,10 +353,12 @@ async function checkOpenPointConfirmations(client, guild, state, points = null) 
   const config = readAutomationConfig();
   if (!config.pointMonitorEnabled) return;
   const guildPoints = points || await listGuildPoints(guild.id);
+  const profiles = getGuildProfiles(guild.id);
   const minOpenMs = config.pointMonitorDmIntervalHours * 60 * 60 * 1000;
   const retryMs = 15 * 60 * 1000;
 
   for (const point of guildPoints.filter((item) => item.activePointStartedAt)) {
+    if (!hasRegisteredProfile(profiles[point.userId])) continue;
     const key = getStateKey(guild.id, point.userId);
     const item = state[key] || {};
     const cycleStartMs = getPointCycleStartMs(point, item);
@@ -422,7 +435,7 @@ async function checkOfflineUsers(client, guild, state, force = false, points = n
 
   for (const profile of profiles) {
     if (billingExemptUserIds.has(String(profile?.userId))) continue;
-    if (!profile?.userId || activeAbsences.has(profile.userId)) continue;
+    if (!hasRegisteredProfile(profile) || activeAbsences.has(profile.userId)) continue;
     const point = pointByUser.get(profile.userId);
     if (point?.activePointStartedAt) continue;
     const lastActivity = point?.lastPointCloseAt || point?.lastPointOpenAt || profile.approvedAt || profile.updatedAt;
@@ -476,22 +489,6 @@ async function sendAvailabilityReminderDm(user, guild, onlineCount = 0) {
   return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
 }
 
-async function sendMissingSetDm(user, guild) {
-  const embed = new EmbedBuilder()
-    .setColor('#ED4245')
-    .setTitle('Cadastro de set pendente')
-    .setDescription([
-      `Você ainda não possui cadastro aprovado no **${guild.name}**.`,
-      '',
-      'Solicite seu set pelo comando `/set` para liberar seu cadastro e evitar cobranças automáticas.',
-      'Depois do set aprovado, o bot consegue acompanhar seu ponto e seus dados corretamente.',
-    ].join('\n'))
-    .setFooter({ text: 'Vortex - Sistema de Set' })
-    .setTimestamp();
-
-  return user.send({ embeds: [embed] }).then(() => true).catch(() => false);
-}
-
 async function checkAvailabilityReminders(client, guild, state, force = false) {
   const config = readAutomationConfig();
   if (!config.availabilityReminderEnabled) return;
@@ -535,10 +532,12 @@ async function checkAvailabilityReminders(client, guild, state, force = false) {
     const key = `${getStateKey(guild.id, member.id)}:availability`;
     const item = state[key] || {};
 
-    if (!profile?.approvedAt) {
-      if (!force && item.lastSetReminderDate === today) continue;
-      const sent = await sendMissingSetDm(member.user, guild);
-      state[key] = { ...item, lastSetReminderDate: today, lastSetReminderAt: new Date().toISOString(), lastSetReminderSent: sent };
+    if (!hasRegisteredProfile(profile)) {
+      state[key] = {
+        ...item,
+        lastMissingProfileSkippedAt: new Date().toISOString(),
+        lastMissingProfileSkippedReason: 'not_registered_no_message',
+      };
       continue;
     }
 

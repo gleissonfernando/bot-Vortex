@@ -10,8 +10,8 @@ let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 
 const liveSchema = z.object({
   platform: z.enum(PLATFORMS).optional(),
-  url: z.string().url(),
-  streamerName: z.string().min(2).max(80),
+  url: z.string().trim().min(1).max(240),
+  streamerName: z.string().trim().max(80).optional().nullable(),
   alertChannelId: z.string().min(5).max(32).optional().nullable(),
   mentionRoleId: z.string().min(5).max(32).optional().nullable(),
   enabled: z.boolean().optional(),
@@ -55,20 +55,45 @@ function defaultGuildId(req: any) {
 }
 
 function detectPlatform(url: string) {
-  const host = new URL(url).hostname.toLowerCase();
-  if (host.includes('twitch.tv')) return 'twitch';
-  if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
-  if (host.includes('kick.com')) return 'kick';
+  try {
+    const host = new URL(url.includes('://') ? url : `https://${url}`).hostname.toLowerCase();
+    if (host.includes('twitch.tv')) return 'twitch';
+    if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+    if (host.includes('kick.com')) return 'kick';
+  } catch {
+    return 'custom';
+  }
   return 'custom';
 }
 
 function extractChannelSlug(url: string) {
   try {
     const parsed = new URL(url.includes('://') ? url : `https://twitch.tv/${url}`);
-    return parsed.pathname.split('/').filter(Boolean)[0] || '';
+    const host = parsed.hostname.toLowerCase();
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (!parts.length && !host.includes('.')) return host.replace(/^@/, '');
+    return (parts[0] || '').replace(/^@/, '');
   } catch {
     return String(url || '').replace(/^@/, '').trim();
   }
+}
+
+function normalizeChannelInput(value: string, platform: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (raw.includes('://')) return raw;
+  const clean = raw.replace(/^@/, '').replace(/^\/+/, '');
+  if (platform === 'twitch') return `https://www.twitch.tv/${clean}`;
+  if (platform === 'kick') return `https://kick.com/${clean}`;
+  return raw;
+}
+
+function fallbackStreamerName(input: { streamerName?: string | null; url: string }, platform: string) {
+  const typedName = String(input.streamerName || '').trim();
+  if (typedName) return typedName;
+  const slug = extractChannelSlug(input.url);
+  if (slug) return slug;
+  return platform === 'twitch' ? 'Streamer Twitch' : 'Streamer';
 }
 
 async function getTwitchToken() {
@@ -233,15 +258,28 @@ function renderMessage(template: string, live: any, settings: any) {
     .replaceAll('{guild}', settings.guild_id || settings.guildId || '');
 }
 
+function isEveryoneMention(roleId: string | null, guildId: string | null) {
+  return Boolean(roleId && guildId && String(roleId) === String(guildId));
+}
+
+function formatAlertMention(roleId: string | null, guildId: string | null) {
+  if (!roleId) return null;
+  return isEveryoneMention(roleId, guildId) ? '@everyone' : `<@&${roleId}>`;
+}
+
+function liveAlertAllowedMentions(roleId: string | null, guildId: string | null) {
+  if (!roleId) return { parse: [] };
+  if (isEveryoneMention(roleId, guildId)) return { parse: ['everyone'] };
+  return { parse: [], roles: [String(roleId)] };
+}
+
 function liveAlertContent(roleId: string | null, live: any, settings: any) {
+  const mention = formatAlertMention(roleId, settings.guild_id || settings.guildId || live.guild_id || live.guildId || null);
   const template = live.custom_message || settings.default_message;
   if (template && template !== DEFAULT_MESSAGE) {
-    return [roleId ? `<@&${roleId}>` : null, renderMessage(template, live, settings)].filter(Boolean).join('\n\n');
+    return [mention, renderMessage(template, live, settings)].filter(Boolean).join('\n\n');
   }
-  return [
-    `${live.streamer_name || live.streamerName || 'Streamer'} vem pra live familia`,
-    roleId ? `<@&${roleId}>` : null
-  ].filter(Boolean).join(' ');
+  return mention || '';
 }
 
 async function sendDiscordAlert(live: any, settings: any) {
@@ -281,7 +319,7 @@ async function sendDiscordAlert(live: any, settings: any) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      content,
+      content: content || undefined,
       embeds: [embed],
       components: [{
         type: 1,
@@ -292,7 +330,7 @@ async function sendDiscordAlert(live: any, settings: any) {
           url: streamUrl
         }]
       }],
-      allowed_mentions: { roles: roleId ? [roleId] : [] }
+      allowed_mentions: liveAlertAllowedMentions(roleId, live.guild_id || settings.guild_id || null)
     })
   });
   if (!response.ok) return { ok: false, error: `Discord HTTP ${response.status}` };
@@ -336,12 +374,13 @@ livesRouter.post('/', requireManager, async (req, res) => {
   const guildId = input.guildId || defaultGuildId(req);
   const now = new Date();
   const platform = input.platform || detectPlatform(input.url);
-  const twitch = platform === 'twitch' ? await resolveTwitchChannel(input.url) : null;
+  const normalizedUrl = normalizeChannelInput(input.url, platform);
+  const twitch = platform === 'twitch' ? await resolveTwitchChannel(normalizedUrl) : null;
   const doc: LiveDoc = {
     guild_id: guildId,
     platform,
-    url: twitch?.url || input.url.trim(),
-    streamer_name: twitch?.displayName || input.streamerName.trim(),
+    url: twitch?.url || normalizedUrl,
+    streamer_name: twitch?.displayName || fallbackStreamerName({ ...input, url: normalizedUrl }, platform),
     alert_channel_id: input.alertChannelId || null,
     mention_role_id: input.mentionRoleId || null,
     enabled: input.enabled !== false,
@@ -358,6 +397,13 @@ livesRouter.post('/', requireManager, async (req, res) => {
     updated_at: now
   };
   const lives = await collection<LiveDoc>('live_alert_configs');
+  const duplicateQuery = twitch?.login
+    ? { guild_id: guildId, platform, twitch_login: twitch.login }
+    : { guild_id: guildId, platform, url: doc.url };
+  const existing = await lives.findOne(duplicateQuery);
+  if (existing) {
+    return res.status(409).json({ ok: false, error: 'Esta live ja esta cadastrada neste servidor.', live: normalizeLive(existing) });
+  }
   const result = await lives.insertOne(doc);
   res.status(201).json({ ok: true, live: normalizeLive({ ...doc, _id: result.insertedId }) });
 });
@@ -366,10 +412,10 @@ livesRouter.put('/:id', requireManager, async (req, res) => {
   const input = liveSchema.partial().parse(req.body);
   const update: any = { updated_at: new Date() };
   if (input.url) {
-    update.url = input.url.trim();
     update.platform = input.platform || detectPlatform(input.url);
+    update.url = normalizeChannelInput(input.url, update.platform);
     if (update.platform === 'twitch') {
-      const twitch = await resolveTwitchChannel(input.url);
+      const twitch = await resolveTwitchChannel(update.url);
       if (twitch) {
         update.url = twitch.url;
         update.streamer_name = twitch.displayName;
@@ -381,7 +427,10 @@ livesRouter.put('/:id', requireManager, async (req, res) => {
   } else if (input.platform) {
     update.platform = input.platform;
   }
-  if (input.streamerName !== undefined) update.streamer_name = input.streamerName.trim();
+  if (input.streamerName !== undefined) {
+    const name = String(input.streamerName || '').trim();
+    if (name) update.streamer_name = name;
+  }
   if (input.alertChannelId !== undefined) update.alert_channel_id = input.alertChannelId || null;
   if (input.mentionRoleId !== undefined) update.mention_role_id = input.mentionRoleId || null;
   if (input.enabled !== undefined) update.enabled = input.enabled;
