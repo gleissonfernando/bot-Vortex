@@ -11,6 +11,7 @@ import {
   CreditCard,
   Database,
   Eye,
+  FileText,
   Gauge,
   Loader2,
   Lock,
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Settings2,
   Shield,
   SlidersHorizontal,
   Sparkles,
@@ -104,7 +106,7 @@ const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
   roles: { icon: Shield, keys: ['VORTEX_ROLE_LEVELS', 'VORTEX_AUTO_ROLES'] },
   points: { icon: Radio, keys: ['POINT_'] },
   absence: { icon: Clock3, keys: ['ABSENCE_'] },
-  commands: { icon: Lock, keys: ['COMMAND_ROLE_PERMISSIONS'] },
+  commands: { icon: Lock, keys: ['COMMAND_ROLE_PERMISSIONS', 'COMMAND_DISABLED_COMMANDS'] },
   profile: { icon: Users, keys: ['PROFILE_'] },
   billing: { icon: CreditCard, keys: ['PROFILE_BILLING_ENABLED', 'POINT_OFFLINE_CHARGE_ENABLED', 'POINT_OFFLINE_THRESHOLD_HOURS'] },
   messages: { icon: MessageSquare, keys: ['MIRROR_MESSAGE_CHANNEL_IDS', 'DISABLE_NOTICE_DMS', 'NOTICE_MENTION_ROLE_ID'] },
@@ -121,6 +123,7 @@ const keyLabels: Record<string, string> = {
   POINT_MONITOR_ENABLED: 'monitor de ponto',
   POINT_OFFLINE_CHARGE_ENABLED: 'cobranca offline',
   COMMAND_ROLE_PERMISSIONS: 'permissoes',
+  COMMAND_DISABLED_COMMANDS: 'comandos desativados',
   VORTEX_ROLE_LEVELS: 'cargos vortex',
   VORTEX_AUTO_ROLES: 'cargos automaticos',
   PANEL_VISUALS: 'visual',
@@ -146,6 +149,9 @@ export default function BotVortexPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [bootedAt] = useState(() => new Date());
   const [now, setNow] = useState(() => new Date());
+  const [commandQuery, setCommandQuery] = useState('');
+  const [commandFilter, setCommandFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const [toast, setToast] = useState('');
 
   const configRef = useRef<BotConfig | null>(null);
   const pendingPatchRef = useRef<BotConfig>({});
@@ -224,6 +230,31 @@ export default function BotVortexPage() {
       active: commandCount > 0
     }
   ]), [config, lastSavedAt, saveStatus, hasChanges, uptimeLabel, metrics, commandCount]);
+  const disabledCommands = useMemo(() => (
+    new Set((Array.isArray(config?.COMMAND_DISABLED_COMMANDS) ? config?.COMMAND_DISABLED_COMMANDS : []).map(String))
+  ), [config]);
+  const filteredCommandOptions = useMemo(() => {
+    const normalized = commandQuery.trim().toLowerCase();
+    return commandOptions.filter((command) => {
+      const disabled = disabledCommands.has(command.key);
+      if (commandFilter === 'active' && disabled) return false;
+      if (commandFilter === 'disabled' && !disabled) return false;
+      if (!normalized) return true;
+      return `${command.label} ${command.description}`.toLowerCase().includes(normalized);
+    });
+  }, [commandQuery, commandFilter, disabledCommands]);
+  const commandStats = useMemo(() => {
+    const disabled = commandOptions.filter((command) => disabledCommands.has(command.key)).length;
+    const permissions = commandOptions.reduce((total, command) => (
+      total + (Array.isArray(config?.COMMAND_ROLE_PERMISSIONS?.[command.key]) ? config.COMMAND_ROLE_PERMISSIONS[command.key].length : 0)
+    ), 0);
+    return {
+      total: commandOptions.length,
+      active: commandOptions.length - disabled,
+      disabled,
+      permissions
+    };
+  }, [config, disabledCommands]);
 
   async function load() {
     setLoading(true);
@@ -282,6 +313,21 @@ export default function BotVortexPage() {
         [command]: value
       }
     });
+    showToast('Permissao salva com sucesso');
+  }
+
+  function updateCommandDisabled(command: string, disabled: boolean) {
+    const current = configRef.current || {};
+    const list = new Set((Array.isArray(current.COMMAND_DISABLED_COMMANDS) ? current.COMMAND_DISABLED_COMMANDS : []).map(String));
+    if (disabled) list.add(command);
+    else list.delete(command);
+    applyPatch({ COMMAND_DISABLED_COMMANDS: Array.from(list) });
+    showToast('Permissao salva com sucesso');
+  }
+
+  function showToast(text: string) {
+    setToast(text);
+    window.setTimeout(() => setToast(''), 2200);
   }
 
   function updateVisualDefault(key: string, value: string) {
@@ -569,19 +615,93 @@ export default function BotVortexPage() {
             ) : null}
 
             {config && selected === 'commands' ? (
-              <ToolPanel title="Permissoes de comandos" description="Espelha a aba de comandos do /painel." icon={Lock}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {commandOptions.map((command) => (
-                    <ControlGroup key={command.key} title={command.label} description={command.description}>
-                      <MultiSelect
-                        label="Cargos liberados"
-                        value={config.COMMAND_ROLE_PERMISSIONS?.[command.key] || []}
-                        options={roles}
-                        onChange={(value) => updateCommand(command.key, value)}
-                      />
-                    </ControlGroup>
-                  ))}
+              <ToolPanel title="Permissoes de comandos" description="Central moderna para ativar comandos e gerenciar cargos autorizados." icon={Lock}>
+                {toast ? (
+                  <div className="fixed right-5 top-5 z-50 rounded-2xl border border-emerald-300/25 bg-emerald-400/15 px-4 py-3 text-sm font-semibold text-emerald-100 shadow-2xl shadow-emerald-950/30 backdrop-blur-xl">
+                    {toast}
+                  </div>
+                ) : null}
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <CommandMetricCard label="Comandos Totais" value={commandStats.total} icon={Command} tone="sky" />
+                  <CommandMetricCard label="Comandos Ativos" value={commandStats.active} icon={CheckCircle2} tone="emerald" />
+                  <CommandMetricCard label="Desativados" value={commandStats.disabled} icon={AlertTriangle} tone="rose" />
+                  <CommandMetricCard label="Total de Permissoes" value={commandStats.permissions} icon={Shield} tone="sky" />
                 </div>
+
+                <section className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#020817]/80 px-3 py-2 text-sm text-slate-300 transition focus-within:border-sky-300/35">
+                      <Search size={16} className="text-sky-200" />
+                      <input
+                        value={commandQuery}
+                        onChange={(event) => setCommandQuery(event.target.value)}
+                        placeholder="Pesquisar comando"
+                        className="min-w-0 flex-1 bg-transparent text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-[#020817]/70 p-1 text-xs font-semibold text-slate-300">
+                      {[
+                        { id: 'all', label: 'Todos' },
+                        { id: 'active', label: 'Ativos' },
+                        { id: 'disabled', label: 'Desativados' }
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setCommandFilter(item.id as 'all' | 'active' | 'disabled')}
+                          className={`rounded-xl px-3 py-2 transition duration-200 ${commandFilter === item.id ? 'bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-950/20' : 'hover:bg-white/[0.055] hover:text-white'}`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {filteredCommandOptions.map((command) => (
+                    <CommandPermissionCard
+                      key={command.key}
+                      command={command}
+                      roles={roles}
+                      selectedRoles={config.COMMAND_ROLE_PERMISSIONS?.[command.key] || []}
+                      disabled={disabledCommands.has(command.key)}
+                      onRolesChange={(value) => updateCommand(command.key, value)}
+                      onDisabledChange={(value) => updateCommandDisabled(command.key, value)}
+                    />
+                  ))}
+                  {!filteredCommandOptions.length ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#071226]/80 p-6 text-sm text-slate-400">
+                      Nenhum comando encontrado com os filtros atuais.
+                    </div>
+                  ) : null}
+                </div>
+
+                <section className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="grid h-10 w-10 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100">
+                      <FileText size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-white">Historico de alteracoes</h3>
+                      <p className="text-sm text-slate-400">Ultimas mudancas salvas nas permissoes.</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(Array.isArray(config.COMMAND_PERMISSION_HISTORY) ? config.COMMAND_PERMISSION_HISTORY : []).slice(-8).reverse().map((item: any, index: number) => (
+                      <div key={`${item.command}-${item.at}-${index}`} className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-[#020817]/60 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                        <span className="font-medium text-white">{item.user || 'Painel Web'}</span>
+                        <span className="text-slate-400">/{item.command}</span>
+                        <span className="text-xs text-slate-500">{item.at ? new Date(item.at).toLocaleString('pt-BR') : 'Agora'}</span>
+                      </div>
+                    ))}
+                    {!Array.isArray(config.COMMAND_PERMISSION_HISTORY) || !config.COMMAND_PERMISSION_HISTORY.length ? (
+                      <div className="rounded-2xl border border-dashed border-white/10 bg-[#020817]/50 p-4 text-sm text-slate-500">
+                        Nenhuma alteracao registrada ainda.
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
               </ToolPanel>
             ) : null}
 
@@ -862,6 +982,136 @@ function ToggleSwitch({ value }: { value: boolean }) {
       <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-lg transition ${value ? 'left-5' : 'left-0.5'}`} />
     </span>
   );
+}
+
+function CommandMetricCard({ label, value, icon: Icon, tone }: { label: string; value: number; icon: LucideIcon; tone: 'sky' | 'emerald' | 'rose' }) {
+  const toneClass = tone === 'emerald'
+    ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100'
+    : tone === 'rose'
+      ? 'border-rose-300/20 bg-rose-400/10 text-rose-100'
+      : 'border-sky-300/20 bg-sky-400/10 text-sky-100';
+  return (
+    <article className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/25 hover:shadow-sky-500/10">
+      <div className="flex items-center justify-between gap-3">
+        <span className={`grid h-10 w-10 place-items-center rounded-2xl border ${toneClass}`}>
+          <Icon size={18} />
+        </span>
+        <span className="h-2.5 w-2.5 rounded-full bg-sky-300 shadow-[0_0_18px_rgba(0,191,255,0.75)]" />
+      </div>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <strong className="mt-1 block text-3xl font-semibold text-white">{value}</strong>
+    </article>
+  );
+}
+
+function CommandPermissionCard({
+  command,
+  roles,
+  selectedRoles,
+  disabled,
+  onRolesChange,
+  onDisabledChange
+}: {
+  command: CommandOption;
+  roles: Option[];
+  selectedRoles: string[];
+  disabled: boolean;
+  onRolesChange: (value: string[]) => void;
+  onDisabledChange: (disabled: boolean) => void;
+}) {
+  const selectedSet = new Set(selectedRoles.map(String));
+  const Icon = commandIcon(command.key);
+
+  function toggleRole(roleId: string) {
+    const next = new Set(selectedSet);
+    if (next.has(roleId)) next.delete(roleId);
+    else next.add(roleId);
+    onRolesChange(Array.from(next));
+  }
+
+  return (
+    <article className={`group overflow-hidden rounded-2xl border bg-[#071226]/85 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-sky-500/10 ${
+      disabled ? 'border-rose-400/30' : 'border-sky-300/25'
+    }`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${disabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-sky-300/25 bg-sky-400/10 text-sky-100'}`}>
+            <Icon size={20} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold tracking-tight text-white">{command.label}</h3>
+            <p className="mt-1 text-sm leading-5 text-slate-400">{command.description}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => onDisabledChange(!disabled)}
+          className="shrink-0"
+          aria-label={disabled ? 'Ativar comando' : 'Desativar comando'}
+        >
+          <ToggleSwitch value={!disabled} />
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${disabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-emerald-300/25 bg-emerald-400/10 text-emerald-100'}`}>
+          <span className={`h-2 w-2 rounded-full ${disabled ? 'bg-rose-300' : 'bg-emerald-300'}`} />
+          {disabled ? 'Desativado' : 'Ativado'}
+        </span>
+        <span className="rounded-full border border-white/10 bg-[#020817]/70 px-3 py-1 text-xs font-semibold text-slate-300">
+          {selectedRoles.length} cargo{selectedRoles.length === 1 ? '' : 's'} permitido{selectedRoles.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      {disabled ? (
+        <div className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+          Este comando está desativado.
+        </div>
+      ) : null}
+
+      <div className="mt-5">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Cargos Permitidos</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onRolesChange(roles.map((role) => role.id))} className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 transition hover:bg-sky-400/15">
+              Selecionar Todos
+            </button>
+            <button onClick={() => onRolesChange([])} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.08] hover:text-white">
+              Remover Todos
+            </button>
+          </div>
+        </div>
+        <div className="flex max-h-52 flex-wrap gap-2 overflow-auto rounded-2xl border border-white/10 bg-[#020817]/55 p-3">
+          {roles.map((role) => {
+            const selected = selectedSet.has(role.id);
+            return (
+              <button
+                key={role.id}
+                onClick={() => toggleRole(role.id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition duration-200 ${
+                  selected
+                    ? 'border-sky-300/40 bg-sky-400/15 text-sky-50 shadow-lg shadow-sky-950/20'
+                    : 'border-white/10 bg-white/[0.035] text-slate-400 hover:border-sky-300/20 hover:bg-white/[0.07] hover:text-white'
+                }`}
+              >
+                {role.name}
+              </button>
+            );
+          })}
+          {!roles.length ? <span className="text-sm text-slate-500">Nenhum cargo carregado.</span> : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function commandIcon(key: string): LucideIcon {
+  if (key.includes('bau')) return PackageOpen;
+  if (key.includes('ponto') || key === 'ativarponto') return Radio;
+  if (key === 'painel') return Settings2;
+  if (key === 'avisos') return MessageSquare;
+  if (key === 'perfil' || key === 'cadastro') return Users;
+  if (key === 'clear') return AlertTriangle;
+  return Command;
 }
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: Option[]; onChange: (value: string) => void }) {

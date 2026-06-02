@@ -138,6 +138,13 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     return hasAnyVortexRole(interaction.member);
 }
 
+function isCommandDisabled(conf, commandName) {
+    const disabled = Array.isArray(conf.COMMAND_DISABLED_COMMANDS)
+        ? conf.COMMAND_DISABLED_COMMANDS.map(String)
+        : [];
+    return disabled.includes(String(commandName));
+}
+
 async function reportInteractionError(client, error, context = 'Interação') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
@@ -271,6 +278,13 @@ module.exports = {
             const cmd = client.commands.get(interaction.commandName);
             if (cmd) {
                 try {
+                    if (isCommandDisabled(conf, interaction.commandName)) {
+                        return safeReply(interaction, {
+                            content: '❌ Este comando está desativado.',
+                            ephemeral: true,
+                        });
+                    }
+
                     if (!hasConfiguredCommandAccess(interaction, interaction.commandName)) {
                         return safeReply(interaction, {
                             content: '❌ Você não tem cargo liberado no /painel para usar este comando.',

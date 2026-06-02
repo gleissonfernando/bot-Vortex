@@ -96,6 +96,8 @@ function pickBotConfig(config: Record<string, any>) {
     VORTEX_ROLE_LEVELS: config.VORTEX_ROLE_LEVELS || { admin: [], medio: [], membro: [] },
     VORTEX_AUTO_ROLES: config.VORTEX_AUTO_ROLES || { pending: [], approved: [] },
     COMMAND_ROLE_PERMISSIONS: config.COMMAND_ROLE_PERMISSIONS || {},
+    COMMAND_DISABLED_COMMANDS: Array.isArray(config.COMMAND_DISABLED_COMMANDS) ? config.COMMAND_DISABLED_COMMANDS : [],
+    COMMAND_PERMISSION_HISTORY: Array.isArray(config.COMMAND_PERMISSION_HISTORY) ? config.COMMAND_PERMISSION_HISTORY.slice(-30) : [],
     MIRROR_MESSAGE_CHANNEL_IDS: Array.isArray(config.MIRROR_MESSAGE_CHANNEL_IDS) ? config.MIRROR_MESSAGE_CHANNEL_IDS : [],
     ADJUST_CALL_CHANNEL_IDS: Array.isArray(config.ADJUST_CALL_CHANNEL_IDS) ? config.ADJUST_CALL_CHANNEL_IDS : [],
     ABSENCE_ROLE_ID: config.ABSENCE_ROLE_ID || '',
@@ -150,6 +152,8 @@ function sanitizePatch(patch: Record<string, any>) {
     'VORTEX_ROLE_LEVELS',
     'VORTEX_AUTO_ROLES',
     'COMMAND_ROLE_PERMISSIONS',
+    'COMMAND_DISABLED_COMMANDS',
+    'COMMAND_PERMISSION_HISTORY',
     'MIRROR_MESSAGE_CHANNEL_IDS',
     'ADJUST_CALL_CHANNEL_IDS',
     'ABSENCE_ROLE_ID',
@@ -211,6 +215,38 @@ botVortexRouter.put('/config', requireManager, async (req, res) => {
   const current = readConfig();
   const patch = sanitizePatch(parsed.data.patch || {});
   const next = { ...current, ...patch };
+  if (
+    Object.prototype.hasOwnProperty.call(patch, 'COMMAND_ROLE_PERMISSIONS')
+    || Object.prototype.hasOwnProperty.call(patch, 'COMMAND_DISABLED_COMMANDS')
+  ) {
+    const changedCommands = new Set<string>();
+    if (Object.prototype.hasOwnProperty.call(patch, 'COMMAND_ROLE_PERMISSIONS')) {
+      const before = current.COMMAND_ROLE_PERMISSIONS || {};
+      const after = patch.COMMAND_ROLE_PERMISSIONS || {};
+      for (const command of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        if (JSON.stringify(before[command] || []) !== JSON.stringify(after[command] || [])) changedCommands.add(command);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'COMMAND_DISABLED_COMMANDS')) {
+      const before = new Set<string>((Array.isArray(current.COMMAND_DISABLED_COMMANDS) ? current.COMMAND_DISABLED_COMMANDS : []).map(String));
+      const after = new Set<string>((Array.isArray(patch.COMMAND_DISABLED_COMMANDS) ? patch.COMMAND_DISABLED_COMMANDS : []).map(String));
+      for (const command of new Set([...before, ...after])) {
+        if (before.has(command) !== after.has(command)) changedCommands.add(command);
+      }
+    }
+    if (changedCommands.size) {
+      const history = Array.isArray(current.COMMAND_PERMISSION_HISTORY) ? current.COMMAND_PERMISSION_HISTORY : [];
+      const actor = req.user?.email || req.user?.id || 'frequency-panel';
+      next.COMMAND_PERMISSION_HISTORY = [
+        ...history,
+        ...Array.from(changedCommands).map((command) => ({
+          user: String(actor),
+          command,
+          at: new Date().toISOString()
+        }))
+      ].slice(-30);
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(patch, 'MAINTENANCE_MODE') && current.MAINTENANCE_MODE !== patch.MAINTENANCE_MODE) {
     next.MAINTENANCE_BY = req.user?.id || req.user?.email || 'frequency-panel';
     next.MAINTENANCE_SINCE = Date.now();
