@@ -35,7 +35,7 @@ loadRootEnv();
 
 const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
-const apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
+let apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
 const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
 const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
@@ -51,6 +51,7 @@ const publicBaseUrl = (
 const childRestartState = new Map();
 const managedChildren = new Set();
 let shuttingDown = false;
+const hasExplicitInternalApiUrl = Boolean(process.env.INTERNAL_API_URL);
 
 function envFlag(name, fallback = true) {
   const value = process.env[name];
@@ -80,6 +81,47 @@ async function isPortBusy(port) {
   const value = Number(port);
   if (!Number.isInteger(value) || value <= 0 || value > 65535) return false;
   return (await canConnect(value, '127.0.0.1')) || (await canConnect(value, '::1'));
+}
+
+function getJson(url, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 4096) req.destroy();
+      });
+      res.on('end', () => {
+        try {
+          resolve({ statusCode: res.statusCode || 0, data: JSON.parse(body) });
+        } catch {
+          resolve({ statusCode: res.statusCode || 0, data: null });
+        }
+      });
+    });
+
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function isFrequencyApiHealthy(port) {
+  const result = await getJson(`http://127.0.0.1:${port}/health`);
+  return Boolean(result?.statusCode === 200 && result.data?.ok && result.data?.service === 'vortex-frequency-api');
+}
+
+async function findFreePort(startPort, attempts = 20) {
+  let current = Number(startPort);
+  if (!Number.isInteger(current) || current <= 0 || current > 65535) current = 4100;
+
+  for (let offset = 0; offset < attempts; offset += 1) {
+    const candidate = current + offset;
+    if (candidate > 65535) break;
+    if (!(await isPortBusy(candidate))) return String(candidate);
+  }
+
+  return null;
 }
 
 function run(command, args, options = {}) {
@@ -334,40 +376,59 @@ async function main() {
 
   if (shouldStartFrequencyApi) {
     if (await isPortBusy(apiPort)) {
-      console.warn(`[shardcloud] frequency-api skipped: port ${apiPort} is already in use.`);
-    } else {
-      if (!(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL)) {
-        console.warn('[shardcloud] MongoDB nao configurado. A API sera iniciada em modo fallback para login, configuracoes e bau.');
-      }
-
-      if (shouldBuildApi()) {
-        console.log('[shardcloud] Building Frequency API for production...');
-        const built = run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api'], { fatal: false });
-        if (!built) console.warn('[shardcloud] Frequency API build failed. Trying to start with available files.');
-      }
-
-      const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
-      if (fs.existsSync(apiDist)) {
-        start('frequency-api', 'node', [apiDist], {
-          env: {
-            API_PORT: apiPort,
-            API_ORIGIN: process.env.API_ORIGIN
-          },
-          fatal: false,
-          restart: true
-        });
+      if (await isFrequencyApiHealthy(apiPort)) {
+        console.warn(`[shardcloud] frequency-api skipped: healthy API already running on port ${apiPort}.`);
+      } else if (hasExplicitInternalApiUrl) {
+        console.warn(`[shardcloud] frequency-api skipped: port ${apiPort} is busy and INTERNAL_API_URL is explicit.`);
       } else {
-        const apiArgs = fs.existsSync(apiSource)
-          ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
-          : ['--prefix', 'frequency-panel', 'run', 'start:api'];
-        start('frequency-api', 'npm', apiArgs, {
-          env: {
-            API_PORT: apiPort,
-            API_ORIGIN: process.env.API_ORIGIN
-          },
-          fatal: false,
-          restart: true
-        });
+        const nextPort = await findFreePort(Number(apiPort) + 1);
+        if (!nextPort) {
+          console.warn(`[shardcloud] frequency-api skipped: port ${apiPort} is busy and no fallback port is available.`);
+        } else {
+          console.warn(`[shardcloud] port ${apiPort} is busy but not a healthy frequency API. Starting frequency-api on ${nextPort}.`);
+          apiPort = nextPort;
+          process.env.INTERNAL_API_URL = `http://127.0.0.1:${apiPort}`;
+        }
+      }
+    }
+
+    if (!(await isFrequencyApiHealthy(apiPort))) {
+      if (await isPortBusy(apiPort)) {
+        console.warn(`[shardcloud] frequency-api could not start: port ${apiPort} is still busy.`);
+      } else {
+        if (!(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL)) {
+          console.warn('[shardcloud] MongoDB nao configurado. A API sera iniciada em modo fallback para login, configuracoes e bau.');
+        }
+
+        if (shouldBuildApi()) {
+          console.log('[shardcloud] Building Frequency API for production...');
+          const built = run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api'], { fatal: false });
+          if (!built) console.warn('[shardcloud] Frequency API build failed. Trying to start with available files.');
+        }
+
+        const apiSource = path.join(panelDir, 'apps', 'api', 'src', 'index.ts');
+        if (fs.existsSync(apiDist)) {
+          start('frequency-api', 'node', [apiDist], {
+            env: {
+              API_PORT: apiPort,
+              API_ORIGIN: process.env.API_ORIGIN
+            },
+            fatal: false,
+            restart: true
+          });
+        } else {
+          const apiArgs = fs.existsSync(apiSource)
+            ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
+            : ['--prefix', 'frequency-panel', 'run', 'start:api'];
+          start('frequency-api', 'npm', apiArgs, {
+            env: {
+              API_PORT: apiPort,
+              API_ORIGIN: process.env.API_ORIGIN
+            },
+            fatal: false,
+            restart: true
+          });
+        }
       }
     }
   } else {
