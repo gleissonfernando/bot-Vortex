@@ -64,11 +64,9 @@ export default function LivesPage() {
   });
   const [form, setForm] = useState({
     url: '',
-    streamerName: '',
     alertChannelId: '',
     mentionRoleId: '',
-    enabled: true,
-    customMessage: ''
+    enabled: true
   });
 
   const editing = useMemo(() => lives.find((live) => live.id === editingId) || null, [lives, editingId]);
@@ -101,7 +99,7 @@ export default function LivesPage() {
   function resetForm(platform = selectedPlatform) {
     setSelectedPlatform(platform);
     setEditingId(null);
-    setForm({ url: '', streamerName: '', alertChannelId: '', mentionRoleId: '', enabled: true, customMessage: '' });
+    setForm({ url: '', alertChannelId: '', mentionRoleId: '', enabled: true });
   }
 
   function openAdd(platform: string) {
@@ -116,11 +114,9 @@ export default function LivesPage() {
     setShowForm(true);
     setForm({
       url: live.url,
-      streamerName: live.streamerName,
       alertChannelId: live.alertChannelId || '',
       mentionRoleId: live.mentionRoleId || '',
-      enabled: live.enabled,
-      customMessage: live.customMessage || ''
+      enabled: live.enabled
     });
   }
 
@@ -290,44 +286,42 @@ export default function LivesPage() {
         </section>
 
         {showForm ? (
-          <section className="rounded-lg border border-white/10 bg-white/[0.045] p-5 shadow-panel backdrop-blur">
+          <section className="rounded-lg border border-violet-300/20 bg-violet-500/[0.06] p-5 shadow-panel backdrop-blur">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Radio className="text-violet-300" size={20} />
-                <h2 className="text-lg font-semibold text-white">{editing ? 'Editar live Twitch' : 'Cadastrar live Twitch'}</h2>
+                <h2 className="text-lg font-semibold text-white">{editing ? 'Ajustar live Twitch' : 'Nova live Twitch'}</h2>
               </div>
               <button onClick={() => setShowForm(false)} className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06]">Fechar</button>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Input label="Link da live Twitch" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://twitch.tv/nome_do_canal" />
-              <Input label="Nome do streamer" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Validado automaticamente pela Twitch" />
-              <Select
-                label="Canal do Discord"
-                value={form.alertChannelId}
-                onChange={(value) => setForm({ ...form, alertChannelId: value })}
-                placeholder={settings.defaultAlertChannelId ? `Padrao: #${channelName(discordOptions.channels, settings.defaultAlertChannelId)}` : 'Usar canal padrao'}
-                options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
-              />
-              <Select
-                label="Cargo mencionado"
-                value={form.mentionRoleId}
-                onChange={(value) => setForm({ ...form, mentionRoleId: value })}
-                placeholder={settings.defaultMentionRoleId ? `Padrao: @${roleName(discordOptions.roles, settings.defaultMentionRoleId)}` : 'Usar cargo padrao'}
-                options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
-              />
-              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
-                <span className="text-slate-300">Alerta ativo</span>
-                <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-violet-500" />
-              </label>
-              <label className="block md:col-span-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Mensagem personalizada</span>
-                <textarea
-                  value={form.customMessage}
-                  onChange={(event) => setForm({ ...form, customMessage: event.target.value })}
-                  placeholder={defaultMessage}
-                  className="mt-1 min-h-28 w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/60"
-                />
-              </label>
+            <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end">
+              <Input label="Canal Twitch" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="rarofps7 ou https://twitch.tv/rarofps7" />
+              {editing ? (
+                <>
+                  <Select
+                    label="Canal do Discord"
+                    value={form.alertChannelId}
+                    onChange={(value) => setForm({ ...form, alertChannelId: value })}
+                    placeholder={settings.defaultAlertChannelId ? `Padrao: #${channelName(discordOptions.channels, settings.defaultAlertChannelId)}` : 'Usar canal padrao'}
+                    options={discordOptions.channels.map((channel) => ({ value: channel.id, label: `# ${channel.name}` }))}
+                  />
+                  <Select
+                    label="Cargo mencionado"
+                    value={form.mentionRoleId}
+                    onChange={(value) => setForm({ ...form, mentionRoleId: value })}
+                    placeholder={settings.defaultMentionRoleId ? `Padrao: @${roleName(discordOptions.roles, settings.defaultMentionRoleId)}` : 'Usar cargo padrao'}
+                    options={discordOptions.roles.map((role) => ({ value: role.id, label: `${role.name.startsWith('@') ? role.name : `@ ${role.name}`}${role.mentionable ? '' : ' (nao mencionavel)'}` }))}
+                  />
+                  <label className="flex h-10 items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 text-sm">
+                    <span className="text-slate-300">Ativo</span>
+                    <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-violet-500" />
+                  </label>
+                </>
+              ) : (
+                <div className="text-sm text-slate-400 lg:col-span-2">
+                  O nome, avatar e status sao validados automaticamente pela Twitch. Canal e cargo usam os padroes salvos acima.
+                </div>
+              )}
             </div>
             <button onClick={saveLive} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-500 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-400">
               <Save size={16} />
