@@ -5,6 +5,7 @@ import { collection, serializeDoc, serializeDocs } from '../db.js';
 import { requireManager } from '../middleware.js';
 
 const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+const DEFAULT_CHECK_INTERVAL_SECONDS = 30;
 const PLATFORMS = ['twitch', 'youtube', 'kick', 'custom'] as const;
 let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 
@@ -45,6 +46,9 @@ type LiveDoc = {
   twitch_login?: string | null;
   avatar_url?: string | null;
   last_announced_live_id: string | null;
+  last_alert_message_id?: string | null;
+  last_alert_updated_at?: Date | null;
+  last_live_started_at?: Date | null;
   last_checked_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -158,6 +162,7 @@ function normalizeLive(doc: LiveDoc) {
   item.twitchUserId = doc.twitch_user_id || null;
   item.twitchLogin = doc.twitch_login || null;
   item.avatarUrl = doc.avatar_url || null;
+  item.lastAlertMessageId = doc.last_alert_message_id || null;
   item.lastCheckedAt = doc.last_checked_at;
   delete item._id;
   delete item.guild_id;
@@ -171,6 +176,9 @@ function normalizeLive(doc: LiveDoc) {
   delete item.twitch_login;
   delete item.avatar_url;
   delete item.last_announced_live_id;
+  delete item.last_alert_message_id;
+  delete item.last_alert_updated_at;
+  delete item.last_live_started_at;
   delete item.last_checked_at;
   delete item.created_at;
   delete item.updated_at;
@@ -186,7 +194,7 @@ async function getSettings(guildId: string) {
     default_alert_channel_id: null,
     default_mention_role_id: null,
     default_message: DEFAULT_MESSAGE,
-    check_interval_seconds: 120
+    check_interval_seconds: DEFAULT_CHECK_INTERVAL_SECONDS
   };
 }
 
@@ -197,7 +205,7 @@ function normalizeSettings(doc: any) {
     defaultAlertChannelId: doc.default_alert_channel_id || null,
     defaultMentionRoleId: doc.default_mention_role_id || null,
     defaultMessage: doc.default_message || DEFAULT_MESSAGE,
-    checkIntervalSeconds: Number(doc.check_interval_seconds || 120)
+    checkIntervalSeconds: Number(doc.check_interval_seconds || DEFAULT_CHECK_INTERVAL_SECONDS)
   };
 }
 
@@ -287,7 +295,7 @@ async function sendDiscordAlert(live: any, settings: any) {
   if (!token) return { ok: false, error: 'DISCORD_TOKEN/DISCORD_BOT_TOKEN ausente na API.' };
   const channelId = live.alert_channel_id || settings.default_alert_channel_id;
   if (!channelId) return { ok: false, error: 'Canal de alerta nao configurado.' };
-  const roleId = live.mention_role_id || settings.default_mention_role_id;
+  const roleId = live.mention_role_id || settings.default_mention_role_id || process.env.LIVE_MENTION_ROLE_ID || null;
   const streamUrl = live.last_live_url || live.url;
   const streamerName = live.streamer_name || live.streamerName || 'Streamer';
   const content = liveAlertContent(roleId, live, settings);
@@ -357,7 +365,7 @@ livesRouter.get('/', async (req, res) => {
         default_alert_channel_id: null,
         default_mention_role_id: null,
         default_message: DEFAULT_MESSAGE,
-        check_interval_seconds: 120
+        check_interval_seconds: DEFAULT_CHECK_INTERVAL_SECONDS
       })
     });
   }
@@ -376,6 +384,12 @@ livesRouter.post('/', requireManager, async (req, res) => {
   const platform = input.platform || detectPlatform(input.url);
   const normalizedUrl = normalizeChannelInput(input.url, platform);
   const twitch = platform === 'twitch' ? await resolveTwitchChannel(normalizedUrl) : null;
+  if (platform === 'twitch' && !twitch) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Canal Twitch nao encontrado ou credenciais TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET invalidas.'
+    });
+  }
   const doc: LiveDoc = {
     guild_id: guildId,
     platform,
@@ -392,6 +406,9 @@ livesRouter.post('/', requireManager, async (req, res) => {
     twitch_login: twitch?.login || null,
     avatar_url: twitch?.avatarUrl || null,
     last_announced_live_id: null,
+    last_alert_message_id: null,
+    last_alert_updated_at: null,
+    last_live_started_at: null,
     last_checked_at: null,
     created_at: now,
     updated_at: now
@@ -416,13 +433,17 @@ livesRouter.put('/:id', requireManager, async (req, res) => {
     update.url = normalizeChannelInput(input.url, update.platform);
     if (update.platform === 'twitch') {
       const twitch = await resolveTwitchChannel(update.url);
-      if (twitch) {
-        update.url = twitch.url;
-        update.streamer_name = twitch.displayName;
-        update.twitch_user_id = twitch.id;
-        update.twitch_login = twitch.login;
-        update.avatar_url = twitch.avatarUrl;
+      if (!twitch) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Canal Twitch nao encontrado ou credenciais TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET invalidas.'
+        });
       }
+      update.url = twitch.url;
+      update.streamer_name = twitch.displayName;
+      update.twitch_user_id = twitch.id;
+      update.twitch_login = twitch.login;
+      update.avatar_url = twitch.avatarUrl;
     }
   } else if (input.platform) {
     update.platform = input.platform;
@@ -465,7 +486,7 @@ livesRouter.get('/settings', async (req, res) => {
         default_alert_channel_id: null,
         default_mention_role_id: null,
         default_message: DEFAULT_MESSAGE,
-        check_interval_seconds: 120
+        check_interval_seconds: DEFAULT_CHECK_INTERVAL_SECONDS
       })
     });
   }
@@ -480,7 +501,7 @@ livesRouter.put('/settings/general', requireManager, async (req, res) => {
     default_alert_channel_id: input.defaultAlertChannelId || null,
     default_mention_role_id: input.defaultMentionRoleId || null,
     default_message: input.defaultMessage || DEFAULT_MESSAGE,
-    check_interval_seconds: input.checkIntervalSeconds || 120,
+    check_interval_seconds: input.checkIntervalSeconds || DEFAULT_CHECK_INTERVAL_SECONDS,
     updated_at: new Date()
   };
   const settings = await collection('live_alert_settings');

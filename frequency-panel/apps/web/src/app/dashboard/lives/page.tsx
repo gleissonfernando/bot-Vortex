@@ -18,6 +18,7 @@ type LiveItem = {
   lastLiveTitle?: string | null;
   twitchLogin?: string | null;
   avatarUrl?: string | null;
+  lastAlertMessageId?: string | null;
 };
 
 type Settings = {
@@ -38,10 +39,9 @@ type DiscordOption = {
 const defaultMessage = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
 
 const platformCards = [
-  { id: 'youtube', name: 'YouTube', description: 'Videos publicados e alertas de canal.', action: 'Em breve', mark: 'YT', color: 'bg-red-500' },
-  { id: 'twitch', name: 'Twitch', description: 'Alertas ao vivo usando Twitch Helix API.', action: 'Adicionar canal', mark: 'TW', color: 'bg-violet-500' },
-  { id: 'kick', name: 'Kick', description: 'Monitoramento de lives por URL publica.', action: 'Adicionar', mark: 'K', color: 'bg-emerald-400' },
-  { id: 'custom', name: 'Personalizada', description: 'URLs externas monitoradas pelo sistema.', action: 'Adicionar', mark: 'URL', color: 'bg-sky-400' }
+  { id: 'twitch', name: 'Twitch', description: 'Cadastro validado pela Twitch Helix API.', action: 'Cadastrar live', mark: 'TW', color: 'bg-violet-500', enabled: true },
+  { id: 'kick', name: 'Kick', description: 'Integração automática ainda não configurada.', action: 'Indisponível', mark: 'K', color: 'bg-emerald-400', enabled: false },
+  { id: 'youtube', name: 'YouTube', description: 'Integração automática ainda não configurada.', action: 'Indisponível', mark: 'YT', color: 'bg-red-500', enabled: false }
 ];
 
 export default function LivesPage() {
@@ -51,7 +51,7 @@ export default function LivesPage() {
     defaultAlertChannelId: '',
     defaultMentionRoleId: '',
     defaultMessage,
-    checkIntervalSeconds: 120
+    checkIntervalSeconds: 30
   });
   const [selectedPlatform, setSelectedPlatform] = useState('twitch');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -105,6 +105,7 @@ export default function LivesPage() {
   }
 
   function openAdd(platform: string) {
+    if (platform !== 'twitch') return;
     resetForm(platform);
     setShowForm(true);
   }
@@ -125,7 +126,7 @@ export default function LivesPage() {
 
   async function saveLive() {
     setMessage('');
-    const payload = { ...form, platform: selectedPlatform };
+    const payload = { ...form, platform: 'twitch' };
     try {
       if (editing) {
         await apiFetch(`/lives/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
@@ -135,7 +136,7 @@ export default function LivesPage() {
         setMessage('Canal cadastrado para alertas da Vortex.');
       }
       setShowForm(false);
-      resetForm(selectedPlatform);
+      resetForm('twitch');
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao salvar live');
@@ -222,9 +223,9 @@ export default function LivesPage() {
             />
             <Input
               label="Intervalo"
-              value={String(settings.checkIntervalSeconds || 120)}
-              onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Math.max(30, Number(value.replace(/\D/g, '') || 120)) })}
-              placeholder="120"
+              value={String(settings.checkIntervalSeconds || 30)}
+              onChange={(value) => setSettings({ ...settings, checkIntervalSeconds: Math.max(30, Number(value.replace(/\D/g, '') || 30)) })}
+              placeholder="30"
             />
             <button onClick={() => saveSettings()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 text-sm font-semibold text-white transition hover:bg-white/[0.12]">
               <Save size={16} />
@@ -255,7 +256,10 @@ export default function LivesPage() {
                 </div>
                 <button
                   onClick={() => openAdd(platform.id)}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.12]"
+                  disabled={!platform.enabled}
+                  className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                    platform.enabled ? 'bg-white/[0.08] text-white hover:bg-white/[0.12]' : 'cursor-not-allowed bg-white/[0.03] text-slate-500'
+                  }`}
                 >
                   <Plus size={16} />
                   {platform.action}
@@ -290,13 +294,13 @@ export default function LivesPage() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Radio className="text-violet-300" size={20} />
-                <h2 className="text-lg font-semibold text-white">{editing ? 'Editar canal' : `Adicionar ${selectedPlatform}`}</h2>
+                <h2 className="text-lg font-semibold text-white">{editing ? 'Editar live Twitch' : 'Cadastrar live Twitch'}</h2>
               </div>
               <button onClick={() => setShowForm(false)} className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.06]">Fechar</button>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <Input label="URL ou usuario do canal" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://www.twitch.tv/usuario ou usuario" />
-              <Input label="Nome no painel" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Preenchido automaticamente na Twitch" />
+              <Input label="Link da live Twitch" value={form.url} onChange={(value) => setForm({ ...form, url: value })} placeholder="https://twitch.tv/nome_do_canal" />
+              <Input label="Nome do streamer" value={form.streamerName} onChange={(value) => setForm({ ...form, streamerName: value })} placeholder="Validado automaticamente pela Twitch" />
               <Select
                 label="Canal do Discord"
                 value={form.alertChannelId}
@@ -327,7 +331,7 @@ export default function LivesPage() {
             </div>
             <button onClick={saveLive} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-500 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-400">
               <Save size={16} />
-              {editing ? 'Salvar canal' : 'Adicionar canal'}
+              {editing ? 'Salvar live' : 'Cadastrar live'}
             </button>
           </section>
         ) : null}

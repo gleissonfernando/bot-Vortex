@@ -1,14 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ContainerBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  MessageFlags,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+} = require('discord.js');
 const { logger } = require('./logger');
 const { isMongoConnected } = require('./database');
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'liveAlerts.json');
 const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
-const DEFAULT_INTERVAL_SECONDS = 120;
+const DEFAULT_INTERVAL_SECONDS = 30;
 const MIN_INTERVAL_MS = 30 * 1000;
+const LIVE_ALERT_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 let monitorInterval = null;
 let liveAlertCheckRunning = false;
 let twitchTokenCache = null;
@@ -112,6 +123,9 @@ function normalizeLive(row) {
     customMessage: row.custom_message || row.customMessage || null,
     status: row.status || 'unknown',
     lastAnnouncedLiveId: row.last_announced_live_id || row.lastAnnouncedLiveId || null,
+    lastAlertMessageId: row.last_alert_message_id || row.lastAlertMessageId || null,
+    lastAlertUpdatedAt: row.last_alert_updated_at || row.lastAlertUpdatedAt || null,
+    lastLiveStartedAt: row.last_live_started_at || row.lastLiveStartedAt || null,
     lastLiveTitle: row.last_live_title || row.lastLiveTitle || null,
     lastLiveUrl: row.last_live_url || row.lastLiveUrl || null,
     twitchUserId: row.twitch_user_id || row.twitchUserId || null,
@@ -199,6 +213,9 @@ async function createLiveAlert(guildId, input) {
     last_live_title: null,
     last_live_url: null,
     last_announced_live_id: null,
+    last_alert_message_id: null,
+    last_alert_updated_at: null,
+    last_live_started_at: null,
     last_checked_at: null,
     twitch_login: twitchLogin,
     twitch_user_id: input.twitchUserId || input.twitch_user_id || null,
@@ -225,6 +242,9 @@ async function updateLiveAlertStatus(live, patch) {
     last_live_title: patch.lastLiveTitle || null,
     last_live_url: patch.lastLiveUrl || null,
     last_announced_live_id: patch.lastAnnouncedLiveId ?? live.lastAnnouncedLiveId ?? null,
+    last_alert_message_id: patch.lastAlertMessageId ?? live.lastAlertMessageId ?? null,
+    last_alert_updated_at: patch.lastAlertUpdatedAt ?? live.lastAlertUpdatedAt ?? null,
+    last_live_started_at: patch.lastLiveStartedAt ?? live.lastLiveStartedAt ?? null,
     last_checked_at: new Date(),
     updated_at: new Date(),
   };
@@ -303,6 +323,7 @@ async function checkTwitchLive(live) {
     game: stream.game_name || null,
     viewerCount: Number(stream.viewer_count || 0),
     thumbnailUrl: stream.thumbnail_url || null,
+    startedAt: stream.started_at || null,
     url: live.url,
   };
 }
@@ -324,6 +345,7 @@ function twitchStatusFromStream(live, stream) {
     game: stream.game_name || null,
     viewerCount: Number(stream.viewer_count || 0),
     thumbnailUrl: stream.thumbnail_url || null,
+    startedAt: stream.started_at || null,
     url: live.url || (login ? `https://www.twitch.tv/${login}` : null),
   };
 }
@@ -424,6 +446,10 @@ function liveAlertAllowedMentions(roleId, guildId) {
   return { parse: [], roles: [String(roleId)] };
 }
 
+function liveAlertRoleId(live, settings) {
+  return live.mentionRoleId || settings.defaultMentionRoleId || process.env.LIVE_MENTION_ROLE_ID || null;
+}
+
 function liveAlertContent(roleId, live, status, template) {
   const mention = formatAlertMention(roleId, live.guildId);
   if (template && template !== DEFAULT_MESSAGE) {
@@ -440,49 +466,110 @@ function twitchPreviewUrl(status) {
   return `${base}${separator}v=${Date.now()}`;
 }
 
-async function sendLiveAlert(client, live, settings, status, { test = false } = {}) {
+function formatDateTime(value) {
+  if (!value) return 'N/A';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatLiveDuration(value) {
+  if (!value) return 'N/A';
+  const date = value instanceof Date ? value : new Date(value);
+  const diff = Date.now() - date.getTime();
+  if (!Number.isFinite(diff) || diff < 0) return 'N/A';
+  const totalMinutes = Math.max(1, Math.floor(diff / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours}h ${minutes}min` : `${minutes}min`;
+}
+
+function buildLivePanelPayload(live, settings, status, { test = false, ended = false } = {}) {
+  const roleId = liveAlertRoleId(live, settings);
+  const mention = formatAlertMention(roleId, live.guildId);
+  const streamUrl = status.url || live.url;
+  const startedAt = status.startedAt || live.lastLiveStartedAt || null;
+  const previewUrl = !ended ? twitchPreviewUrl(status) : null;
+  const title = ended ? 'Live encerrada' : 'Streamer ao vivo';
+  const lines = [
+    mention,
+    `## ${title}`,
+    `**Streamer:** ${live.streamerName}${live.twitchLogin ? ` (@${live.twitchLogin})` : ''}`,
+    `**Titulo:** ${status.title || live.lastLiveTitle || 'Live na Twitch'}`,
+    `**Categoria/Jogo:** ${status.game || 'Grand Theft Auto V'}`,
+    `**Viewers:** ${Number(status.viewerCount || 0).toLocaleString('pt-BR')}`,
+    `**Inicio:** ${formatDateTime(startedAt)}`,
+    `**Tempo ao vivo:** ${ended ? 'Encerrada' : formatLiveDuration(startedAt)}`,
+  ].filter(Boolean);
+
+  const container = new ContainerBuilder()
+    .setAccentColor(ended ? 0x6b7280 : test ? 0x7c3aed : 0x9146ff)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+
+  if (previewUrl) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder()
+          .setURL(previewUrl)
+          .setDescription(`Thumbnail da live de ${live.streamerName}`)
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+  }
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`-# Vortex Lives • atualizado em ${formatDateTime(new Date())}`)
+  );
+
+  const button = ended
+    ? new ButtonBuilder()
+      .setLabel('Live encerrada')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true)
+    : new ButtonBuilder()
+      .setLabel('Assistir Live')
+      .setStyle(ButtonStyle.Link)
+      .setURL(streamUrl);
+
+  return {
+    components: [
+      container,
+      new ActionRowBuilder().addComponents(button),
+    ],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: liveAlertAllowedMentions(roleId, live.guildId),
+    embeds: [],
+  };
+}
+
+async function fetchLiveAlertMessage(channel, messageId) {
+  if (!messageId) return null;
+  return channel.messages?.fetch?.(messageId).catch(() => null) || null;
+}
+
+async function liveAlertMessageExists(client, live, settings) {
+  if (!live.lastAlertMessageId) return false;
+  const channelId = live.alertChannelId || settings.defaultAlertChannelId;
+  if (!channelId) return false;
+  const channel = await client.channels.fetch(channelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+  return Boolean(await fetchLiveAlertMessage(channel, live.lastAlertMessageId));
+}
+
+async function sendLiveAlert(client, live, settings, status, { test = false, ended = false, messageId = null } = {}) {
   const channelId = live.alertChannelId || settings.defaultAlertChannelId;
   if (!channelId) return { ok: false, error: 'Canal nao configurado.' };
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (!channel?.isTextBased?.()) return { ok: false, error: 'Canal invalido.' };
-  const roleId = live.mentionRoleId || settings.defaultMentionRoleId;
-  const streamUrl = status.url || live.url;
-  const content = liveAlertContent(roleId, live, status, live.customMessage || settings.defaultMessage);
-  const title = status.title || `${live.streamerName} está ao vivo!`;
-  const game = status.game || 'Grand Theft Auto V';
-  const viewers = Number(status.viewerCount || 0);
-  const embed = new EmbedBuilder()
-    .setColor(test ? '#7C3AED' : '#9146FF')
-    .setAuthor({
-      name: `${live.streamerName} is now live on Twitch!`,
-      iconURL: live.avatarUrl || undefined,
-      url: streamUrl,
-    })
-    .setTitle(test ? 'Teste de alerta de live da Vortex' : title)
-    .setURL(streamUrl)
-    .addFields(
-      { name: 'Game', value: String(game), inline: true },
-      { name: 'Viewers', value: String(viewers), inline: true }
-    )
-    .setFooter({ text: `vortex lives • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` })
-    .setTimestamp();
-  const previewUrl = twitchPreviewUrl(status);
-  if (previewUrl) embed.setImage(previewUrl);
-  const components = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Watch Stream')
-        .setStyle(ButtonStyle.Link)
-        .setURL(streamUrl)
-    ),
-  ];
-  await channel.send({
-    content: content || undefined,
-    embeds: [embed],
-    components,
-    allowedMentions: liveAlertAllowedMentions(roleId, live.guildId),
-  });
-  return { ok: true };
+  const payload = buildLivePanelPayload(live, settings, status, { test, ended });
+  const existing = await fetchLiveAlertMessage(channel, messageId);
+  if (existing) {
+    const message = await existing.edit(payload);
+    return { ok: true, messageId: message.id };
+  }
+  const message = await channel.send(payload);
+  return { ok: true, messageId: message.id };
 }
 
 async function runLiveAlertCheck(client) {
@@ -533,6 +620,18 @@ async function runLiveAlertCheck(client) {
   for (const { live, settings } of dueChecks) {
     const status = statusByLiveId.get(live.id) || { online: false };
     if (!status.online) {
+      if (live.status === 'online' && live.lastAlertMessageId) {
+        const endedResult = await sendLiveAlert(client, live, settings, {
+          title: live.lastLiveTitle || 'Live encerrada',
+          url: live.lastLiveUrl || live.url,
+          startedAt: live.lastLiveStartedAt,
+          viewerCount: 0,
+        }, { ended: true, messageId: live.lastAlertMessageId }).catch((error) => {
+          logger.warn(`Lives: falha ao encerrar painel de ${live.streamerName}: ${error.message}`);
+          return null;
+        });
+        if (endedResult?.messageId) live.lastAlertMessageId = endedResult.messageId;
+      }
       const alreadyOffline = live.status === 'offline'
         && !live.lastLiveTitle
         && !live.lastLiveUrl
@@ -543,21 +642,37 @@ async function runLiveAlertCheck(client) {
           lastLiveTitle: null,
           lastLiveUrl: null,
           lastAnnouncedLiveId: null,
+          lastAlertMessageId: live.lastAlertMessageId || null,
+          lastAlertUpdatedAt: live.status === 'online' ? new Date() : live.lastAlertUpdatedAt,
+          lastLiveStartedAt: null,
         });
       }
       continue;
     }
     const liveId = status.liveId || `${live.url}:${status.title || 'online'}`;
-    if (live.lastAnnouncedLiveId !== liveId) {
-      await sendLiveAlert(client, live, settings, status).catch((error) => {
+    const lastUpdateAt = live.lastAlertUpdatedAt ? new Date(live.lastAlertUpdatedAt).getTime() : 0;
+    const shouldCreate = live.lastAnnouncedLiveId !== liveId;
+    let shouldUpdate = !shouldCreate && (!live.lastAlertMessageId || Date.now() - lastUpdateAt >= LIVE_ALERT_UPDATE_INTERVAL_MS);
+    if (!shouldCreate && !shouldUpdate && live.lastAlertMessageId) {
+      const messageExists = await liveAlertMessageExists(client, live, settings);
+      shouldUpdate = !messageExists;
+    }
+    let messageId = shouldCreate ? null : live.lastAlertMessageId;
+    if (shouldCreate || shouldUpdate) {
+      const result = await sendLiveAlert(client, live, settings, status, { messageId }).catch((error) => {
         logger.warn(`Lives: falha ao enviar alerta de ${live.streamerName}: ${error.message}`);
+        return null;
       });
+      if (result?.messageId) messageId = result.messageId;
     }
     await updateLiveAlertStatus(live, {
       status: 'online',
       lastLiveTitle: status.title || null,
       lastLiveUrl: status.url || live.url,
       lastAnnouncedLiveId: liveId,
+      lastAlertMessageId: messageId || live.lastAlertMessageId || null,
+      lastAlertUpdatedAt: (shouldCreate || shouldUpdate) ? new Date() : live.lastAlertUpdatedAt,
+      lastLiveStartedAt: status.startedAt || live.lastLiveStartedAt || null,
     });
   }
   } finally {
