@@ -135,7 +135,6 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Configurações', value: 'tab_config', description: 'Configurações gerais do painel', emoji: '⚙️' },
     { label: 'Configurações - Set', value: 'config_set', description: 'Cargos liberados para o sistema de set', emoji: '📝' },
     { label: 'Configurações - Avisos', value: 'config_avisos', description: 'Avisos por DM e cargo mencionado', emoji: '🔔' },
-    { label: 'Configurações - Logs', value: 'config_logs', description: 'Canal de logs e filtros por canal', emoji: '🧾' },
     { label: 'Manutenção', value: 'tab_manutencao', description: 'Modo manutenção e ajustes gerais', emoji: '🛠️' },
     { label: 'Pontos', value: 'tab_pontos', description: 'Folhas, reajustes e cargos de ponto', emoji: '🕒' },
     { label: 'Ausências', value: 'tab_ausencias', description: 'Cargos, retornos e mensagens de ausência', emoji: '📆' },
@@ -166,7 +165,8 @@ function buildPanelToolSelectRow(currentTab) {
 }
 
 function getPanelBackTarget(tab) {
-    if (['config_set', 'config_avisos', 'config_logs'].includes(tab)) return 'tab_config';
+    if (tab === 'config_logs') return 'tab_manutencao';
+    if (['config_set', 'config_avisos'].includes(tab)) return 'tab_config';
     return 'tab_stats';
 }
 
@@ -176,7 +176,7 @@ function buildPanelBackRow(tab) {
         new ButtonBuilder()
             .setCustomId(`panel_back_${target}`)
             .setEmoji('⬅️')
-            .setLabel(target === 'tab_config' ? 'Voltar para Configurações' : 'Voltar')
+            .setLabel(target === 'tab_config' ? 'Voltar para Configurações' : target === 'tab_manutencao' ? 'Voltar para Manutencao' : 'Voltar')
             .setStyle(ButtonStyle.Secondary)
     );
 }
@@ -2762,7 +2762,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar logs do canal' : 'Desligar logs do canal').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Ligar logs por DM' : 'Desligar logs por DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Ligar logs de atividade' : 'Desligar logs de atividade').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('test_notice').setLabel('Testar aviso').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('config_logs').setLabel('Logs').setStyle(ButtonStyle.Secondary)
     );
 
     extraRows = [
@@ -2797,22 +2797,19 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Configurações gerais',
         '',
-        'Acesse as configurações de set, avisos e logs.',
+        'Acesse as configurações de set e avisos.',
         'O modo privado limita o uso do `/painel` aos cargos configurados.',
       ].join('\n'))
       .addFields(
-        { name: 'Canal de logs', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
         { name: '/painel privado', value: privateMode ? '`Ativado`' : '`Desativado`', inline: true },
         { name: 'Set', value: 'Permissões do sistema de set.', inline: true },
-        { name: 'Avisos', value: 'DMs e menções dos avisos.', inline: true },
-        { name: 'Logs', value: 'Canal e modos de registro.', inline: true }
+        { name: 'Avisos', value: 'DMs e menções dos avisos.', inline: true }
       );
 
     extraRows = [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('config_logs').setLabel('Logs').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary)
       ),
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
