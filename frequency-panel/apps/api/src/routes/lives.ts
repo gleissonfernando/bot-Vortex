@@ -9,6 +9,16 @@ const DEFAULT_CHECK_INTERVAL_SECONDS = 30;
 const PLATFORMS = ['twitch', 'youtube', 'kick', 'custom'] as const;
 let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 
+const optionalDiscordId = z.preprocess(
+  (value) => value === '' ? null : value,
+  z.string().min(5).max(32).optional().nullable()
+);
+
+const optionalText = (max: number) => z.preprocess(
+  (value) => value === '' ? null : value,
+  z.string().max(max).optional().nullable()
+);
+
 function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) {
   return (req: Request, res: Response, next: NextFunction) => {
     void handler(req, res, next).catch(next);
@@ -18,20 +28,20 @@ function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) =
 const liveSchema = z.object({
   platform: z.enum(PLATFORMS).optional(),
   url: z.string().trim().min(1).max(240),
-  streamerName: z.string().trim().max(80).optional().nullable(),
-  alertChannelId: z.string().min(5).max(32).optional().nullable(),
-  mentionRoleId: z.string().min(5).max(32).optional().nullable(),
+  streamerName: optionalText(80),
+  alertChannelId: optionalDiscordId,
+  mentionRoleId: optionalDiscordId,
   enabled: z.boolean().optional(),
-  customMessage: z.string().max(1200).optional().nullable(),
+  customMessage: optionalText(1200),
   guildId: z.string().min(5).max(32).optional()
 });
 
 const settingsSchema = z.object({
   guildId: z.string().min(5).max(32).optional(),
   enabled: z.boolean().optional(),
-  defaultAlertChannelId: z.string().min(5).max(32).optional().nullable(),
-  defaultMentionRoleId: z.string().min(5).max(32).optional().nullable(),
-  defaultMessage: z.string().max(1200).optional().nullable(),
+  defaultAlertChannelId: optionalDiscordId,
+  defaultMentionRoleId: optionalDiscordId,
+  defaultMessage: optionalText(1200),
   checkIntervalSeconds: z.number().int().min(30).max(3600).optional()
 });
 

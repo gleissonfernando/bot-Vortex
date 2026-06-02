@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
+import { ZodError } from 'zod';
 import { ensureAdminUser } from './auth.js';
 import { env } from './env.js';
 import { requireAuth } from './middleware.js';
@@ -65,6 +66,10 @@ app.use('/site-users', requireAuth, auditSuccessfulMutation, siteUsersRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
+  if (err instanceof ZodError) {
+    const message = err.issues.map((issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`).join('; ');
+    return res.status(400).json({ ok: false, error: message || 'Dados invalidos.' });
+  }
   res.status(500).json({ ok: false, error: 'Internal server error' });
 });
 
