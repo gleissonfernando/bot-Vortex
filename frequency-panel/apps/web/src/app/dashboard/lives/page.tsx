@@ -41,9 +41,9 @@ const defaultMessage = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {plat
 const TWITCH_LIVE_LIMIT = 100;
 
 const platformCards = [
-  { id: 'twitch', name: 'Twitch', description: 'Cadastro validado pela Twitch Helix API.', action: 'Cadastrar live', mark: 'TW', color: 'bg-violet-500', enabled: true },
-  { id: 'kick', name: 'Kick', description: 'Integração automática ainda não configurada.', action: 'Indisponível', mark: 'K', color: 'bg-emerald-400', enabled: false },
-  { id: 'youtube', name: 'YouTube', description: 'Integração automática ainda não configurada.', action: 'Indisponível', mark: 'YT', color: 'bg-red-500', enabled: false }
+  { id: 'twitch', name: 'Twitch', description: 'Cadastro validado pela Twitch Helix API.', action: 'Cadastrar live', color: 'bg-[#9146ff]', enabled: true },
+  { id: 'kick', name: 'Kick', description: 'Integração automática ainda não configurada.', action: 'Indisponível', color: 'bg-[#53fc18]', enabled: false },
+  { id: 'youtube', name: 'YouTube', description: 'Integração automática ainda não configurada.', action: 'Indisponível', color: 'bg-[#ff0033]', enabled: false }
 ];
 
 export default function LivesPage() {
@@ -242,8 +242,8 @@ export default function LivesPage() {
             <article key={platform.id} className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel backdrop-blur">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`grid h-11 w-11 place-items-center rounded-lg ${platform.color} text-sm font-black text-white shadow-lg shadow-black/20`}>
-                    {platform.mark}
+                  <div className={`grid h-11 w-11 place-items-center rounded-lg ${platform.color} text-white shadow-lg shadow-black/20`}>
+                    <PlatformIcon platform={platform.id} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
@@ -348,6 +348,30 @@ function channelName(channels: DiscordOption[], id: string) {
 
 function roleName(roles: DiscordOption[], id: string) {
   return roles.find((role) => role.id === id)?.name || id;
+}
+
+function PlatformIcon({ platform }: { platform: string }) {
+  if (platform === 'youtube') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-current">
+        <path d="M21.6 7.2a3 3 0 0 0-2.1-2.1C17.6 4.6 12 4.6 12 4.6s-5.6 0-7.5.5a3 3 0 0 0-2.1 2.1A31.2 31.2 0 0 0 2 12a31.2 31.2 0 0 0 .4 4.8 3 3 0 0 0 2.1 2.1c1.9.5 7.5.5 7.5.5s5.6 0 7.5-.5a3 3 0 0 0 2.1-2.1A31.2 31.2 0 0 0 22 12a31.2 31.2 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z" />
+      </svg>
+    );
+  }
+
+  if (platform === 'kick') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-current text-slate-950">
+        <path d="M5 4h5v5h2V7h2V4h5v6h-3v2h3v8h-5v-5h-2v2h-2v3H5V4Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-current">
+      <path d="M5 3h16v11l-5 5h-4l-3 3H7v-3H3V7l2-4Zm2 2-2 2v10h4v3l3-3h4l3-3V5H7Zm4 4h2v5h-2V9Zm5 0h2v5h-2V9Z" />
+    </svg>
+  );
 }
 
 function LiveChannelRow({ live, settings, onEdit, onDelete, onTest }: {
