@@ -1,11 +1,12 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { hasVortexLevel } = require('../../utils/permissions');
+const { hasCommandRole, hasVortexLevel } = require('../../utils/permissions');
 const { safeDeferReply, safeEdit, safeReply } = require('../../utils/safeReply');
 const { upsertSiteUser } = require('../../utils/siteUserManager');
 
 const HIGH_ROLE_NAMES = ['dono', 'diretor', 'lider geral', 'líder geral', 'gerente', 'administrador', 'admin'];
 
 function canRegisterSiteUser(member) {
+  if (hasCommandRole(member, 'cadastrar-site')) return true;
   if (hasVortexLevel(member, ['admin', 'medio'])) return true;
   const names = Array.from(member?.roles?.cache?.values?.() || []).map((role) => String(role.name || '').trim().toLowerCase());
   return names.some((name) => HIGH_ROLE_NAMES.includes(name));

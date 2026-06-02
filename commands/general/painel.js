@@ -42,7 +42,7 @@ const {
   deleteUserProfile,
 } = require('../../utils/profileManager');
 const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
-const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
+const { hasAnyVortexRole, hasVortexLevel, hasCommandRole, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
 const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
 const { createPointActionTranscriptSummary } = require('../../utils/pointTranscriptNotifier');
@@ -76,6 +76,7 @@ const {
   normalizeHexColor,
   setPanelVisualTheme,
 } = require('../../utils/panelTheme');
+const { upsertSiteUser } = require('../../utils/siteUserManager');
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const PANEL_ERROR_LOG_CHANNEL_ID = '1497685822525149337';
@@ -96,6 +97,17 @@ const factionHierarchySelections = new Map();
 const mirrorMessageSelections = new Map();
 const adjustCallSelections = new Map();
 const visualThemeSelections = new Map();
+const siteAccessSelections = new Map();
+const SITE_ACCESS_ROLE_OPTIONS = [
+    { label: 'Administrador', value: 'admin', description: 'Acesso administrativo ao dashboard' },
+    { label: 'Gerente', value: 'manager', description: 'Acesso de gerencia ao dashboard' },
+    { label: 'Visualizador', value: 'viewer', description: 'Acesso somente leitura ao dashboard' },
+];
+const SITE_ACCESS_LEVEL_OPTIONS = [
+    { label: 'Nivel 100', value: '100', description: 'Permissao maxima no site' },
+    { label: 'Nivel 50', value: '50', description: 'Permissao intermediaria no site' },
+    { label: 'Nivel 1', value: '1', description: 'Permissao basica no site' },
+];
 function formatOpenUntilAdjustmentLine(result) {
   return Number.isFinite(Number(result?.openUntilAdjustmentMs))
     ? `Tempo aberto até o ajuste: ${formatDuration(result.openUntilAdjustmentMs)}`
@@ -115,6 +127,7 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
     { label: '/bau membro', value: 'bau', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: '/bau-membros', value: 'bau-membros', description: 'Quem pode publicar e cadastrar produtos no bau' },
+    { label: 'Acesso ao site', value: 'cadastrar-site', description: 'Quem pode cadastrar usuarios no site' },
 ];
 const PANEL_TOOL_OPTIONS = [
     { label: 'Estatísticas', value: 'tab_stats', description: 'Visão geral do servidor e cadastros', emoji: '📊' },
@@ -133,6 +146,7 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Ajuste', value: 'tab_adjust_calls', description: 'Ativar ou desativar calls de ajuste', emoji: '🔧' },
     { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
     { label: 'Hierarquia FAC', value: 'tab_fac_hierarchy', description: 'Painel automatico da hierarquia da fac', emoji: '🏛️' },
+    { label: 'Acesso ao site', value: 'tab_site_access', description: 'Cadastrar usuarios liberados para o dashboard web' },
 ];
 
 function isPanelToolValue(value) {
@@ -186,6 +200,7 @@ function getPanelTabMeta(tab) {
         case 'tab_adjust_calls': return { icon: '🔧', title: 'AJUSTE DE CALLS' };
         case 'tab_visual': return { icon: '🎨', title: 'VISUAL DOS PAINÉIS' };
         case 'tab_fac_hierarchy': return { icon: '🏛️', title: 'HIERARQUIA DA FAC' };
+        case 'tab_site_access': return { icon: 'SITE', title: 'ACESSO AO SITE' };
         default: return { icon: 'V', title: String(tab || '').replace('tab_', '').toUpperCase() };
     }
 }
@@ -195,6 +210,21 @@ function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2));
 
 function hasStaffPermission(member) {
     return hasVortexLevel(member, ['admin', 'medio']);
+}
+
+function canRegisterSiteAccess(member) {
+    if (hasCommandRole(member, 'cadastrar-site')) return true;
+    if (hasVortexLevel(member, ['admin', 'medio'])) return true;
+    const highRoleNames = ['dono', 'diretor', 'lider geral', 'gerente', 'administrador', 'admin'];
+    const names = Array.from(member?.roles?.cache?.values?.() || [])
+        .map((role) => String(role.name || '').trim().toLowerCase());
+    return names.some((name) => highRoleNames.includes(name));
+}
+
+function defaultSiteAccessLevel(systemRole) {
+    if (systemRole === 'admin') return 100;
+    if (systemRole === 'manager') return 50;
+    return 1;
 }
 
 function hasPanelAccess(member) {
@@ -786,6 +816,64 @@ module.exports = {
 
     if ((customId === 'tab_manutencao' || ['toggle_maint', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
       return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem usar a manutenção.`, ephemeral: true });
+    }
+
+    if (customId === 'site_access_register') {
+        if (!canRegisterSiteAccess(interaction.member)) {
+            return safeReply(interaction, { content: 'Sem permissao para cadastrar acesso ao site.', ephemeral: true });
+        }
+
+        const selected = siteAccessSelections.get(getSelectionKey(interaction)) || {};
+        const userId = selected.userId;
+        if (!userId) {
+            return safeReply(interaction, { content: 'Selecione um usuario primeiro.', ephemeral: true });
+        }
+
+        await safeDeferReply(interaction, { ephemeral: true });
+        const user = await interaction.client.users.fetch(userId).catch(() => null);
+        const targetMember = await interaction.guild.members.fetch(userId).catch(() => null);
+        if (!user || !targetMember) {
+            return safeEdit(interaction, { content: 'Nao encontrei esse usuario no servidor. O acesso ao site exige vinculo ativo com este Discord.' });
+        }
+
+        const systemRole = selected.systemRole || 'viewer';
+        const permissionLevel = Number(selected.permissionLevel || defaultSiteAccessLevel(systemRole));
+        const discordRoles = Array.from(targetMember.roles.cache.keys()).filter((roleId) => roleId !== interaction.guild.id);
+        const saved = await upsertSiteUser({
+            guildId: interaction.guild.id,
+            discordId: user.id,
+            discordName: targetMember.displayName || user.username,
+            discordAvatarUrl: user.displayAvatarURL?.({ size: 128, extension: 'png', forceStatic: true }) || null,
+            systemRole,
+            permissionLevel,
+            status: 'active',
+            discordRoles,
+            registeredBy: interaction.user.id,
+            registeredByName: interaction.member?.displayName || interaction.user.username,
+        });
+
+        sendVortexLog(interaction.client, {
+            title: 'Acesso ao site cadastrado',
+            description: [
+                `Usuario: <@${user.id}> (${user.id})`,
+                `Cargo no site: **${saved.system_role}**`,
+                `Nivel: **${saved.permission_level}**`,
+                `Cadastrado por: <@${interaction.user.id}>`,
+            ].join('\n'),
+            color: '#57F287',
+            type: 'SEGURANCA',
+            userId: interaction.user.id,
+        }).catch(() => {});
+
+        return safeEdit(interaction, {
+            content: [
+                'Usuario cadastrado para acessar o painel web.',
+                `Usuario: <@${user.id}>`,
+                `Cargo do site: **${saved.system_role}**`,
+                `Nivel: **${saved.permission_level}**`,
+                'Status: **Ativo**',
+            ].join('\n'),
+        });
     }
 
     if (customId === 'visual_set_color' || customId === 'visual_set_banner') {
@@ -2134,6 +2222,35 @@ module.exports = {
         });
         return renderDashboard(interaction, 'tab_perfil', true);
     }
+
+    if (interaction.customId === 'select_site_access_user') {
+        const key = getSelectionKey(interaction);
+        siteAccessSelections.set(key, {
+            ...(siteAccessSelections.get(key) || {}),
+            userId: String(interaction.values[0] || ''),
+        });
+        return renderDashboard(interaction, 'tab_site_access', true);
+    }
+
+    if (interaction.customId === 'select_site_access_role') {
+        const key = getSelectionKey(interaction);
+        const systemRole = String(interaction.values[0] || 'viewer');
+        siteAccessSelections.set(key, {
+            ...(siteAccessSelections.get(key) || {}),
+            systemRole,
+            permissionLevel: defaultSiteAccessLevel(systemRole),
+        });
+        return renderDashboard(interaction, 'tab_site_access', true);
+    }
+
+    if (interaction.customId === 'select_site_access_level') {
+        const key = getSelectionKey(interaction);
+        siteAccessSelections.set(key, {
+            ...(siteAccessSelections.get(key) || {}),
+            permissionLevel: Number(interaction.values[0] || 1),
+        });
+        return renderDashboard(interaction, 'tab_site_access', true);
+    }
   },
 
   async handleModal(interaction) {
@@ -3177,6 +3294,67 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setPlaceholder(`Selecionar cargos para ${selected}`)
           .setMinValues(0)
           .setMaxValues(10)
+      ),
+    ];
+  } else if (tab === 'tab_site_access') {
+    const selected = siteAccessSelections.get(getSelectionKey(interaction)) || {};
+    const selectedUserId = selected.userId || '';
+    const selectedRole = selected.systemRole || 'viewer';
+    const selectedLevel = Number(selected.permissionLevel || defaultSiteAccessLevel(selectedRole));
+    const selectedUserLabel = selectedUserId ? `<@${selectedUserId}>` : '`Nenhum usuario selecionado`';
+    const roleLabel = SITE_ACCESS_ROLE_OPTIONS.find((option) => option.value === selectedRole)?.label || 'Visualizador';
+    const canRegister = canRegisterSiteAccess(interaction.member);
+
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | ACESSO AO SITE`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#57F287')
+      .setDescription([
+        '### Acesso ao site',
+        '',
+        'Cadastre aqui quem pode fazer login no dashboard web com Discord OAuth2.',
+        'O usuario precisa estar cadastrado como ativo para conseguir entrar no site.',
+        '',
+        `Usuario selecionado: ${selectedUserLabel}`,
+        `Cargo no site: **${roleLabel}**`,
+        `Nivel: **${selectedLevel}**`,
+        '',
+        canRegister
+          ? 'Selecione o usuario, escolha o cargo e clique em **Cadastrar acesso**.'
+          : 'Seu cargo nao libera cadastro de acesso ao site.',
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId('site_access_register')
+        .setLabel('Cadastrar acesso')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!selectedUserId || !canRegister)
+    );
+
+    extraRows = [
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId('select_site_access_user')
+          .setPlaceholder('Selecionar usuario para acesso ao site')
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_site_access_role')
+          .setPlaceholder(`Cargo no site: ${roleLabel}`)
+          .addOptions(SITE_ACCESS_ROLE_OPTIONS.map((option) => ({
+            ...option,
+            default: option.value === selectedRole,
+          })))
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_site_access_level')
+          .setPlaceholder(`Nivel: ${selectedLevel}`)
+          .addOptions(SITE_ACCESS_LEVEL_OPTIONS.map((option) => ({
+            ...option,
+            default: Number(option.value) === selectedLevel,
+          })))
       ),
     ];
   } else if (tab === 'tab_ausencias') {
