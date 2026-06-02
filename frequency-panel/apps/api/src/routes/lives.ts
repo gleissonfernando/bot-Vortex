@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { collection, serializeDoc, serializeDocs } from '../db.js';
 import { requireManager } from '../middleware.js';
@@ -8,6 +8,12 @@ const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {pla
 const DEFAULT_CHECK_INTERVAL_SECONDS = 30;
 const PLATFORMS = ['twitch', 'youtube', 'kick', 'custom'] as const;
 let twitchTokenCache: { token: string; expiresAt: number } | null = null;
+
+function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    void handler(req, res, next).catch(next);
+  };
+}
 
 const liveSchema = z.object({
   platform: z.enum(PLATFORMS).optional(),
@@ -347,7 +353,7 @@ async function sendDiscordAlert(live: any, settings: any) {
 
 export const livesRouter = Router();
 
-livesRouter.get('/', async (req, res) => {
+livesRouter.get('/', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   try {
     const lives = await collection<LiveDoc>('live_alert_configs');
@@ -369,15 +375,15 @@ livesRouter.get('/', async (req, res) => {
       })
     });
   }
-});
+}));
 
-livesRouter.get('/discord-options', requireManager, async (req, res) => {
+livesRouter.get('/discord-options', requireManager, asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   const options = await fetchDiscordGuildOptions(guildId);
   res.json({ ok: true, guildId, ...options });
-});
+}));
 
-livesRouter.post('/', requireManager, async (req, res) => {
+livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
   const input = liveSchema.parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const now = new Date();
@@ -423,9 +429,9 @@ livesRouter.post('/', requireManager, async (req, res) => {
   }
   const result = await lives.insertOne(doc);
   res.status(201).json({ ok: true, live: normalizeLive({ ...doc, _id: result.insertedId }) });
-});
+}));
 
-livesRouter.put('/:id', requireManager, async (req, res) => {
+livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
   const input = liveSchema.partial().parse(req.body);
   const update: any = { updated_at: new Date() };
   if (input.url) {
@@ -464,15 +470,15 @@ livesRouter.put('/:id', requireManager, async (req, res) => {
   );
   if (!row) return res.status(404).json({ ok: false, error: 'Live nao encontrada.' });
   res.json({ ok: true, live: normalizeLive(row) });
-});
+}));
 
-livesRouter.delete('/:id', requireManager, async (req, res) => {
+livesRouter.delete('/:id', requireManager, asyncRoute(async (req, res) => {
   const lives = await collection('live_alert_configs');
   await lives.deleteOne({ _id: objectId(req.params.id) });
   res.json({ ok: true });
-});
+}));
 
-livesRouter.get('/settings', async (req, res) => {
+livesRouter.get('/settings', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   try {
     const settings = await getSettings(guildId);
@@ -490,9 +496,9 @@ livesRouter.get('/settings', async (req, res) => {
       })
     });
   }
-});
+}));
 
-livesRouter.put('/settings/general', requireManager, async (req, res) => {
+livesRouter.put('/settings/general', requireManager, asyncRoute(async (req, res) => {
   const input = settingsSchema.parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const update = {
@@ -507,9 +513,9 @@ livesRouter.put('/settings/general', requireManager, async (req, res) => {
   const settings = await collection('live_alert_settings');
   await settings.updateOne({ guild_id: guildId }, { $set: update, $setOnInsert: { created_at: new Date() } }, { upsert: true });
   res.json({ ok: true, settings: normalizeSettings(update) });
-});
+}));
 
-livesRouter.post('/:id/test', requireManager, async (req, res) => {
+livesRouter.post('/:id/test', requireManager, asyncRoute(async (req, res) => {
   const lives = await collection<LiveDoc>('live_alert_configs');
   const live = await lives.findOne({ _id: objectId(req.params.id) });
   if (!live) return res.status(404).json({ ok: false, error: 'Live nao encontrada.' });
@@ -521,4 +527,4 @@ livesRouter.post('/:id/test', requireManager, async (req, res) => {
   }, settings);
   if (!result.ok) return res.status(400).json(result);
   res.json({ ok: true });
-});
+}));

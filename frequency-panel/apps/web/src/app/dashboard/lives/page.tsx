@@ -85,6 +85,7 @@ export default function LivesPage() {
       setSettings(data.settings);
       const options = await apiFetch<{ channels: DiscordOption[]; roles: DiscordOption[]; error?: string | null }>('/lives/discord-options').catch(() => null);
       if (options) setDiscordOptions({ channels: options.channels || [], roles: options.roles || [], error: options.error });
+      setMessage((current) => current === 'Vortex API unavailable' ? '' : current);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao carregar lives');
     } finally {
