@@ -103,11 +103,6 @@ const SITE_ACCESS_ROLE_OPTIONS = [
     { label: 'Gerente', value: 'manager', description: 'Acesso de gerencia ao dashboard' },
     { label: 'Visualizador', value: 'viewer', description: 'Acesso somente leitura ao dashboard' },
 ];
-const SITE_ACCESS_LEVEL_OPTIONS = [
-    { label: 'Nivel 100', value: '100', description: 'Permissao maxima no site' },
-    { label: 'Nivel 50', value: '50', description: 'Permissao intermediaria no site' },
-    { label: 'Nivel 1', value: '1', description: 'Permissao basica no site' },
-];
 function formatOpenUntilAdjustmentLine(result) {
   return Number.isFinite(Number(result?.openUntilAdjustmentMs))
     ? `Tempo aberto até o ajuste: ${formatDuration(result.openUntilAdjustmentMs)}`
@@ -2241,15 +2236,6 @@ module.exports = {
         });
         return renderDashboard(interaction, 'tab_site_access', true);
     }
-
-    if (interaction.customId === 'select_site_access_level') {
-        const key = getSelectionKey(interaction);
-        siteAccessSelections.set(key, {
-            ...(siteAccessSelections.get(key) || {}),
-            permissionLevel: Number(interaction.values[0] || 1),
-        });
-        return renderDashboard(interaction, 'tab_site_access', true);
-    }
   },
 
   async handleModal(interaction) {
@@ -3341,15 +3327,6 @@ async function renderDashboard(interaction, tab, edit = false) {
           .addOptions(SITE_ACCESS_ROLE_OPTIONS.map((option) => ({
             ...option,
             default: option.value === selectedRole,
-          })))
-      ),
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('select_site_access_level')
-          .setPlaceholder(`Nivel: ${selectedLevel}`)
-          .addOptions(SITE_ACCESS_LEVEL_OPTIONS.map((option) => ({
-            ...option,
-            default: Number(option.value) === selectedLevel,
           })))
       ),
     ];
