@@ -3,16 +3,19 @@ import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import { env } from './env.js';
 import { collection, serializeDoc } from './db.js';
+import { findSiteUser, markSiteUserLogin, type SiteUser } from './services/site-users.js';
 
 export type SessionUser = {
   id: string;
   email: string;
   name: string;
   role: 'admin' | 'manager' | 'viewer';
+  discordId?: string;
+  guildId?: string;
 };
 
 export async function ensureAdminUser() {
-  if (!env.adminEmail || !env.adminPassword) {
+  if (!env.adminEmail || (!env.adminPassword && !env.adminPasswordHash)) {
     console.warn('[frequency-api] ADMIN_EMAIL/ADMIN_PASSWORD invalidos ou ausentes. API ativa, mas usuario admin automatico/fallback desativado.');
     return;
   }
@@ -22,7 +25,7 @@ export async function ensureAdminUser() {
     return;
   }
 
-  const hash = await bcrypt.hash(env.adminPassword, 12);
+  const hash = env.adminPasswordHash || await bcrypt.hash(env.adminPassword, 12);
   try {
     const users = await collection('app_users');
     const now = new Date();
@@ -49,6 +52,10 @@ export async function ensureAdminUser() {
 }
 
 export async function login(email: string, password: string) {
+  if (!String(process.env.ALLOW_PASSWORD_LOGIN || '').toLowerCase().includes('true')) {
+    return null;
+  }
+
   if (!env.mongoEnabled) {
     return fallbackLogin(email, password);
   }
@@ -73,14 +80,18 @@ export async function login(email: string, password: string) {
     name: user.name,
     role: user.role
   };
-  const token = jwt.sign(sessionUser, env.jwtSecret, { expiresIn: '12h' });
-  return { token, user: sessionUser };
+  return signSession(sessionUser);
 }
 
-function fallbackLogin(email: string, password: string) {
-  if (!env.adminEmail || !env.adminPassword) return null;
+async function fallbackLogin(email: string, password: string) {
+  if (!env.adminEmail || (!env.adminPassword && !env.adminPasswordHash)) return null;
   if (email.toLowerCase() !== env.adminEmail.toLowerCase()) return null;
-  if (password !== env.adminPassword) return null;
+  if (env.adminPasswordHash) {
+    const valid = await bcrypt.compare(password, env.adminPasswordHash);
+    if (!valid) return null;
+  } else if (password !== env.adminPassword) {
+    return null;
+  }
 
   const sessionUser: SessionUser = {
     id: 'fallback-admin',
@@ -88,13 +99,69 @@ function fallbackLogin(email: string, password: string) {
     name: 'Vortex Admin',
     role: 'admin'
   };
-  const token = jwt.sign(sessionUser, env.jwtSecret, { expiresIn: '12h' });
-  return { token, user: sessionUser };
+  return signSession(sessionUser);
+}
+
+export function signSession(user: SessionUser) {
+  const token = jwt.sign(user, env.jwtSecret, { expiresIn: env.jwtExpiresIn } as jwt.SignOptions);
+  const refreshToken = jwt.sign({ ...user, token_type: 'refresh' }, env.refreshJwtSecret, {
+    expiresIn: env.refreshTokenExpiresIn
+  } as jwt.SignOptions);
+  return { token, refreshToken, user };
+}
+
+export async function sessionFromRegisteredDiscordUser(input: {
+  guildId: string;
+  discordId: string;
+  discordName: string;
+}) {
+  const siteUser = await findSiteUser(input.guildId, input.discordId);
+  if (!siteUser) {
+    return { ok: false as const, error: 'Acesso Negado. Sua conta não foi cadastrada pela administração. Solicite a liberação para um responsável autorizado.' };
+  }
+  if (siteUser.status === 'suspended') {
+    return { ok: false as const, error: 'Acesso negado. Sua conta está suspensa temporariamente.' };
+  }
+  if (siteUser.status === 'banned') {
+    return { ok: false as const, error: 'Acesso negado. Sua conta foi banida do sistema.' };
+  }
+
+  await markSiteUserLogin(input.discordId, input.guildId);
+  return {
+    ok: true as const,
+    session: signSession(siteUserToSession(siteUser, input.discordName))
+  };
+}
+
+function siteUserToSession(siteUser: SiteUser, discordName: string): SessionUser {
+  return {
+    id: siteUser.id,
+    email: `${siteUser.discord_id}@discord.local`,
+    name: discordName || siteUser.discord_name || siteUser.discord_id,
+    role: siteUser.system_role,
+    discordId: siteUser.discord_id,
+    guildId: siteUser.guild_id
+  };
 }
 
 export function verifyToken(token: string): SessionUser | null {
   try {
     return jwt.verify(token, env.jwtSecret) as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+export function refreshSession(refreshToken: string) {
+  try {
+    const payload = jwt.verify(refreshToken, env.refreshJwtSecret) as SessionUser & { token_type?: string };
+    if (payload.token_type !== 'refresh') return null;
+    return signSession({
+      id: payload.id,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role
+    });
   } catch {
     return null;
   }

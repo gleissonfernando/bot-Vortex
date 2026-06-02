@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { collection, serializeDoc } from '../db.js';
+import { requireManager } from '../middleware.js';
 import { getAbsences, getFrequency, getMemberAttendance } from '../services/attendance.js';
 import { getMember, listMembers } from '../services/members.js';
 import { isRegisteredProfile } from '../services/profileRegistry.js';
@@ -127,7 +128,7 @@ membersRouter.get('/:id/export', async (req, res) => {
   return res.send(toCsv(rows));
 });
 
-membersRouter.post('/:id/absences', async (_req, res) => {
+membersRouter.post('/:id/absences', requireManager, async (_req, res) => {
   return res.status(501).json({ ok: false, error: 'Absence creation should be implemented by policy workflow' });
 });
 

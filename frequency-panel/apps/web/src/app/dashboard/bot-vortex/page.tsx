@@ -452,7 +452,7 @@ export default function BotVortexPage() {
     <AppShell>
       <div className="space-y-5">
         <section className="group overflow-hidden rounded-2xl border border-sky-300/15 bg-slate-950/70 shadow-2xl shadow-sky-950/30 backdrop-blur-xl transition duration-300 hover:border-sky-300/25 hover:shadow-sky-500/10">
-          <div className="relative overflow-hidden border-b border-white/10 bg-[linear-gradient(135deg,rgba(0,191,255,0.18),rgba(8,13,23,0.96)_42%,rgba(2,6,23,0.98)_100%)] p-6 sm:p-7">
+          <div className="relative overflow-hidden border-b border-white/10 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--vx-primary)_18%,transparent),color-mix(in_srgb,var(--vx-surface)_96%,var(--vx-bg))_42%,var(--vx-bg)_100%)] p-6 sm:p-7">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/80 to-transparent" />
             <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl transition duration-500 group-hover:bg-sky-400/15" />
             <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -629,9 +629,9 @@ export default function BotVortexPage() {
                   <CommandMetricCard label="Total de Permissoes" value={commandStats.permissions} icon={Shield} tone="sky" />
                 </div>
 
-                <section className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
+                <section className="rounded-2xl border border-white/10 bg-vortex-surface/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#020817]/80 px-3 py-2 text-sm text-slate-300 transition focus-within:border-sky-300/35">
+                    <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-vortex-bg/80 px-3 py-2 text-sm text-slate-300 transition focus-within:border-sky-300/35">
                       <Search size={16} className="text-sky-200" />
                       <input
                         value={commandQuery}
@@ -640,7 +640,7 @@ export default function BotVortexPage() {
                         className="min-w-0 flex-1 bg-transparent text-white outline-none placeholder:text-slate-500"
                       />
                     </label>
-                    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-[#020817]/70 p-1 text-xs font-semibold text-slate-300">
+                    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-vortex-bg/70 p-1 text-xs font-semibold text-slate-300">
                       {[
                         { id: 'all', label: 'Todos' },
                         { id: 'active', label: 'Ativos' },
@@ -671,13 +671,13 @@ export default function BotVortexPage() {
                     />
                   ))}
                   {!filteredCommandOptions.length ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#071226]/80 p-6 text-sm text-slate-400">
+                    <div className="rounded-2xl border border-white/10 bg-vortex-surface/80 p-6 text-sm text-slate-400">
                       Nenhum comando encontrado com os filtros atuais.
                     </div>
                   ) : null}
                 </div>
 
-                <section className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
+                <section className="rounded-2xl border border-white/10 bg-vortex-surface/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl">
                   <div className="mb-4 flex items-center gap-3">
                     <div className="grid h-10 w-10 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100">
                       <FileText size={18} />
@@ -689,14 +689,14 @@ export default function BotVortexPage() {
                   </div>
                   <div className="space-y-2">
                     {(Array.isArray(config.COMMAND_PERMISSION_HISTORY) ? config.COMMAND_PERMISSION_HISTORY : []).slice(-8).reverse().map((item: any, index: number) => (
-                      <div key={`${item.command}-${item.at}-${index}`} className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-[#020817]/60 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div key={`${item.command}-${item.at}-${index}`} className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-vortex-bg/60 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                         <span className="font-medium text-white">{item.user || 'Painel Web'}</span>
                         <span className="text-slate-400">/{item.command}</span>
                         <span className="text-xs text-slate-500">{item.at ? new Date(item.at).toLocaleString('pt-BR') : 'Agora'}</span>
                       </div>
                     ))}
                     {!Array.isArray(config.COMMAND_PERMISSION_HISTORY) || !config.COMMAND_PERMISSION_HISTORY.length ? (
-                      <div className="rounded-2xl border border-dashed border-white/10 bg-[#020817]/50 p-4 text-sm text-slate-500">
+                      <div className="rounded-2xl border border-dashed border-white/10 bg-vortex-bg/50 p-4 text-sm text-slate-500">
                         Nenhuma alteracao registrada ainda.
                       </div>
                     ) : null}
@@ -791,7 +791,7 @@ export default function BotVortexPage() {
               <ToolPanel title="Visual dos paineis" description="Cor, banner e proporcao usados nos paineis Components V2 do bot." icon={Palette}>
                 <ControlGroup title="Tema global" description="Padrao usado quando um painel nao tem estilo proprio.">
                   <div className="grid gap-4 md:grid-cols-3">
-                    <ColorInput label="Cor global" value={visuals.defaults.color || '#7000FF'} onChange={(value) => updateVisualDefault('color', value)} />
+                    <ColorInput label="Cor global" value={visuals.defaults.color || '#00BFFF'} onChange={(value) => updateVisualDefault('color', value)} />
                     <TextInput label="Banner global" value={visuals.defaults.bannerUrl || ''} onChange={(value) => updateVisualDefault('bannerUrl', value)} placeholder="https://..." />
                     <Select label="Proporcao global" value={visuals.defaults.bannerRatio || '16:9'} options={ratioOptions} onChange={(value) => updateVisualDefault('bannerRatio', value)} />
                   </div>
@@ -799,7 +799,7 @@ export default function BotVortexPage() {
                 <ControlGroup title="Tema por painel" description="Sobrescreve o visual de um painel especifico sem mexer no global.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <Select label="Painel editado" value={visualTarget} options={visualTargets} onChange={setVisualTarget} />
-                    <ColorInput label="Cor do painel" value={selectedTheme.color || '#7000FF'} onChange={(value) => updateVisualTarget(visualTarget, 'color', value)} />
+                    <ColorInput label="Cor do painel" value={selectedTheme.color || '#00BFFF'} onChange={(value) => updateVisualTarget(visualTarget, 'color', value)} />
                     <TextInput label="Banner do painel" value={selectedTheme.bannerUrl || ''} onChange={(value) => updateVisualTarget(visualTarget, 'bannerUrl', value)} placeholder="https://..." />
                     <Select label="Proporcao do painel" value={selectedTheme.bannerRatio || '16:9'} options={ratioOptions} onChange={(value) => updateVisualTarget(visualTarget, 'bannerRatio', value)} />
                   </div>
@@ -947,7 +947,7 @@ function SystemSummaryCard({ label, value, detail, icon: Icon, active }: { label
       </div>
       <div className="flex items-center justify-between gap-3 sm:min-w-40 sm:justify-end">
         <strong className="truncate text-lg font-semibold text-white">{value}</strong>
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? 'bg-sky-300 shadow-[0_0_18px_rgba(0,191,255,0.75)]' : 'bg-slate-500'}`} />
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? 'bg-sky-300 shadow-[0_0_18px_var(--vx-primary)]' : 'bg-slate-500'}`} />
       </div>
     </article>
   );
@@ -978,7 +978,7 @@ function ConfigToggleCard({ icon: Icon, label, description, value, onChange }: {
 
 function ToggleSwitch({ value }: { value: boolean }) {
   return (
-    <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${value ? 'border-sky-300/50 bg-sky-500 shadow-[0_0_22px_rgba(0,191,255,0.35)]' : 'border-white/15 bg-slate-800'}`}>
+    <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${value ? 'border-sky-300/50 bg-sky-500 shadow-[0_0_22px_var(--vx-primary)]' : 'border-white/15 bg-slate-800'}`}>
       <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-lg transition ${value ? 'left-5' : 'left-0.5'}`} />
     </span>
   );
@@ -991,12 +991,12 @@ function CommandMetricCard({ label, value, icon: Icon, tone }: { label: string; 
       ? 'border-rose-300/20 bg-rose-400/10 text-rose-100'
       : 'border-sky-300/20 bg-sky-400/10 text-sky-100';
   return (
-    <article className="rounded-2xl border border-white/10 bg-[#071226]/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/25 hover:shadow-sky-500/10">
+    <article className="rounded-2xl border border-white/10 bg-vortex-surface/80 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/25 hover:shadow-sky-500/10">
       <div className="flex items-center justify-between gap-3">
         <span className={`grid h-10 w-10 place-items-center rounded-2xl border ${toneClass}`}>
           <Icon size={18} />
         </span>
-        <span className="h-2.5 w-2.5 rounded-full bg-sky-300 shadow-[0_0_18px_rgba(0,191,255,0.75)]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-sky-300 shadow-[0_0_18px_var(--vx-primary)]" />
       </div>
       <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
       <strong className="mt-1 block text-3xl font-semibold text-white">{value}</strong>
@@ -1030,7 +1030,7 @@ function CommandPermissionCard({
   }
 
   return (
-    <article className={`group overflow-hidden rounded-2xl border bg-[#071226]/85 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-sky-500/10 ${
+    <article className={`group overflow-hidden rounded-2xl border bg-vortex-surface/85 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-sky-500/10 ${
       disabled ? 'border-rose-400/30' : 'border-sky-300/25'
     }`}>
       <div className="flex items-start justify-between gap-4">
@@ -1057,7 +1057,7 @@ function CommandPermissionCard({
           <span className={`h-2 w-2 rounded-full ${disabled ? 'bg-rose-300' : 'bg-emerald-300'}`} />
           {disabled ? 'Desativado' : 'Ativado'}
         </span>
-        <span className="rounded-full border border-white/10 bg-[#020817]/70 px-3 py-1 text-xs font-semibold text-slate-300">
+        <span className="rounded-full border border-white/10 bg-vortex-bg/70 px-3 py-1 text-xs font-semibold text-slate-300">
           {selectedRoles.length} cargo{selectedRoles.length === 1 ? '' : 's'} permitido{selectedRoles.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -1080,7 +1080,7 @@ function CommandPermissionCard({
             </button>
           </div>
         </div>
-        <div className="flex max-h-52 flex-wrap gap-2 overflow-auto rounded-2xl border border-white/10 bg-[#020817]/55 p-3">
+        <div className="flex max-h-52 flex-wrap gap-2 overflow-auto rounded-2xl border border-white/10 bg-vortex-bg/55 p-3">
           {roles.map((role) => {
             const selected = selectedSet.has(role.id);
             return (
@@ -1169,7 +1169,7 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
       <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       <div className="mt-1 flex rounded-lg border border-white/10 bg-slate-950/80 p-1 focus-within:border-sky-300/40">
         <input type="color" value={normalizeColor(value)} onChange={(event) => onChange(event.target.value.toUpperCase())} className="h-9 w-12 shrink-0 rounded border-0 bg-transparent p-0" />
-        <input value={value || '#7000FF'} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent px-3 text-sm text-white outline-none" />
+        <input value={value || '#00BFFF'} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent px-3 text-sm text-white outline-none" />
       </div>
     </label>
   );
@@ -1212,7 +1212,7 @@ function getPanelVisuals(config: BotConfig | null) {
   const raw = config?.PANEL_VISUALS && typeof config.PANEL_VISUALS === 'object' ? config.PANEL_VISUALS : {};
   return {
     defaults: {
-      color: '#7000FF',
+      color: '#00BFFF',
       bannerUrl: '',
       bannerRatio: '16:9',
       ...(raw.defaults || {})
@@ -1224,7 +1224,7 @@ function getPanelVisuals(config: BotConfig | null) {
 }
 
 function normalizeColor(value: string) {
-  return /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#7000FF';
+  return /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#00BFFF';
 }
 
 function saveStateLabel(status: SaveStatus, hasChanges: boolean, lastSavedAt: Date | null) {

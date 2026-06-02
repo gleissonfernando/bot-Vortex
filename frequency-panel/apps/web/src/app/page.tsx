@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { API_URL, setToken } from '@/lib/api';
 
 async function readJsonResponse(response: Response) {
@@ -21,6 +21,15 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setError(params.get('error') || '');
+  }, []);
+
+  function loginWithDiscord() {
+    window.location.href = `${API_URL}/auth/discord/start?next=${encodeURIComponent('/dashboard')}`;
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -29,11 +38,12 @@ export default function LoginPage() {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, password })
       });
       const data = await readJsonResponse(response);
       if (!response.ok || !data.ok) throw new Error(data.error || 'Login invalido');
-      setToken(data.token);
+      setToken(data.token || '', data.refreshToken || '');
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no login');
@@ -44,7 +54,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-surface-950 px-4">
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.025)_1px,transparent_1px)] bg-[size:36px_36px] opacity-50" />
+      <div className="absolute inset-0 bg-[linear-gradient(var(--vx-border)_1px,transparent_1px),linear-gradient(90deg,var(--vx-border)_1px,transparent_1px)] bg-[size:36px_36px] opacity-40" />
       <section className="panel relative w-full max-w-md rounded-lg p-6">
         <div className="mb-8 flex items-center gap-3">
           <div className="h-11 w-11 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
@@ -56,7 +66,19 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={loginWithDiscord}
+            className="w-full rounded-lg bg-vortex-primary px-4 py-2.5 text-sm font-semibold text-vortex-bg shadow-lg shadow-blue-950/40 transition hover:bg-vortex-secondary hover:shadow-[var(--vx-glow)]"
+          >
+            Entrar com Discord
+          </button>
+
+          {error ? <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+        </div>
+
+        {process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true' ? <form onSubmit={submit} className="mt-6 space-y-4 border-t border-white/10 pt-6">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-300">Email</span>
             <input
@@ -83,8 +105,6 @@ export default function LoginPage() {
             />
           </label>
 
-          {error ? <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
-
           <button
             type="submit"
             disabled={loading}
@@ -92,7 +112,7 @@ export default function LoginPage() {
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
-        </form>
+        </form> : null}
       </section>
     </main>
   );

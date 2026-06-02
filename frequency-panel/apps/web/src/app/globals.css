@@ -4,15 +4,28 @@
 
 :root {
   color-scheme: dark;
+  --vx-bg: #020817;
+  --vx-surface: #071226;
+  --vx-hover: #0B1730;
+  --vx-primary: #00BFFF;
+  --vx-secondary: #0099FF;
+  --vx-success: #00FFB3;
+  --vx-warning: #FFC857;
+  --vx-danger: #FF5D73;
+  --vx-text: #FFFFFF;
+  --vx-muted: #94A3B8;
+  --vx-border: rgba(255, 255, 255, 0.08);
+  --vx-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
+  --vx-glow: 0 0 28px rgba(0, 191, 255, 0.22);
 }
 
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.13), transparent 34rem),
-    radial-gradient(circle at top right, rgba(244, 63, 94, 0.1), transparent 32rem),
-    #05070d;
-  color: #f8fafc;
+    radial-gradient(circle at 18% -10%, color-mix(in srgb, var(--vx-primary) 14%, transparent), transparent 34rem),
+    radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--vx-secondary) 8%, transparent), transparent 32rem),
+    linear-gradient(180deg, var(--vx-bg) 0%, var(--vx-bg) 52%, color-mix(in srgb, var(--vx-surface) 70%, var(--vx-bg)) 100%);
+  color: var(--vx-text);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
@@ -21,16 +34,87 @@ body {
 }
 
 .panel {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(8, 13, 23, 0.72);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--vx-border);
+  background: color-mix(in srgb, var(--vx-surface) 78%, transparent);
+  box-shadow: var(--vx-shadow);
   backdrop-filter: blur(18px);
 }
 
 .soft-panel {
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--vx-border);
+  background: color-mix(in srgb, var(--vx-surface) 66%, transparent);
   backdrop-filter: blur(16px);
+}
+
+.premium-card {
+  border: 1px solid var(--vx-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--vx-surface) 92%, transparent), color-mix(in srgb, var(--vx-bg) 88%, var(--vx-surface)));
+  box-shadow: var(--vx-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.premium-card:hover {
+  border-color: color-mix(in srgb, var(--vx-primary) 24%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--vx-hover) 96%, transparent), color-mix(in srgb, var(--vx-surface) 90%, var(--vx-bg)));
+}
+
+.hover-glow {
+  transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease, background 260ms ease;
+}
+
+.hover-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 26px 80px color-mix(in srgb, var(--vx-primary) 9%, transparent), 0 18px 60px rgba(0, 0, 0, 0.2);
+}
+
+input,
+select,
+textarea {
+  border-color: var(--vx-border) !important;
+  background: color-mix(in srgb, var(--vx-bg) 55%, transparent) !important;
+  color: var(--vx-text) !important;
+  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--vx-muted) 68%, transparent) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: color-mix(in srgb, var(--vx-primary) 55%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vx-primary) 16%, transparent) !important;
+}
+
+button,
+a {
+  transition-duration: 300ms;
+}
+
+button:active,
+a:active {
+  transform: scale(0.985);
+}
+
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 1rem;
+  border: 1px solid var(--vx-border);
+  background: color-mix(in srgb, var(--vx-text) 4%, transparent);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease;
+}
+
+.icon-action:hover {
+  border-color: color-mix(in srgb, var(--vx-primary) 26%, transparent);
+  background: color-mix(in srgb, var(--vx-primary) 8%, transparent);
+  box-shadow: var(--vx-glow);
 }
 
 @keyframes fade-up {
@@ -46,4 +130,17 @@ body {
 
 .animate-fade-up {
   animation: fade-up 420ms ease both;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(0, 255, 179, 0);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(0, 255, 179, 0.28);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.8s ease-in-out infinite;
 }

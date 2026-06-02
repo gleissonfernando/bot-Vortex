@@ -1,30 +1,42 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+const TOKEN_KEY = 'vortex_frequency_token';
+const REFRESH_TOKEN_KEY = 'vortex_frequency_refresh_token';
 
 export type ApiResult<T> = T & { ok: boolean; error?: string };
 
 export function getToken() {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('vortex_frequency_token') || '';
+  return localStorage.getItem(TOKEN_KEY) || '';
 }
 
-export function setToken(token: string) {
-  localStorage.setItem('vortex_frequency_token', token);
+export function getRefreshToken() {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || '';
+}
+
+export function setToken(token: string, refreshToken = '') {
+  if (!token) return;
+  localStorage.setItem(TOKEN_KEY, token);
+  if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
 }
 
 export function clearToken() {
-  localStorage.removeItem('vortex_frequency_token');
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
-      ...(init.headers || {})
-    },
-    cache: 'no-store'
-  });
+  let response = await fetchWithAuth(path, init);
+
+  if (response.status === 401 && getRefreshToken()) {
+    const refreshed = await refreshSession();
+    if (refreshed) response = await fetchWithAuth(path, init);
+  }
+
+  if (response.status === 401 && typeof window !== 'undefined') {
+    clearToken();
+    window.location.href = '/';
+  }
 
   const data = await response.json().catch(() => ({
     ok: false,
@@ -38,9 +50,44 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return data;
 }
 
+async function fetchWithAuth(path: string, init: RequestInit = {}) {
+  const token = getToken();
+  return fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers || {})
+    },
+    credentials: 'include',
+    cache: 'no-store'
+  });
+}
+
+async function refreshSession() {
+  try {
+    const response = await fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getRefreshToken() ? { refreshToken: getRefreshToken() } : {}),
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Refresh invalido');
+    setToken(data.token, data.refreshToken);
+    return true;
+  } catch {
+    clearToken();
+    return false;
+  }
+}
+
 export async function downloadFile(path: string, filename: string) {
+  const token = getToken();
   const response = await fetch(`${API_URL}${path}`, {
-    headers: { Authorization: `Bearer ${getToken()}` }
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include'
   });
   if (!response.ok) throw new Error(`Falha ao exportar: HTTP ${response.status}`);
   const blob = await response.blob();
