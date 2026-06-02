@@ -7,7 +7,9 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  Command,
   CreditCard,
+  Database,
   Eye,
   Gauge,
   Loader2,
@@ -21,8 +23,11 @@ import {
   Search,
   Shield,
   SlidersHorizontal,
+  Sparkles,
+  Timer,
   ToggleLeft,
   Users,
+  Wifi,
   Wrench,
   type LucideIcon
 } from 'lucide-react';
@@ -32,6 +37,14 @@ type Tool = { id: string; label: string; description: string };
 type Option = { id: string; name: string; type?: number };
 type BotConfig = Record<string, any>;
 type SaveStatus = 'idle' | 'saving' | 'error';
+type DashboardMetrics = {
+  metrics: {
+    total_members: number;
+    active_members: number;
+    open_points: number;
+    month_seconds: number;
+  };
+};
 
 type CommandOption = {
   key: string;
@@ -130,6 +143,9 @@ export default function BotVortexPage() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [query, setQuery] = useState('');
   const [visualTarget, setVisualTarget] = useState('global');
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [bootedAt] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date());
 
   const configRef = useRef<BotConfig | null>(null);
   const pendingPatchRef = useRef<BotConfig>({});
@@ -142,8 +158,11 @@ export default function BotVortexPage() {
 
   useEffect(() => {
     load();
+    loadMetrics();
+    const clock = setInterval(() => setNow(new Date()), 60 * 1000);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      clearInterval(clock);
     };
   }, []);
 
@@ -166,6 +185,45 @@ export default function BotVortexPage() {
   const selectedTheme = visualTarget === 'global'
     ? visuals.defaults
     : { ...visuals.defaults, ...(visuals.targets?.[visualTarget] || {}) };
+  const commandCount = commandOptions.length;
+  const uptimeLabel = useMemo(() => formatUptime(now.getTime() - bootedAt.getTime()), [now, bootedAt]);
+  const summaryCards = useMemo(() => ([
+    {
+      label: 'Status do Bot',
+      value: config?.MAINTENANCE_MODE ? 'Manutencao' : 'Operacional',
+      detail: config?.MAINTENANCE_MODE ? 'Operacao pausada' : 'Respondendo ao painel',
+      icon: Bot,
+      active: !config?.MAINTENANCE_MODE
+    },
+    {
+      label: 'Ultima sincronizacao',
+      value: lastSavedAt ? lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Aguardando',
+      detail: saveStateLabel(saveStatus, hasChanges, lastSavedAt),
+      icon: Database,
+      active: saveStatus !== 'error'
+    },
+    {
+      label: 'Tempo online',
+      value: uptimeLabel,
+      detail: 'Sessao atual do painel',
+      icon: Timer,
+      active: true
+    },
+    {
+      label: 'Membros gerenciados',
+      value: String(metrics?.metrics.total_members ?? 0),
+      detail: `${metrics?.metrics.active_members ?? 0} na cidade agora`,
+      icon: Users,
+      active: Number(metrics?.metrics.total_members || 0) > 0
+    },
+    {
+      label: 'Comandos ativos',
+      value: String(commandCount),
+      detail: 'Permissoes no Bot Vortex',
+      icon: Command,
+      active: commandCount > 0
+    }
+  ]), [config, lastSavedAt, saveStatus, hasChanges, uptimeLabel, metrics, commandCount]);
 
   async function load() {
     setLoading(true);
@@ -186,6 +244,15 @@ export default function BotVortexPage() {
       setMessage(error instanceof Error ? error.message : 'Falha ao carregar Bot Vortex');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMetrics() {
+    try {
+      const response = await apiFetch<DashboardMetrics>('/dashboard/metrics');
+      setMetrics(response);
+    } catch {
+      setMetrics(null);
     }
   }
 
@@ -338,16 +405,18 @@ export default function BotVortexPage() {
   return (
     <AppShell>
       <div className="space-y-5">
-        <section className="overflow-hidden rounded-lg border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/20">
-          <div className="border-b border-white/10 bg-gradient-to-r from-sky-500/15 via-slate-950 to-emerald-500/10 p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <section className="group overflow-hidden rounded-2xl border border-sky-300/15 bg-slate-950/70 shadow-2xl shadow-sky-950/30 backdrop-blur-xl transition duration-300 hover:border-sky-300/25 hover:shadow-sky-500/10">
+          <div className="relative overflow-hidden border-b border-white/10 bg-[linear-gradient(135deg,rgba(0,191,255,0.18),rgba(8,13,23,0.96)_42%,rgba(2,6,23,0.98)_100%)] p-6 sm:p-7">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/80 to-transparent" />
+            <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl transition duration-500 group-hover:bg-sky-400/15" />
+            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100">
-                  <Bot size={14} />
+                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-lg shadow-sky-950/30">
+                  <Sparkles size={14} />
                   Controle em tempo real
                 </div>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">Bot Vortex</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Bot Vortex</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
                   Configure os mesmos modulos do /painel do Discord. Cada alteracao salva automaticamente no arquivo que o bot usa.
                 </p>
               </div>
@@ -356,7 +425,7 @@ export default function BotVortexPage() {
                 <button
                   onClick={load}
                   disabled={loading || saving}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-slate-100 shadow-lg shadow-black/15 transition duration-200 hover:border-sky-300/25 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                   Recarregar
@@ -364,7 +433,7 @@ export default function BotVortexPage() {
                 <button
                   onClick={saveNow}
                   disabled={!config || (!hasChanges && !Object.keys(pendingPatchRef.current).length) || saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-300/30 bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition duration-200 hover:bg-sky-400 hover:shadow-sky-400/30 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
                 >
                   <Save size={16} />
                   {saving ? 'Sincronizando...' : hasChanges ? 'Salvar agora' : 'Sincronizado'}
@@ -372,11 +441,11 @@ export default function BotVortexPage() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <StatusTile label="Bot" value={config?.MAINTENANCE_MODE ? 'Manutencao' : 'Online'} ok={!config?.MAINTENANCE_MODE} />
-              <StatusTile label="Discord" value={channels.length ? `${channels.length} canais` : 'Sem canais'} ok={channels.length > 0} />
-              <StatusTile label="Cargos" value={roles.length ? `${roles.length} cargos` : 'Sem cargos'} ok={roles.length > 0} />
-              <StatusTile label="Autosave" value={saveStateLabel(saveStatus, hasChanges, lastSavedAt)} ok={saveStatus !== 'error' && !hasChanges} busy={saveStatus === 'saving'} />
+            <div className="relative mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <StatusTile label="Bot Online" value={config?.MAINTENANCE_MODE ? 'Manutencao' : 'Online'} description={config?.MAINTENANCE_MODE ? 'Modo seguro ativo' : 'Sistema responsivo'} icon={Bot} ok={!config?.MAINTENANCE_MODE} />
+              <StatusTile label="Discord" value={channels.length ? `${channels.length}` : '0'} description="Canais sincronizados" icon={Wifi} ok={channels.length > 0} />
+              <StatusTile label="Cargos" value={roles.length ? `${roles.length}` : '0'} description="Cargos disponiveis" icon={Shield} ok={roles.length > 0} />
+              <StatusTile label="Autosave" value={saveStateLabel(saveStatus, hasChanges, lastSavedAt)} description={hasChanges ? 'Alteracoes pendentes' : 'Configuracao salva'} icon={Database} ok={saveStatus !== 'error' && !hasChanges} busy={saveStatus === 'saving'} />
             </div>
           </div>
 
@@ -429,13 +498,21 @@ export default function BotVortexPage() {
             ) : null}
 
             {config && selected === 'stats' ? (
-              <ToolPanel title="Resumo do sistema" description="Estado geral do bot e atalhos de operacao." icon={Gauge}>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <SwitchRow label="Modo manutencao" description="Pausa o uso normal do bot e mostra alerta no site." value={config.MAINTENANCE_MODE} onChange={(value) => update('MAINTENANCE_MODE', value)} />
-                  <SwitchRow label="Painel privado" description="Limita o /painel aos cargos configurados." value={config.PANEL_PRIVATE_MODE} onChange={(value) => update('PANEL_PRIVATE_MODE', value)} />
-                  <SwitchRow label="Monitor de ponto" description="Mantem a automacao de ponto ativa." value={config.POINT_MONITOR_ENABLED} onChange={(value) => update('POINT_MONITOR_ENABLED', value)} />
-                  <SwitchRow label="Cobranca offline" description="Aplica as regras de cobranca por ausencia/offline." value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />
+              <ToolPanel title="Resumo do sistema" description="Estado geral do bot, sincronizacao e operacao em tempo real." icon={Gauge}>
+                <div className="grid gap-3">
+                  {summaryCards.map((card) => (
+                    <SystemSummaryCard key={card.label} {...card} />
+                  ))}
                 </div>
+
+                <ControlGroup title="Configuracoes essenciais" description="Controles principais com salvamento automatico e estado visual ativo.">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <ConfigToggleCard icon={ToggleLeft} label="Modo manutencao" description="Pausa o uso normal do bot e mostra alerta no site." value={config.MAINTENANCE_MODE} onChange={(value) => update('MAINTENANCE_MODE', value)} />
+                    <ConfigToggleCard icon={Lock} label="Painel privado" description="Limita o /painel aos cargos configurados." value={config.PANEL_PRIVATE_MODE} onChange={(value) => update('PANEL_PRIVATE_MODE', value)} />
+                    <ConfigToggleCard icon={Radio} label="Monitor de ponto" description="Mantem a automacao de ponto e presenca ativa." value={config.POINT_MONITOR_ENABLED} onChange={(value) => update('POINT_MONITOR_ENABLED', value)} />
+                    <ConfigToggleCard icon={CreditCard} label="Cobranca offline" description="Aplica regras de cobranca por ausencia/offline." value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />
+                  </div>
+                </ControlGroup>
               </ToolPanel>
             ) : null}
 
@@ -664,14 +741,14 @@ function ToolButton({ tool, active, changed, onClick }: { tool: Tool; active: bo
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+      className={`w-full rounded-2xl border px-3 py-3 text-left shadow-lg shadow-black/5 backdrop-blur transition duration-200 ${
         active
-          ? 'border-sky-300/25 bg-sky-400/10 text-white shadow-lg shadow-sky-950/20'
-          : 'border-white/10 bg-white/[0.025] text-slate-400 hover:bg-white/[0.05] hover:text-white'
+          ? 'border-sky-300/30 bg-sky-400/10 text-white shadow-sky-950/20'
+          : 'border-white/10 bg-white/[0.025] text-slate-400 hover:border-sky-300/20 hover:bg-white/[0.055] hover:text-white'
       }`}
     >
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg border ${active ? 'border-sky-300/25 bg-sky-400/15 text-sky-100' : 'border-white/10 bg-white/[0.035] text-slate-400'}`}>
+        <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border ${active ? 'border-sky-300/25 bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-500/10' : 'border-white/10 bg-white/[0.035] text-slate-400'}`}>
           <Icon size={17} />
         </span>
         <span className="min-w-0 flex-1">
@@ -689,14 +766,14 @@ function ToolButton({ tool, active, changed, onClick }: { tool: Tool; active: bo
 function ToolPanel({ title, description, icon: Icon, children }: { title: string; description: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-white/10 bg-slate-950/70 p-5">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-xl">
         <div className="flex items-start gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-sky-300/20 bg-sky-400/10 text-sky-100">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100 shadow-lg shadow-sky-950/25">
             <Icon size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-white">{title}</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-white">{title}</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-300">{description}</p>
           </div>
         </div>
       </div>
@@ -707,27 +784,83 @@ function ToolPanel({ title, description, icon: Icon, children }: { title: string
 
 function ControlGroup({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/15">
       <div className="mb-4">
-        <h3 className="font-semibold text-white">{title}</h3>
-        {description ? <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p> : null}
+        <h3 className="text-base font-semibold text-white">{title}</h3>
+        {description ? <p className="mt-1 text-sm leading-5 text-slate-400">{description}</p> : null}
       </div>
       {children}
     </section>
   );
 }
 
-function StatusTile({ label, value, ok, busy = false }: { label: string; value: string; ok: boolean; busy?: boolean }) {
+function StatusTile({ label, value, description, icon: Icon, ok, busy = false }: { label: string; value: string; description: string; icon: LucideIcon; ok: boolean; busy?: boolean }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-sky-300/30 hover:bg-white/[0.075] hover:shadow-sky-500/15">
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent opacity-0 transition group-hover:opacity-100" />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-        <span className={`grid h-8 w-8 place-items-center rounded-lg border ${busy ? 'border-sky-300/20 bg-sky-400/10 text-sky-200' : ok ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/15 bg-amber-400/10 text-amber-200'}`}>
+        <span className="grid h-10 w-10 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100 shadow-lg shadow-sky-950/20">
+          <Icon size={18} />
+        </span>
+        <span className={`grid h-8 w-8 place-items-center rounded-xl border ${busy ? 'border-sky-300/20 bg-sky-400/10 text-sky-200' : ok ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/15 bg-amber-400/10 text-amber-200'}`}>
           {busy ? <Loader2 size={15} className="animate-spin" /> : ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
         </span>
       </div>
-      <div className="mt-3 truncate text-lg font-semibold text-white">{value}</div>
+      <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-1 truncate text-2xl font-semibold text-white">{value}</div>
+      <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
     </div>
+  );
+}
+
+function SystemSummaryCard({ label, value, detail, icon: Icon, active }: { label: string; value: string; detail: string; icon: LucideIcon; active: boolean }) {
+  return (
+    <article className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/20 hover:bg-white/[0.055] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100">
+          <Icon size={19} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">{label}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 sm:min-w-40 sm:justify-end">
+        <strong className="truncate text-lg font-semibold text-white">{value}</strong>
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? 'bg-sky-300 shadow-[0_0_18px_rgba(0,191,255,0.75)]' : 'bg-slate-500'}`} />
+      </div>
+    </article>
+  );
+}
+
+function ConfigToggleCard({ icon: Icon, label, description, value, onChange }: { icon: LucideIcon; label: string; description: string; value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className={`group relative flex cursor-pointer flex-col justify-between gap-5 overflow-hidden rounded-2xl border p-4 shadow-xl backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 ${
+      value
+        ? 'border-sky-300/30 bg-sky-400/[0.08] shadow-sky-500/10'
+        : 'border-white/10 bg-slate-950/55 shadow-black/10 hover:border-sky-300/20 hover:bg-white/[0.045]'
+    }`}>
+      <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent opacity-0 transition group-hover:opacity-100" />
+      <div className="flex items-start justify-between gap-4">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition ${value ? 'border-sky-300/30 bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-500/15' : 'border-white/10 bg-white/[0.04] text-slate-300'}`}>
+          <Icon size={19} />
+        </span>
+        <ToggleSwitch value={Boolean(value)} />
+      </div>
+      <div>
+        <p className="font-semibold text-white">{label}</p>
+        <p className="mt-1 text-sm leading-5 text-slate-400">{description}</p>
+      </div>
+      <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
+    </label>
+  );
+}
+
+function ToggleSwitch({ value }: { value: boolean }) {
+  return (
+    <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${value ? 'border-sky-300/50 bg-sky-500 shadow-[0_0_22px_rgba(0,191,255,0.35)]' : 'border-white/15 bg-slate-800'}`}>
+      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-lg transition ${value ? 'left-5' : 'left-0.5'}`} />
+    </span>
   );
 }
 
@@ -850,6 +983,14 @@ function saveStateLabel(status: SaveStatus, hasChanges: boolean, lastSavedAt: Da
   if (hasChanges) return 'Pendente';
   if (lastSavedAt) return `Salvo ${lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   return 'Pronto';
+}
+
+function formatUptime(ms: number) {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}min`;
+  return `${Math.max(1, minutes)}min`;
 }
 
 function formatKeys(keys: string[]) {
