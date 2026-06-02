@@ -14,7 +14,7 @@ const {
   TextDisplayBuilder,
 } = require('discord.js');
 const { logger } = require('./logger');
-const { isMongoConnected } = require('./database');
+const { connectDatabase, isMongoConnected, isMongoConfigured } = require('./database');
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'liveAlerts.json');
 const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
@@ -66,7 +66,10 @@ function writeStore(data) {
   fs.writeFileSync(STORE_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
 
-function mongoCollection(name) {
+async function mongoCollection(name) {
+  if (!isMongoConnected() && isMongoConfigured()) {
+    await connectDatabase().catch(() => false);
+  }
   if (!isMongoConnected() || !mongoose.connection.db) return null;
   const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL || '';
   const dbName = process.env.MONGODB_DB || databaseNameFromUri(uri);
@@ -148,18 +151,20 @@ function normalizeSettings(row = {}) {
 }
 
 async function listLiveAlerts(guildId = null) {
-  const collection = mongoCollection('live_alert_configs');
+  const collection = await mongoCollection('live_alert_configs');
   if (collection) {
     const query = guildId ? { guild_id: String(guildId) } : {};
     const rows = await collection.find(query).sort({ created_at: -1 }).toArray();
     return rows.map(normalizeLive);
   }
   const store = readStore();
-  return store.lives.map(normalizeLive).filter((row) => !guildId || row.guildId === String(guildId));
+  const rows = store.lives.map(normalizeLive).filter((row) => !guildId || row.guildId === String(guildId));
+  if (!rows.length) logger.warn('Lives: nenhum cadastro carregado. Mongo indisponivel e JSON local vazio.');
+  return rows;
 }
 
 async function getLiveSettings(guildId) {
-  const collection = mongoCollection('live_alert_settings');
+  const collection = await mongoCollection('live_alert_settings');
   if (collection) {
     const row = await collection.findOne({ guild_id: String(guildId) });
     return normalizeSettings(row || { guild_id: String(guildId) });
@@ -171,7 +176,7 @@ async function getLiveSettings(guildId) {
 async function saveLiveSettings(guildId, patch) {
   const current = await getLiveSettings(guildId);
   const next = { ...current, ...patch, guildId: String(guildId) };
-  const collection = mongoCollection('live_alert_settings');
+  const collection = await mongoCollection('live_alert_settings');
   if (collection) {
     await collection.updateOne(
       { guild_id: String(guildId) },
@@ -226,7 +231,7 @@ async function createLiveAlert(guildId, input) {
     created_at: now,
     updated_at: now,
   };
-  const collection = mongoCollection('live_alert_configs');
+  const collection = await mongoCollection('live_alert_configs');
   if (collection) {
     const result = await collection.insertOne(doc);
     return normalizeLive({ ...doc, _id: result.insertedId });
@@ -239,7 +244,7 @@ async function createLiveAlert(guildId, input) {
 }
 
 async function updateLiveAlertStatus(live, patch) {
-  const collection = mongoCollection('live_alert_configs');
+  const collection = await mongoCollection('live_alert_configs');
   const update = {
     status: patch.status || live.status || 'unknown',
     last_live_title: patch.lastLiveTitle || null,
@@ -267,7 +272,10 @@ async function updateLiveAlertStatus(live, patch) {
 async function getTwitchToken() {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    logger.warn('Lives: TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes. Monitor Twitch nao consegue verificar lives.');
+    return null;
+  }
   if (twitchTokenCache && twitchTokenCache.expiresAt > Date.now() + 60_000) return twitchTokenCache.token;
   const response = await fetch('https://id.twitch.tv/oauth2/token', {
     method: 'POST',
@@ -277,9 +285,19 @@ async function getTwitchToken() {
       client_secret: clientSecret,
       grant_type: 'client_credentials',
     }),
+  }).catch((error) => {
+    logger.warn(`Lives: falha de rede ao obter token Twitch: ${error.message}`);
+    return null;
   });
-  if (!response.ok) return null;
-  const data = await response.json();
+  if (!response?.ok) {
+    logger.warn(`Lives: Twitch token recusado. HTTP ${response?.status || 'sem resposta'}. Verifique Client ID/Secret.`);
+    return null;
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!data.access_token) {
+    logger.warn('Lives: Twitch nao retornou access_token.');
+    return null;
+  }
   twitchTokenCache = {
     token: data.access_token,
     expiresAt: Date.now() + Math.max(60, Number(data.expires_in || 3600) - 60) * 1000,
@@ -374,8 +392,14 @@ async function checkTwitchLivesBatch(lives) {
 
     const response = await fetch(`https://api.twitch.tv/helix/streams?${params.toString()}`, {
       headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
+    }).catch((error) => {
+      logger.warn(`Lives: falha de rede ao consultar streams Twitch: ${error.message}`);
+      return null;
     });
-    if (!response.ok) continue;
+    if (!response?.ok) {
+      logger.warn(`Lives: Twitch streams HTTP ${response?.status || 'sem resposta'} para ${chunk.length} canal(is).`);
+      continue;
+    }
 
     const data = await response.json().catch(() => ({}));
     for (const stream of Array.isArray(data.data) ? data.data : []) {
@@ -630,6 +654,9 @@ async function runLiveAlertCheck(client) {
   liveAlertCheckRunning = true;
   try {
   const lives = await listLiveAlerts();
+  if (!lives.length) {
+    logger.warn('Lives: monitor rodou, mas nao encontrou lives cadastradas.');
+  }
   const settingsCache = new Map();
   const dueGuilds = new Map();
   const dueChecks = [];
@@ -653,6 +680,7 @@ async function runLiveAlertCheck(client) {
   const statusByLiveId = new Map();
   const twitchChecks = dueChecks.filter((item) => item.live.platform === 'twitch');
   if (twitchChecks.length) {
+    logger.info(`Lives: verificando ${twitchChecks.length} canal(is) Twitch.`);
     const twitchStatuses = await checkTwitchLivesBatch(twitchChecks.map((item) => item.live)).catch((error) => {
       logger.warn(`Lives: falha ao verificar Twitch em lote: ${error.message}`);
       return new Map();
@@ -711,20 +739,29 @@ async function runLiveAlertCheck(client) {
       shouldUpdate = !messageExists;
     }
     let messageId = shouldCreate ? null : live.lastAlertMessageId;
+    let sentOrUpdated = false;
     if (shouldCreate || shouldUpdate) {
+      logger.info(`Lives: ${live.streamerName} detectado online. Enviando alerta para canal ${live.alertChannelId || settings.defaultAlertChannelId || 'nao configurado'}.`);
       const result = await sendLiveAlert(client, live, settings, status, { messageId }).catch((error) => {
         logger.warn(`Lives: falha ao enviar alerta de ${live.streamerName}: ${error.message}`);
         return null;
       });
-      if (result?.messageId) messageId = result.messageId;
+      if (result?.messageId) {
+        messageId = result.messageId;
+        sentOrUpdated = true;
+      } else if (result?.error) {
+        logger.warn(`Lives: alerta de ${live.streamerName} nao enviado: ${result.error}`);
+      } else {
+        logger.warn(`Lives: alerta de ${live.streamerName} nao enviado; resultado vazio.`);
+      }
     }
     await updateLiveAlertStatus(live, {
       status: 'online',
       lastLiveTitle: status.title || null,
       lastLiveUrl: status.url || live.url,
-      lastAnnouncedLiveId: liveId,
+      lastAnnouncedLiveId: (sentOrUpdated || (!shouldCreate && live.lastAnnouncedLiveId)) ? liveId : live.lastAnnouncedLiveId,
       lastAlertMessageId: messageId || live.lastAlertMessageId || null,
-      lastAlertUpdatedAt: (shouldCreate || shouldUpdate) ? new Date() : live.lastAlertUpdatedAt,
+      lastAlertUpdatedAt: sentOrUpdated ? new Date() : live.lastAlertUpdatedAt,
       lastLiveStartedAt: status.startedAt || live.lastLiveStartedAt || null,
     });
   }
