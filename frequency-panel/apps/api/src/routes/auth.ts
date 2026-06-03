@@ -172,7 +172,7 @@ authRouter.get('/discord/callback', async (req, res) => {
   } catch (error) {
     console.warn('[frequency-api] Falha no OAuth Discord:', error);
     await auditLog(req, 'auth.discord.failed');
-    return res.redirect(`${loginUrl()}?error=${encodeURIComponent('Falha ao validar login Discord.')}`);
+    return res.redirect(`${loginUrl()}?error=${encodeURIComponent(publicOAuthErrorMessage(error))}`);
   }
 });
 
@@ -320,9 +320,24 @@ function maskValue(value: string) {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
+class DiscordOAuthError extends Error {
+  constructor(message: string, publicMessage = 'Falha ao validar login Discord.') {
+    super(message);
+    this.name = 'DiscordOAuthError';
+    this.publicMessage = publicMessage;
+  }
+
+  publicMessage: string;
+}
+
+function publicOAuthErrorMessage(error: unknown) {
+  if (error instanceof DiscordOAuthError) return error.publicMessage;
+  return 'Falha ao validar login Discord.';
+}
+
 async function exchangeDiscordCode(code: string) {
   if (!env.discordClientId || !env.discordClientSecret || !env.discordOauthRedirectUri) {
-    throw new Error('Discord OAuth2 nao configurado');
+    throw new DiscordOAuthError('Discord OAuth2 nao configurado', 'Discord OAuth2 nao configurado no servidor.');
   }
 
   const response = await fetch('https://discord.com/api/oauth2/token', {
@@ -339,15 +354,46 @@ async function exchangeDiscordCode(code: string) {
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
+    const discordError = parseDiscordErrorBody(body);
     console.warn('[frequency-api] Discord token exchange falhou', {
       status: response.status,
       clientId: maskValue(env.discordClientId),
       redirectUri: env.discordOauthRedirectUri,
       body: body.slice(0, 500)
     });
-    throw new Error(`Discord token HTTP ${response.status}`);
+    throw new DiscordOAuthError(
+      `Discord token HTTP ${response.status}: ${discordError.raw || body.slice(0, 200)}`,
+      oauthTokenPublicMessage(response.status, discordError)
+    );
   }
   return response.json() as Promise<{ access_token: string }>;
+}
+
+function parseDiscordErrorBody(body: string) {
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; error_description?: unknown; message?: unknown };
+    return {
+      code: String(parsed.error || ''),
+      description: String(parsed.error_description || parsed.message || ''),
+      raw: body
+    };
+  } catch {
+    return { code: '', description: body, raw: body };
+  }
+}
+
+function oauthTokenPublicMessage(status: number, discordError: { code: string; description: string }) {
+  const detail = `${discordError.code} ${discordError.description}`.toLowerCase();
+  if (detail.includes('invalid_client')) {
+    return 'Discord OAuth recusou o client_id/client_secret. Confira DISCORD_CLIENT_ID e DISCORD_CLIENT_SECRET.';
+  }
+  if (detail.includes('redirect') || detail.includes('invalid_grant')) {
+    return 'Discord OAuth recusou o callback. Confira se DISCORD_OAUTH_REDIRECT_URI e o Redirect do Discord Developer Portal sao identicos.';
+  }
+  if (status === 401) {
+    return 'Discord OAuth nao autorizou a aplicacao. Confira DISCORD_CLIENT_SECRET.';
+  }
+  return `Discord OAuth retornou HTTP ${status}. Confira os logs do frequency-api.`;
 }
 
 async function fetchDiscordUser(accessToken: string) {
