@@ -5,7 +5,7 @@ import { collection, serializeDoc, serializeDocs } from '../db.js';
 import { env } from '../env.js';
 import { requireManager } from '../middleware.js';
 
-const DEFAULT_MESSAGE = '🔴 {streamer} iniciou uma live!\n\n🎮 Jogo: {game}\n👥 Assistindo: {viewers}\n\nAssista agora:\n{url}';
+const DEFAULT_MESSAGE = '@{streamer} {title}';
 const PLATFORMS = ['twitch', 'kick', 'youtube', 'tiktok', 'facebook', 'trovo'] as const;
 const PLATFORM_LABELS: Record<string, string> = {
   twitch: 'Twitch',
@@ -23,6 +23,8 @@ const PLATFORM_INTERVAL_MS: Record<string, number> = {
   facebook: 120_000,
   trovo: 120_000
 };
+const TWITCH_NEON_PURPLE = 0x9146ff;
+const TWITCH_FALLBACK_IMAGE = 'https://dummyimage.com/1280x720/5f6270/2f313b.png&text=%F0%9F%93%B9';
 
 let twitchTokenCache: { token: string; expiresAt: number } | null = null;
 let monitorStarted = false;
@@ -37,6 +39,9 @@ type LiveStatus = {
   thumbnail: string | null;
   url: string;
   startedAt: Date | null;
+  twitchLogin?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
 };
 
 type LiveNotificationDoc = {
@@ -54,6 +59,7 @@ type LiveNotificationDoc = {
   last_game?: string | null;
   last_viewers?: number | null;
   last_thumbnail?: string | null;
+  avatar_url?: string | null;
   last_checked_at?: Date | null;
   last_notified_at?: Date | null;
   created_at: Date;
@@ -147,7 +153,10 @@ function validatePlatformUrl(url: string, platform: string) {
 async function getTwitchToken() {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    console.warn('[frequency-api] erro ao buscar dados da Twitch: TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET ausentes.');
+    return null;
+  }
   if (twitchTokenCache && twitchTokenCache.expiresAt > Date.now() + 60_000) return twitchTokenCache.token;
 
   const response = await fetch('https://id.twitch.tv/oauth2/token', {
@@ -158,8 +167,14 @@ async function getTwitchToken() {
       client_secret: clientSecret,
       grant_type: 'client_credentials'
     })
-  }).catch(() => null);
-  if (!response?.ok) return null;
+  }).catch((error) => {
+    console.warn('[frequency-api] erro ao buscar token da Twitch:', error);
+    return null;
+  });
+  if (!response?.ok) {
+    console.warn(`[frequency-api] erro ao buscar token da Twitch: HTTP ${response?.status || 'sem resposta'}`);
+    return null;
+  }
   const data = await response.json();
   twitchTokenCache = {
     token: String(data.access_token || ''),
@@ -183,7 +198,8 @@ async function resolveTwitchChannel(url: string) {
   if (!user) throw new Error('Canal Twitch nao encontrado.');
   return {
     streamerName: String(user.display_name || user.login || login),
-    channelUrl: `https://www.twitch.tv/${user.login || login}`
+    channelUrl: `https://www.twitch.tv/${user.login || login}`,
+    avatarUrl: String(user.profile_image_url || '')
   };
 }
 
@@ -197,6 +213,11 @@ async function resolveGenericChannel(url: string, platform: string) {
 async function resolveChannel(url: string, platform: string) {
   if (platform === 'twitch') return resolveTwitchChannel(url);
   return resolveGenericChannel(url, platform);
+}
+
+function resolvedAvatarUrl(resolved: unknown) {
+  const avatarUrl = (resolved as { avatarUrl?: unknown })?.avatarUrl;
+  return typeof avatarUrl === 'string' && avatarUrl ? avatarUrl : null;
 }
 
 async function checkTwitchLive(item: LiveNotificationDoc): Promise<LiveStatus> {
@@ -217,11 +238,31 @@ async function checkTwitchLive(item: LiveNotificationDoc): Promise<LiveStatus> {
 
   const response = await fetch(`https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`, {
     headers: { Authorization: `Bearer ${token}`, 'Client-Id': clientId }
-  }).catch(() => null);
-  if (!response?.ok) return fallback;
+  }).catch((error) => {
+    console.warn('[frequency-api] erro ao buscar dados da Twitch:', error);
+    return null;
+  });
+  if (!response?.ok) {
+    console.warn(`[frequency-api] erro ao buscar dados da Twitch: HTTP ${response?.status || 'sem resposta'}`);
+    return fallback;
+  }
   const data = await response.json();
   const stream = Array.isArray(data.data) ? data.data[0] : null;
   if (!stream) return fallback;
+  let user: any = null;
+  const userLogin = String(stream.user_login || login).toLowerCase();
+  const userResponse = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(userLogin)}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Client-Id': clientId }
+  }).catch((error) => {
+    console.warn('[frequency-api] erro ao buscar usuario da Twitch:', error);
+    return null;
+  });
+  if (userResponse?.ok) {
+    const userData = await userResponse.json().catch(() => ({}));
+    user = Array.isArray(userData.data) ? userData.data[0] : null;
+  } else if (userResponse) {
+    console.warn(`[frequency-api] erro ao buscar usuario da Twitch: HTTP ${userResponse.status}`);
+  }
   return {
     online: true,
     liveId: String(stream.id || `${login}:${stream.started_at || Date.now()}`),
@@ -230,7 +271,10 @@ async function checkTwitchLive(item: LiveNotificationDoc): Promise<LiveStatus> {
     viewers: Number(stream.viewer_count || 0),
     thumbnail: stream.thumbnail_url || null,
     url: `https://www.twitch.tv/${stream.user_login || login}`,
-    startedAt: stream.started_at ? new Date(stream.started_at) : null
+    startedAt: stream.started_at ? new Date(stream.started_at) : null,
+    twitchLogin: userLogin,
+    displayName: String(user?.display_name || stream.user_name || item.streamer_name),
+    avatarUrl: String(user?.profile_image_url || item.avatar_url || '')
   };
 }
 
@@ -328,28 +372,56 @@ function mentionText(roleId: string | null, guildId: string) {
   return `<@&${roleId}>`;
 }
 
+function twitchPreviewUrl(status: LiveStatus) {
+  if (!status.thumbnail) return TWITCH_FALLBACK_IMAGE;
+  const base = String(status.thumbnail).replace('{width}', '1280').replace('{height}', '720');
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}v=${Date.now()}`;
+}
+
+function twitchHandle(item: LiveNotificationDoc, status: LiveStatus) {
+  return String(status.twitchLogin || extractSlug(status.url || item.channel_url, 'twitch') || item.streamer_name)
+    .replace(/^@/, '')
+    .toLowerCase();
+}
+
+function footerDate(date = new Date()) {
+  const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const full = date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  return `vortex lives - Hoje às ${time} - ${full}`;
+}
+
 async function sendDiscordLiveNotification(item: LiveNotificationDoc, status: LiveStatus) {
   const token = env.discordBotToken || process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
   if (!token) return { ok: false, error: 'DISCORD_TOKEN/DISCORD_BOT_TOKEN ausente.' };
 
-  const content = [
-    mentionText(item.discord_role_id, item.guild_id),
-    `🔴 ${item.streamer_name} está AO VIVO agora!`
-  ].filter(Boolean).join('\n\n');
+  const streamUrl = status.url || item.channel_url;
+  const handle = twitchHandle(item, status);
+  const displayName = status.displayName || item.streamer_name || handle;
+  const title = status.title || 'Live na Twitch';
+  const mention = mentionText(item.discord_role_id, item.guild_id);
 
   const embed: any = {
-    color: item.platform === 'kick' ? 0x53fc18 : item.platform === 'youtube' ? 0xff0033 : item.platform === 'tiktok' ? 0x00f2ea : 0x9146ff,
-    title: '🔴 AO VIVO AGORA',
-    description: `O streamer ${item.streamer_name} acabou de iniciar uma transmissão.`,
+    color: item.platform === 'twitch' ? TWITCH_NEON_PURPLE : item.platform === 'kick' ? 0x53fc18 : item.platform === 'youtube' ? 0xff0033 : item.platform === 'tiktok' ? 0x00f2ea : TWITCH_NEON_PURPLE,
+    author: {
+      name: item.platform === 'twitch' ? `${displayName} is now live on Twitch!` : `${displayName} is now live!`,
+      icon_url: status.avatarUrl || item.avatar_url || undefined,
+      url: streamUrl
+    },
+    description: `[@${handle} ${title}](${streamUrl})`,
     fields: [
-      { name: '🎮 Categoria:', value: status.game || 'Nao informado', inline: true },
-      { name: '👥 Visualizações:', value: status.viewers === null || status.viewers === undefined ? 'Nao informado' : String(status.viewers), inline: true },
-      { name: '📺 Plataforma:', value: PLATFORM_LABELS[item.platform] || item.platform, inline: true }
+      { name: 'Game', value: status.game || 'Nao informado', inline: true },
+      { name: 'Viewers', value: status.viewers === null || status.viewers === undefined ? '0' : String(status.viewers), inline: true }
     ],
-    timestamp: new Date().toISOString()
+    image: { url: item.platform === 'twitch' ? twitchPreviewUrl(status) : status.thumbnail || TWITCH_FALLBACK_IMAGE },
+    footer: { text: footerDate(new Date()) }
   };
-  const thumbnail = status.thumbnail ? status.thumbnail.replace('{width}', '1280').replace('{height}', '720') : null;
-  if (thumbnail) embed.image = { url: thumbnail };
 
   const response = await fetch(`https://discord.com/api/v10/channels/${item.discord_channel_id}/messages`, {
     method: 'POST',
@@ -358,11 +430,11 @@ async function sendDiscordLiveNotification(item: LiveNotificationDoc, status: Li
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      content: item.custom_message ? `${mentionText(item.discord_role_id, item.guild_id)}\n\n${renderTemplate(item.custom_message, item, status)}`.trim() : content,
+      content: mention || undefined,
       embeds: [embed],
       components: [{
         type: 1,
-        components: [{ type: 2, style: 5, label: '🎥 Assistir Live', url: status.url || item.channel_url }]
+        components: [{ type: 2, style: 5, label: 'Watch Stream', emoji: { name: '↗️' }, url: streamUrl }]
       }],
       allowed_mentions: allowedMentions(item.discord_role_id, item.guild_id)
     })
@@ -385,9 +457,21 @@ async function processLiveItem(item: LiveNotificationDoc) {
   const newLive = status.online && status.liveId && status.liveId !== item.last_live_id;
   const shouldNotify = status.online && (becameOnline || newLive);
   const now = new Date();
+  let notificationSent = false;
 
   if (shouldNotify) {
-    await sendDiscordLiveNotification(item, status);
+    console.log(`[frequency-api] live detectada: ${item.streamer_name} online na Twitch.`);
+    const result = await sendDiscordLiveNotification(item, status);
+    if (!result.ok) {
+      console.warn(`[frequency-api] erro ao enviar alerta de ${item.streamer_name}: ${result.error}`);
+    } else {
+      notificationSent = true;
+      console.log(`[frequency-api] alerta enviado: ${item.streamer_name}.`);
+    }
+  }
+
+  if (!status.online && item.last_status === 'online') {
+    console.log(`[frequency-api] live ficou offline: ${item.streamer_name}.`);
   }
 
   await (await collection<LiveNotificationDoc>('live_notifications')).updateOne(
@@ -395,13 +479,13 @@ async function processLiveItem(item: LiveNotificationDoc) {
     {
       $set: {
         last_status: status.online ? 'online' : 'offline',
-        last_live_id: status.online ? status.liveId : item.last_live_id,
+        last_live_id: status.online ? (shouldNotify && !notificationSent ? item.last_live_id : status.liveId) : item.last_live_id,
         last_title: status.title,
         last_game: status.game,
         last_viewers: status.viewers,
         last_thumbnail: status.thumbnail,
         last_checked_at: now,
-        last_notified_at: shouldNotify ? now : item.last_notified_at || null,
+        last_notified_at: notificationSent ? now : item.last_notified_at || null,
         updated_at: now
       }
     }
@@ -552,6 +636,7 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     discord_channel_id: input.discordChannelId,
     discord_role_id: input.discordRoleId || guildId,
     custom_message: input.customMessage || null,
+    avatar_url: resolvedAvatarUrl(resolved),
     last_status: 'unknown',
     last_live_id: null,
     last_checked_at: null,
@@ -581,6 +666,7 @@ livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
     update.platform = platform;
     update.channel_url = resolved.channelUrl;
     update.streamer_name = resolved.streamerName;
+    update.avatar_url = resolvedAvatarUrl(resolved);
     update.last_status = 'unknown';
     update.last_live_id = null;
   }

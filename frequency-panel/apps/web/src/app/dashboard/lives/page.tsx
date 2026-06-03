@@ -38,7 +38,7 @@ type Stats = {
 
 type PlatformId = 'twitch' | 'youtube' | 'tiktok' | 'kick' | 'facebook' | 'trovo';
 
-const defaultMessage = '🔴 {streamer} iniciou uma live!\n\n🎮 Jogo: {game}\n👥 Assistindo: {viewers}\n\nAssista agora:\n{url}';
+const defaultMessage = '@{streamer} {title}';
 
 const platformCards: Array<{ id: PlatformId; name: string; description: string; color: string; accent: string }> = [
   { id: 'twitch', name: 'Twitch', description: 'Monitora lives pela Twitch Helix API.', color: 'bg-[#9146ff]', accent: 'text-violet-200' },

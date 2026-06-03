@@ -21,6 +21,8 @@ const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {pla
 const DEFAULT_INTERVAL_SECONDS = 30;
 const MIN_INTERVAL_MS = 30 * 1000;
 const LIVE_ALERT_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+const TWITCH_NEON_PURPLE = 0x9146ff;
+const TWITCH_FALLBACK_IMAGE = 'https://dummyimage.com/1280x720/5f6270/2f313b.png&text=%F0%9F%93%B9';
 let monitorInterval = null;
 let liveAlertCheckRunning = false;
 let twitchTokenCache = null;
@@ -436,8 +438,9 @@ async function checkTwitchLive(live) {
   const clientId = process.env.TWITCH_CLIENT_ID;
   let userId = live.twitchUserId;
   const login = live.twitchLogin || extractSlug(live.url);
+  let user = null;
   if (!userId && login) {
-    const user = await getTwitchUserByLogin(login);
+    user = await getTwitchUserByLogin(login);
     userId = user?.id || null;
   }
   if (!token || !clientId || (!userId && !login)) return { online: false };
@@ -446,11 +449,20 @@ async function checkTwitchLive(live) {
     : `user_login=${encodeURIComponent(login)}`;
   const response = await fetch(`https://api.twitch.tv/helix/streams?${query}`, {
     headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
+  }).catch((error) => {
+    logger.warn(`Lives: erro ao buscar dados da Twitch para ${login || userId}: ${error.message}`);
+    return null;
   });
-  if (!response.ok) return { online: false };
+  if (!response?.ok) {
+    logger.warn(`Lives: erro ao buscar dados da Twitch para ${login || userId}. HTTP ${response?.status || 'sem resposta'}.`);
+    return { online: false };
+  }
   const data = await response.json();
   const stream = Array.isArray(data.data) ? data.data[0] : null;
   if (!stream) return { online: false };
+  if (!user && (stream.user_login || login)) {
+    user = await getTwitchUserByLogin(stream.user_login || login).catch(() => null);
+  }
   return {
     online: true,
     liveId: String(stream.id || `${userId || login}:${stream.started_at || ''}`),
@@ -459,7 +471,10 @@ async function checkTwitchLive(live) {
     viewerCount: Number(stream.viewer_count || 0),
     thumbnailUrl: stream.thumbnail_url || null,
     startedAt: stream.started_at || null,
-    url: live.url,
+    url: stream.user_login ? `https://www.twitch.tv/${stream.user_login}` : live.url,
+    twitchLogin: normalizeTwitchLogin(stream.user_login || login),
+    displayName: stream.user_name || user?.display_name || live.streamerName,
+    avatarUrl: user?.profile_image_url || live.avatarUrl || null,
   };
 }
 
@@ -482,6 +497,9 @@ function twitchStatusFromStream(live, stream) {
     thumbnailUrl: stream.thumbnail_url || null,
     startedAt: stream.started_at || null,
     url: live.url || (login ? `https://www.twitch.tv/${login}` : null),
+    twitchLogin: login,
+    displayName: stream.user_name || live.streamerName,
+    avatarUrl: live.avatarUrl || null,
   };
 }
 
@@ -497,6 +515,7 @@ async function checkTwitchLivesBatch(lives) {
   if (!lookups.length) return result;
 
   const streamsByKey = new Map();
+  const liveStreams = [];
   for (const chunk of chunkArray(lookups, 100)) {
     const params = new URLSearchParams();
     for (const item of chunk) {
@@ -517,15 +536,54 @@ async function checkTwitchLivesBatch(lives) {
 
     const data = await response.json().catch(() => ({}));
     for (const stream of Array.isArray(data.data) ? data.data : []) {
+      liveStreams.push(stream);
       if (stream.user_id) streamsByKey.set(`id:${stream.user_id}`, stream);
       if (stream.user_login) streamsByKey.set(`login:${normalizeTwitchLogin(stream.user_login)}`, stream);
+    }
+  }
+
+  const usersById = new Map();
+  const usersByLogin = new Map();
+  const userLookups = liveStreams
+    .map((stream) => ({
+      id: stream.user_id ? String(stream.user_id) : '',
+      login: normalizeTwitchLogin(stream.user_login || ''),
+    }))
+    .filter((item) => item.id || item.login);
+  for (const chunk of chunkArray(userLookups, 100)) {
+    const params = new URLSearchParams();
+    for (const item of chunk) {
+      if (item.id) params.append('id', item.id);
+      else if (item.login) params.append('login', item.login);
+    }
+    const response = await fetch(`https://api.twitch.tv/helix/users?${params.toString()}`, {
+      headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}` },
+    }).catch((error) => {
+      logger.warn(`Lives: erro ao buscar usuarios da Twitch: ${error.message}`);
+      return null;
+    });
+    if (!response?.ok) {
+      logger.warn(`Lives: Twitch users HTTP ${response?.status || 'sem resposta'} para ${chunk.length} canal(is).`);
+      continue;
+    }
+    const data = await response.json().catch(() => ({}));
+    for (const user of Array.isArray(data.data) ? data.data : []) {
+      if (user.id) usersById.set(String(user.id), user);
+      if (user.login) usersByLogin.set(normalizeTwitchLogin(user.login), user);
     }
   }
 
   for (const item of lookups) {
     const stream = (item.userId && streamsByKey.get(`id:${item.userId}`))
       || (item.login && streamsByKey.get(`login:${item.login}`));
-    if (stream) result.set(item.live.id, twitchStatusFromStream(item.live, stream));
+    if (stream) {
+      const login = normalizeTwitchLogin(stream.user_login || item.login);
+      const user = (stream.user_id && usersById.get(String(stream.user_id))) || usersByLogin.get(login) || null;
+      const status = twitchStatusFromStream(item.live, stream);
+      status.avatarUrl = user?.profile_image_url || item.live.avatarUrl || null;
+      status.displayName = user?.display_name || status.displayName;
+      result.set(item.live.id, status);
+    }
   }
 
   return result;
@@ -607,6 +665,27 @@ function twitchPreviewUrl(status) {
   return `${base}${separator}v=${Date.now()}`;
 }
 
+function twitchStreamUrl(live, status = {}) {
+  const login = normalizeTwitchLogin(status.twitchLogin || live.twitchLogin || extractSlug(status.url || live.url));
+  return login ? `https://twitch.tv/${login}` : (status.url || live.url);
+}
+
+function twitchStreamerHandle(live, status = {}) {
+  return normalizeTwitchLogin(status.twitchLogin || live.twitchLogin || extractSlug(status.url || live.url)) || normalizeTwitchLogin(live.streamerName);
+}
+
+function formatLiveFooterDate(date = new Date()) {
+  const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const full = date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `vortex lives - Hoje às ${time} - ${full}`;
+}
+
 function formatDateTime(value) {
   if (!value) return 'N/A';
   const date = value instanceof Date ? value : new Date(value);
@@ -669,7 +748,8 @@ function buildLivePanelPayload(live, settings, status, { test = false, ended = f
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true)
     : new ButtonBuilder()
-      .setLabel('Assistir Live')
+      .setLabel('Watch Stream')
+      .setEmoji('↗️')
       .setStyle(ButtonStyle.Link)
       .setURL(streamUrl);
 
@@ -703,7 +783,7 @@ async function sendLiveAlert(client, live, settings, status, { test = false, end
   if (!channelId) return { ok: false, error: 'Canal nao configurado.' };
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (!channel?.isTextBased?.()) return { ok: false, error: 'Canal invalido.' };
-  const payload = buildLivePanelPayload(live, settings, status, { test, ended });
+  const payload = buildClassicLivePayload(live, settings, status, { test, ended });
   const existing = await fetchLiveAlertMessage(channel, messageId);
   try {
     if (existing) {
@@ -713,48 +793,42 @@ async function sendLiveAlert(client, live, settings, status, { test = false, end
     const message = await channel.send(payload);
     return { ok: true, messageId: message.id };
   } catch (error) {
-    logger.warn(`Lives: falha ao enviar painel Components V2 (${error.message}). Tentando embed classico.`);
+    logger.warn(`Lives: falha ao enviar alerta de live (${error.message}).`);
+    throw error;
   }
-
-  const fallbackPayload = buildClassicLivePayload(live, settings, status, { test, ended });
-  if (existing) {
-    const message = await existing.edit(fallbackPayload);
-    return { ok: true, messageId: message.id };
-  }
-  const message = await channel.send(fallbackPayload);
-  return { ok: true, messageId: message.id };
 }
 
 function buildClassicLivePayload(live, settings, status, { test = false, ended = false } = {}) {
   const roleId = liveAlertRoleId(live, settings);
-  const streamUrl = status.url || live.url;
-  const previewUrl = !ended ? twitchPreviewUrl(status) : null;
+  const streamUrl = twitchStreamUrl(live, status);
+  const previewUrl = !ended ? (twitchPreviewUrl(status) || TWITCH_FALLBACK_IMAGE) : TWITCH_FALLBACK_IMAGE;
+  const displayName = status.displayName || live.streamerName || twitchStreamerHandle(live, status) || 'Streamer';
+  const streamerHandle = twitchStreamerHandle(live, status) || displayName;
+  const title = status.title || live.lastLiveTitle || 'Live na Twitch';
+  const description = ended ? `@${streamerHandle} live encerrada.` : `[@${streamerHandle} ${title}](${streamUrl})`;
   const embed = new EmbedBuilder()
-    .setColor(ended ? 0x6b7280 : test ? 0x7c3aed : 0x9146ff)
+    .setColor(ended ? 0x6b7280 : test ? 0x7c3aed : TWITCH_NEON_PURPLE)
     .setAuthor({
-      name: ended ? `${live.streamerName} encerrou a live` : `${live.streamerName} esta ao vivo na Twitch!`,
-      iconURL: live.avatarUrl || undefined,
+      name: ended ? `${displayName} encerrou a live` : `${displayName} is now live on Twitch!`,
+      iconURL: status.avatarUrl || live.avatarUrl || undefined,
       url: streamUrl,
     })
-    .setTitle(ended ? 'Live encerrada' : (status.title || live.lastLiveTitle || 'Live na Twitch'))
-    .setURL(streamUrl)
+    .setDescription(description)
     .addFields(
-      { name: 'Categoria/Jogo', value: String(status.game || 'Grand Theft Auto V'), inline: true },
-      { name: 'Viewers', value: String(Number(status.viewerCount || 0)), inline: true },
-      { name: 'Tempo ao vivo', value: ended ? 'Encerrada' : formatLiveDuration(status.startedAt || live.lastLiveStartedAt), inline: true }
+      { name: 'Game', value: String(status.game || 'Nao informado'), inline: true },
+      { name: 'Viewers', value: Number(status.viewerCount || 0).toLocaleString('pt-BR'), inline: true }
     )
-    .setFooter({ text: `Vortex Lives • atualizado em ${formatDateTime(new Date())}` })
-    .setTimestamp();
-
-  if (previewUrl) embed.setImage(previewUrl);
+    .setImage(previewUrl)
+    .setFooter({ text: formatLiveFooterDate(new Date()) });
 
   return {
-    content: liveAlertContent(roleId, live, status, live.customMessage || settings.defaultMessage) || undefined,
+    content: formatAlertMention(roleId, live.guildId) || undefined,
     embeds: [embed],
     components: ended ? [] : [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setLabel('Assistir Live')
+          .setLabel('Watch Stream')
+          .setEmoji('↗️')
           .setStyle(ButtonStyle.Link)
           .setURL(streamUrl)
       ),
@@ -815,18 +889,7 @@ async function runLiveAlertCheck(client) {
   for (const { live, settings } of dueChecks) {
     const status = statusByLiveId.get(live.id) || { online: false };
     if (!status.online) {
-      if (live.status === 'online' && live.lastAlertMessageId) {
-        const endedResult = await sendLiveAlert(client, live, settings, {
-          title: live.lastLiveTitle || 'Live encerrada',
-          url: live.lastLiveUrl || live.url,
-          startedAt: live.lastLiveStartedAt,
-          viewerCount: 0,
-        }, { ended: true, messageId: live.lastAlertMessageId }).catch((error) => {
-          logger.warn(`Lives: falha ao encerrar painel de ${live.streamerName}: ${error.message}`);
-          return null;
-        });
-        if (endedResult?.messageId) live.lastAlertMessageId = endedResult.messageId;
-      }
+      if (live.status === 'online') logger.info(`Lives: ${live.streamerName} ficou offline.`);
       const alreadyOffline = live.status === 'offline'
         && !live.lastLiveTitle
         && !live.lastLiveUrl
@@ -855,7 +918,8 @@ async function runLiveAlertCheck(client) {
     let messageId = shouldCreate ? null : live.lastAlertMessageId;
     let sentOrUpdated = false;
     if (shouldCreate || shouldUpdate) {
-      logger.info(`Lives: ${live.streamerName} detectado online. Enviando alerta para canal ${live.alertChannelId || settings.defaultAlertChannelId || 'nao configurado'}.`);
+      logger.info(`Lives: ${live.streamerName} detectado online na Twitch.`);
+      logger.info(`Lives: enviando alerta para canal ${live.alertChannelId || settings.defaultAlertChannelId || 'nao configurado'}.`);
       const result = await sendLiveAlert(client, live, settings, status, { messageId }).catch((error) => {
         logger.warn(`Lives: falha ao enviar alerta de ${live.streamerName}: ${error.message}`);
         return null;
@@ -863,6 +927,7 @@ async function runLiveAlertCheck(client) {
       if (result?.messageId) {
         messageId = result.messageId;
         sentOrUpdated = true;
+        logger.info(`Lives: alerta enviado para ${live.streamerName}. Mensagem ${messageId}.`);
       } else if (result?.error) {
         logger.warn(`Lives: alerta de ${live.streamerName} nao enviado: ${result.error}`);
       } else {
@@ -872,7 +937,7 @@ async function runLiveAlertCheck(client) {
     await updateLiveAlertStatus(live, {
       status: 'online',
       lastLiveTitle: status.title || null,
-      lastLiveUrl: status.url || live.url,
+      lastLiveUrl: twitchStreamUrl(live, status),
       lastAnnouncedLiveId: (sentOrUpdated || (!shouldCreate && live.lastAnnouncedLiveId)) ? liveId : live.lastAnnouncedLiveId,
       lastAlertMessageId: messageId || live.lastAlertMessageId || null,
       lastAlertUpdatedAt: sentOrUpdated ? new Date() : live.lastAlertUpdatedAt,
