@@ -432,12 +432,58 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function PlatformIcon({ platform }: { platform: PlatformId }) {
-  if (platform === 'youtube') return <span className="text-lg font-black">▶</span>;
-  if (platform === 'tiktok') return <span className="text-lg font-black">♪</span>;
-  if (platform === 'kick') return <span className="text-lg font-black text-slate-950">K</span>;
-  if (platform === 'facebook') return <span className="text-xl font-black">f</span>;
-  if (platform === 'trovo') return <span className="text-lg font-black">T</span>;
-  return <span className="text-lg font-black">T</span>;
+  const common = 'h-7 w-7';
+
+  if (platform === 'youtube') {
+    return (
+      <svg className={common} viewBox="0 0 28 20" aria-hidden="true">
+        <path fill="currentColor" d="M27.4 3.1a3.5 3.5 0 0 0-2.5-2.5C22.7 0 14 0 14 0S5.3 0 3.1.6A3.5 3.5 0 0 0 .6 3.1C0 5.3 0 10 0 10s0 4.7.6 6.9a3.5 3.5 0 0 0 2.5 2.5c2.2.6 10.9.6 10.9.6s8.7 0 10.9-.6a3.5 3.5 0 0 0 2.5-2.5c.6-2.2.6-6.9.6-6.9s0-4.7-.6-6.9Z" />
+        <path fill="#fff" d="M11.2 14.3V5.7L18.5 10l-7.3 4.3Z" />
+      </svg>
+    );
+  }
+
+  if (platform === 'tiktok') {
+    return (
+      <svg className={common} viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="#25F4EE" d="M20 4h4.1c.3 2.4 1.7 4.3 4.2 5.2v4.2a10.4 10.4 0 0 1-4.4-1.1v8.1c0 4.8-3.4 8-8.2 8-4.1 0-7.4-2.7-7.4-6.8 0-4.5 3.7-7.2 8.5-6.5v4.3c-2.2-.7-4.1.2-4.1 2.1 0 1.6 1.3 2.6 3 2.6 2 0 3.2-1.1 3.2-3.7V4h1Z" />
+        <path fill="#FE2C55" d="M22.1 4h4.1c.3 2.4 1.7 4.3 4.2 5.2v4.2a10.4 10.4 0 0 1-4.4-1.1v8.1c0 4.8-3.4 8-8.2 8-4.1 0-7.4-2.7-7.4-6.8 0-4.5 3.7-7.2 8.5-6.5v4.3c-2.2-.7-4.1.2-4.1 2.1 0 1.6 1.3 2.6 3 2.6 2 0 3.2-1.1 3.2-3.7V4h1Z" />
+        <path fill="#fff" d="M21 4h4.1c.3 2.4 1.7 4.3 4.2 5.2v3.3a10.7 10.7 0 0 1-4.4-1.2v8.2c0 4.8-3.4 8-8.2 8-4.1 0-7.4-2.7-7.4-6.8 0-4.5 3.7-7.2 8.5-6.5v3.4c-2.2-.7-4.1.2-4.1 2.1 0 1.6 1.3 2.6 3 2.6 2 0 3.2-1.1 3.2-3.7V4h1Z" />
+      </svg>
+    );
+  }
+
+  if (platform === 'kick') {
+    return (
+      <svg className="h-7 w-7 text-slate-950" viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="currentColor" d="M6 4h7v6h3V7h3V4h7v8h-3v4h3v12h-7v-6h-3v3h-3v3H6V4Z" />
+      </svg>
+    );
+  }
+
+  if (platform === 'facebook') {
+    return (
+      <svg className="h-8 w-8" viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="currentColor" d="M20.7 17.8h3.7l.6-4.3h-4.3v-2.8c0-1.2.3-2 2.1-2H25V4.8c-.4-.1-1.8-.2-3.5-.2-3.5 0-5.9 2.1-5.9 6.1v3.4h-4v4.3h4V29h4.7V17.8Z" />
+      </svg>
+    );
+  }
+
+  if (platform === 'trovo') {
+    return (
+      <svg className={common} viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="currentColor" d="M5 5h22v15.4L20.4 27h-6.8L7 20.4V5Z" />
+        <path fill="#19d66b" d="M9.3 9h13.4v8.6l-4.2 4.2h-5L9.3 17.6V9Z" />
+        <path fill="#fff" d="M12 12.2h3.1v3.1H12v-3.1Zm5.9 0H21v3.1h-3.1v-3.1Zm-4.1 6.1h8.1l-2.4 2.4h-5.7v-2.4Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className={common} viewBox="0 0 32 32" aria-hidden="true">
+      <path fill="currentColor" d="M7 5h20v14L20 26h-5l-4 4v-4H7V5Zm4 4v12h4v4l4-4h5V9H11Zm9 4h2v5h-2v-5Zm-6 0h2v5h-2v-5Z" />
+    </svg>
+  );
 }
 
 function platformName(platform: string) {
