@@ -13,7 +13,7 @@ import { botVortexRouter, getMaintenanceStatus } from './routes/bot-vortex.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
-import { livesRouter } from './routes/lives.js';
+import { livesRouter, startLiveNotificationMonitor } from './routes/lives.js';
 import { memberAvatarHandler, membersRouter } from './routes/members.js';
 import { siteUsersRouter } from './routes/site-users.js';
 import { auditLog, rateLimit, requireTrustedOrigin } from './security.js';
@@ -75,6 +75,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 await ensureAdminUser();
 scheduleDailyBackup();
+startLiveNotificationMonitor();
 
 app.listen(env.apiPort, () => {
   console.log(`Vortex API running on port ${env.apiPort}`);

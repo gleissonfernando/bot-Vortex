@@ -10,7 +10,7 @@ const {
 } = require('discord.js');
 const { logger } = require('./logger');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
-const { formatDate: formatRealDate } = require('./pontoManager');
+const { formatDate: formatRealDate } = require('./dateTime');
 
 const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');

@@ -12,7 +12,6 @@ const { buildThemedPanelPayload } = require('./panelTheme');
 const { getUserProfile } = require('./profileManager');
 const { hasCommandRole, hasVortexLevel } = require('./permissions');
 const { safeDeferReply, safeEdit, safeReply, safeShowModal } = require('./safeReply');
-const { isPrimaryGuild } = require('./guildScope');
 const { logger } = require('./logger');
 
 const STORAGE_PATH = path.join(__dirname, '..', 'commands', 'bauStorage.json');
@@ -20,7 +19,6 @@ const BAU_BANNER_FILE_NAME = 'sistema-de-bau-banner.png';
 const BAU_BANNER_PATH = path.join(__dirname, '..', 'public', BAU_BANNER_FILE_NAME);
 const TIME_ZONE = 'America/Sao_Paulo';
 const MAX_EVENTS = 1500;
-const MAX_REPORTS = 90;
 const MAX_PANELS_PER_CHEST = 30;
 
 const CHESTS = {
@@ -74,7 +72,6 @@ function createEmptyGuildData() {
       gerencia: { id: 'gerencia', label: CHESTS.gerencia.label, items: {}, updatedAt: null },
     },
     events: [],
-    reports: [],
     panels: {},
   };
 }
@@ -97,7 +94,6 @@ function ensureGuildData(data, guildId) {
     guildData.chests[chestKey].label = CHESTS[chestKey].label;
   }
   if (!Array.isArray(guildData.events)) guildData.events = [];
-  if (!Array.isArray(guildData.reports)) guildData.reports = [];
   if (!guildData.panels || typeof guildData.panels !== 'object') guildData.panels = {};
   return guildData;
 }
@@ -142,27 +138,6 @@ function formatDate(value = new Date()) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-function getSaoPauloParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date).reduce((acc, part) => {
-    if (part.type !== 'literal') acc[part.type] = part.value;
-    return acc;
-  }, {});
-
-  return {
-    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
-    hour: parts.hour,
-    minute: parts.minute,
-  };
 }
 
 function toItemList(chest) {
@@ -403,7 +378,6 @@ function actionLabel(action) {
   if (action === 'withdraw') return 'Retirada';
   if (action === 'deposit') return 'Entrada';
   if (action === 'register') return 'Cadastro de produto';
-  if (action === 'daily_report') return 'Relatorio diario';
   return 'Movimento';
 }
 
@@ -550,84 +524,6 @@ async function handleBauModal(interaction) {
   });
 }
 
-function summarizeRecentEvents(events, sinceMs) {
-  const recent = events.filter((event) => new Date(event.createdAt).getTime() >= sinceMs);
-  const summary = {
-    withdrawQuantity: 0,
-    depositQuantity: 0,
-    registerQuantity: 0,
-    registeredItems: 0,
-    movementCount: recent.length,
-  };
-
-  for (const event of recent) {
-    const quantity = Math.max(0, Number(event.quantity) || 0);
-    if (event.action === 'withdraw') summary.withdrawQuantity += quantity;
-    if (event.action === 'deposit') summary.depositQuantity += quantity;
-    if (event.action === 'register') {
-      summary.registerQuantity += quantity;
-      summary.registeredItems += 1;
-    }
-  }
-
-  return summary;
-}
-
-function buildReportLines(guildData) {
-  return Object.keys(CHESTS).map((chestKey) => {
-    const chest = guildData.chests[chestKey];
-    const items = toItemList(chest);
-    return [
-      `**${CHESTS[chestKey].label}**`,
-      formatItemLines(items, 12),
-    ].join('\n');
-  }).join('\n\n');
-}
-
-async function sendDailyBauReportForGuild(client, guild, force = false) {
-  if (!force && !isPrimaryGuild(guild.id)) return false;
-
-  const data = readStorage();
-  const guildData = ensureGuildData(data, guild.id);
-  const now = new Date();
-  const parts = getSaoPauloParts(now);
-  const alreadySent = guildData.reports.some((report) => report.dateKey === parts.dateKey);
-  if (!force && alreadySent) return false;
-
-  const sinceMs = now.getTime() - 24 * 60 * 60 * 1000;
-  const summary = summarizeRecentEvents(guildData.events, sinceMs);
-  const chests = Object.keys(CHESTS).map((chestKey) => getChestSnapshot(guild.id, chestKey));
-  const report = {
-    id: `bau-report-${parts.dateKey}`,
-    dateKey: parts.dateKey,
-    createdAt: now.toISOString(),
-    generatedBy: client.user?.id || 'system',
-    chests,
-    summary,
-  };
-
-  guildData.reports.push(report);
-  guildData.reports = guildData.reports.slice(-MAX_REPORTS);
-  writeStorage(data);
-
-  logger.info(`Relatorio diario do bau gerado apenas no site: ${report.id}`);
-  return true;
-}
-
-let dailyInterval = null;
-
-function initDailyBauReport(client) {
-  if (dailyInterval) clearInterval(dailyInterval);
-  dailyInterval = setInterval(() => {
-    const parts = getSaoPauloParts();
-    if (!(parts.hour === '05' && parts.minute === '00')) return;
-
-    for (const guild of client.guilds.cache.values()) {
-      sendDailyBauReportForGuild(client, guild).catch((error) => logger.error('Erro no relatorio diario do bau:', error));
-    }
-  }, 30 * 1000);
-}
-
 module.exports = {
   CHESTS,
   STORAGE_PATH,
@@ -636,8 +532,6 @@ module.exports = {
   handleBauButton,
   handleBauModal,
   hasBauManagerPermission,
-  initDailyBauReport,
   registerBauPanel,
-  sendDailyBauReportForGuild,
   updateBauPanels,
 };

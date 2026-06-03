@@ -4,7 +4,7 @@ const { logger } = require('./logger');
 const { FIXED_LOG_CHANNEL } = require('./notifications');
 const { isSupabaseEnabled, supabaseRequest } = require('./supabaseClient');
 const { logDatabaseError } = require('./databaseErrorLogger');
-const { formatLocalDate, formatTime } = require('./pontoManager');
+const { formatLocalDate, formatTime } = require('./dateTime');
 
 const GUILD_CONFIGS_PATH = path.join(__dirname, '..', 'commands', 'guildConfigs.json');
 const configCache = new Map();

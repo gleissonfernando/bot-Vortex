@@ -1,7 +1,7 @@
 const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { formatDate } = require('./pontoManager');
+const { formatDate } = require('./dateTime');
 const { safeReply, safeEdit, safeDeferReply } = require('./safeReply');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 

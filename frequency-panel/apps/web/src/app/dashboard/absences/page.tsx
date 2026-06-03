@@ -1,10 +1,10 @@
 'use client';
 
-import { CalendarOff, CheckCircle2, Clock3, Download, FileText, RefreshCcw, Search, UserCheck } from 'lucide-react';
+import { CalendarOff, CheckCircle2, Clock3, FileText, RefreshCcw, Search, UserCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { StatCard } from '@/components/stat-card';
-import { apiFetch, downloadFile } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { formatDate, formatDay } from '@/lib/format';
 import type { AbsenceRecord } from '@/lib/types';
 
@@ -61,10 +61,6 @@ export default function AbsencesPage() {
     }
   }
 
-  async function exportReport() {
-    await downloadFile(`/absences/export?${query}`, 'ausencias.csv');
-  }
-
   useEffect(() => {
     const timer = setTimeout(load, 180);
     return () => clearTimeout(timer);
@@ -89,10 +85,6 @@ export default function AbsencesPage() {
             <RefreshCcw size={16} />
             Atualizar
           </button>
-          <button onClick={exportReport} className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-400">
-            <Download size={16} />
-            Exportar CSV
-          </button>
         </div>
       </header>
 
@@ -100,7 +92,7 @@ export default function AbsencesPage() {
         <StatCard label="Em ausencia" value={payload.metrics.active} helper="Ativas agora" icon={CalendarOff} />
         <StatCard label="Agendadas" value={payload.metrics.scheduled} helper="Aguardando inicio" icon={Clock3} />
         <StatCard label="Pendentes" value={payload.metrics.pending} helper="Aguardando decisao" icon={UserCheck} />
-        <StatCard label="No relatorio" value={payload.metrics.total} helper={loading ? 'Carregando' : 'Registros filtrados'} icon={FileText} />
+        <StatCard label="Registros" value={payload.metrics.total} helper={loading ? 'Carregando' : 'Filtros aplicados'} icon={FileText} />
       </section>
 
       <section className="soft-panel mb-5 grid gap-3 rounded-lg p-3 lg:grid-cols-[1fr_180px_170px_170px_auto]">
@@ -176,7 +168,7 @@ export default function AbsencesPage() {
       <section className="panel overflow-hidden rounded-lg">
         <div className="flex flex-col justify-between gap-2 border-b border-white/10 px-4 py-3 sm:flex-row sm:items-center">
           <div>
-            <h2 className="text-sm font-semibold text-white">Relatorio de ausencias</h2>
+            <h2 className="text-sm font-semibold text-white">Historico de ausencias</h2>
             <p className="text-xs text-slate-500">Solicitante, aprovador e periodo completo.</p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">

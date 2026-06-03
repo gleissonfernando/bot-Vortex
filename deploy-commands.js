@@ -16,12 +16,7 @@ if (!token || !clientId) {
 const commands = [];
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
-const DISCORD_REPORT_COMMANDS_DISABLED = new Set([
-    'relatorio',
-    'relatorio-ponto',
-    'ponto',
-    'painelponto',
-]);
+const DISCORD_REPORT_COMMANDS_DISABLED = new Set();
 
 for (const folder of commandFolders) {
     const commandsPath = path.join(foldersPath, folder);

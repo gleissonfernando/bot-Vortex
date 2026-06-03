@@ -21,23 +21,11 @@ const { connectDatabase, disconnectDatabase, getDatabaseStatus, isMongoRequired 
 const { setDiscordClient } = require('./utils/dashboardClient');
 const { notifyError, notifyBotDown, sendVortexLog, initChannelLogRecovery } = require('./utils/notifications');
 const { setupErrorHandlers } = require('./src/events/errorHandler');
-const { initStatusPanel } = require('./utils/pontoPanel');
 const { initAbsenceManager } = require('./utils/ausenciaManager');
 const { initProfileManager } = require('./utils/profileManager');
-const { initDailyPointTranscript } = require('./utils/dailyPointTranscript');
-const { initPointAutomation } = require('./utils/pointAutomation');
 const { initLiveAlertMonitor } = require('./utils/liveAlertManager');
 const { scanCurrentFiveMActivities } = require('./utils/fivemActivityAlertManager');
-const { initDailyBauReport } = require('./utils/bauManager');
 const { initMaintenanceConfigSync } = require('./utils/maintenanceMode');
-const { buildPointSiteHtml, buildPointSitePayload } = require('./utils/pointSite');
-const {
-    getPointTranscriptRecord,
-    validateTranscriptAccess,
-    registerTranscriptAccess,
-    buildTranscriptShell,
-    normalizeTranscriptId,
-} = require('./utils/pointTranscriptStore');
 
 const app = express();
 const API_PORT = Number(process.env.API_PORT || process.env.PORT || 3000);
@@ -112,12 +100,7 @@ client.commands = new Collection();
 setDiscordClient(client);
 setupErrorHandlers(client, { notifyError, notifyBotDown });
 
-const DISCORD_REPORT_COMMANDS_DISABLED = new Set([
-    'relatorio',
-    'relatorio-ponto',
-    'ponto',
-    'painelponto',
-]);
+const DISCORD_REPORT_COMMANDS_DISABLED = new Set();
 
 app.get(['/api/database/status', '/api/db/status'], (req, res) => {
     const status = getDatabaseStatus();
@@ -127,139 +110,6 @@ app.get(['/api/database/status', '/api/db/status'], (req, res) => {
         mongo: status,
         jsonStore: getMongoJsonStoreStatus(),
     });
-});
-
-function getPointSiteGuildId(req) {
-    const requestedGuildId = String(req.query.guildId || '').trim();
-    if (/^\d{15,25}$/.test(requestedGuildId)) return requestedGuildId;
-    if (/^\d{15,25}$/.test(config.guildId || '')) return String(config.guildId);
-    return client.guilds.cache.first()?.id || null;
-}
-
-function isPointSiteAuthorized(req) {
-    const configuredToken = String(process.env.POINT_SITE_TOKEN || '').trim();
-    if (!configuredToken) return true;
-    const receivedToken = String(req.query.token || req.headers['x-point-site-token'] || '').trim();
-    return receivedToken && receivedToken === configuredToken;
-}
-
-function buildPointApiPath(req, userId) {
-    const params = new URLSearchParams();
-    const guildId = String(req.query.guildId || '').trim();
-    const token = String(req.query.token || '').trim();
-    const month = String(req.query.month || '').trim();
-    const week = String(req.query.week || '').trim();
-    if (guildId) params.set('guildId', guildId);
-    if (token) params.set('token', token);
-    if (month) params.set('month', month);
-    if (week) params.set('week', week);
-    const query = params.toString();
-    return `/api/ponto/${userId}${query ? `?${query}` : ''}`;
-}
-
-app.get(['/api/ponto/:id', '/api/relatorio/ponto/:id'], async (req, res) => {
-    if (!isPointSiteAuthorized(req)) {
-        return res.status(401).json({ ok: false, error: 'Acesso nao autorizado.' });
-    }
-
-    const userId = String(req.params.id || '').trim();
-    if (!/^\d{15,25}$/.test(userId)) {
-        return res.status(400).json({ ok: false, error: 'ID de usuario invalido.' });
-    }
-
-    const guildId = getPointSiteGuildId(req);
-    if (!guildId) {
-        return res.status(404).json({ ok: false, error: 'Servidor nao encontrado.' });
-    }
-
-    const payload = await buildPointSitePayload({
-        client,
-        guildId,
-        userId,
-        month: req.query.month,
-        week: req.query.week,
-    }).catch((error) => {
-        logger.error('Erro ao carregar folha de ponto do site:', error);
-        return null;
-    });
-
-    if (!payload) return res.status(500).json({ ok: false, error: 'Erro ao carregar folha de ponto.' });
-    return res.json(payload);
-});
-
-function isTranscriptId(value) {
-    return /^vtx-[a-z0-9-]+$/i.test(normalizeTranscriptId(value));
-}
-
-function sendTranscriptPage(req, res, transcriptId) {
-    const normalizedId = normalizeTranscriptId(transcriptId);
-    const record = getPointTranscriptRecord(normalizedId);
-    const requiresQueryToken = req.path.startsWith('/vortex/transcript/');
-    const token = requiresQueryToken ? String(req.query.token || '').trim() : record?.token;
-    const access = validateTranscriptAccess(record, token);
-    if (!access.ok) {
-        return res.status(access.status).type('html').send(`<!doctype html><meta charset="utf-8"><title>Transcript Vortex</title><body>${access.message}</body>`);
-    }
-
-    registerTranscriptAccess(normalizedId, {
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
-    });
-    logger.info(`Transcript Vortex acessado: ${normalizedId} (${record.kind || 'point-report'})`);
-
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader(
-        'Content-Security-Policy',
-        [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' https: data:",
-            "connect-src 'self'",
-            "base-uri 'self'",
-            "frame-ancestors 'none'",
-        ].join('; ')
-    );
-    return res.type('html').send(buildTranscriptShell(record));
-}
-
-app.get(['/ponto/:id', '/relatorio/ponto/:id'], (req, res) => {
-    const requestedId = String(req.params.id || '').trim();
-    if (isTranscriptId(requestedId)) {
-        return sendTranscriptPage(req, res, requestedId);
-    }
-
-    if (!isPointSiteAuthorized(req)) {
-        return res.status(401).type('html').send('<!doctype html><meta charset="utf-8"><title>Acesso negado</title><body>Acesso nao autorizado.</body>');
-    }
-
-    const userId = requestedId;
-    if (!/^\d{15,25}$/.test(userId)) {
-        return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>ID invalido</title><body>ID de usuario invalido.</body>');
-    }
-
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader(
-        'Content-Security-Policy',
-        [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' https: data:",
-            "connect-src 'self'",
-            "base-uri 'self'",
-            "frame-ancestors 'none'",
-        ].join('; ')
-    );
-    return res.type('html').send(buildPointSiteHtml({ userId, apiPath: buildPointApiPath(req, userId) }));
-});
-
-app.get('/vortex/transcript/ponto/:id', (req, res) => {
-    return sendTranscriptPage(req, res, req.params.id);
-});
-
-app.get('/relatorio/:id', (req, res) => {
-    return sendTranscriptPage(req, res, req.params.id);
 });
 
 // Carregar Comandos
@@ -276,7 +126,7 @@ for (const folder of commandFolders) {
             const command = require(filePath);
             if (command.data && command.execute) {
                 if (DISCORD_REPORT_COMMANDS_DISABLED.has(command.data.name)) {
-                    console.log(`[VORTEX] Comando de relatorio desativado no Discord: /${command.data.name}`);
+                    console.log(`[VORTEX] Comando desativado no Discord: /${command.data.name}`);
                     continue;
                 }
                 client.commands.set(command.data.name, command);
@@ -382,12 +232,8 @@ client.once(Events.ClientReady, async () => {
     } else {
         console.log('[VORTEX] Registro de comandos no startup desativado.');
     }
-    initStatusPanel(client);
     initAbsenceManager(client);
     initProfileManager(client);
-    initDailyPointTranscript(client);
-    initDailyBauReport(client);
-    initPointAutomation(client);
     initLiveAlertMonitor(client);
     initChannelLogRecovery(client);
     if (FIVEM_STARTUP_SCAN_ENABLED) {

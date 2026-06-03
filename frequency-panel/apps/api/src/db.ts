@@ -75,6 +75,9 @@ async function ensureIndexes(db: Db) {
     db.collection('site_users').createIndex({ guild_id: 1, discord_id: 1 }, { unique: true }),
     db.collection('site_users').createIndex({ status: 1, system_role: 1 }),
     db.collection('site_user_audit_logs').createIndex({ guild_id: 1, target_discord_id: 1, created_at: -1 }),
+    db.collection('live_notifications').createIndex({ guild_id: 1, platform: 1, channel_url: 1 }, { unique: true }),
+    db.collection('live_notifications').createIndex({ guild_id: 1, last_notified_at: -1 }),
+    db.collection('live_notifications').createIndex({ last_checked_at: 1 }),
     db.collection('jsondocuments').createIndex({ key: 1 }, { unique: true })
   ]);
 }

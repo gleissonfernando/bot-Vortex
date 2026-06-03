@@ -11,7 +11,6 @@ const PANEL_CARDS = [
   { key: 'dashboard', label: 'Dashboard', emoji: '📊', color: '#7000FF', summary: 'Visão geral do servidor, cadastros e acessos.' },
   { key: 'roles', label: 'Cargos Vortex', emoji: '🛡️', color: '#5865F2', summary: 'Níveis de acesso e cargos automáticos.' },
   { key: 'config', label: 'Configurações', emoji: '⚙️', color: '#00D9FF', summary: 'Ajustes gerais, logs e permissões.' },
-  { key: 'points', label: 'Pontos', emoji: '🕒', color: '#ED4245', summary: 'Folhas, ajustes e automação de ponto.' },
   { key: 'absence', label: 'Ausências', emoji: '📆', color: '#7000FF', summary: 'Cargo, retorno e fluxo de ausência.' },
   { key: 'commands', label: 'Comandos', emoji: '⌨️', color: '#00D9FF', summary: 'Permissões de uso por comando.' },
   { key: 'logs', label: 'Logs', emoji: '🧾', color: '#00D9FF', summary: 'Canal principal e logs filtrados.' },
@@ -19,7 +18,6 @@ const PANEL_CARDS = [
   { key: 'faction', label: 'Hierarquia FAC', emoji: '🏛️', color: '#7000FF', summary: 'Hierarquia da fac atualizada automaticamente.' },
   { key: 'profiles', label: 'Perfis', emoji: '👤', color: '#00D9FF', summary: 'Perfis, cobranças e links do usuário.' },
   { key: 'maintenance', label: 'Manutenção', emoji: '🛠️', color: '#FF0055', summary: 'Modo manutenção e avisos do sistema.' },
-  { key: 'reports', label: 'Relatórios', emoji: '📑', color: '#22c55e', summary: 'Relatórios de ponto e transcript web.' },
 ];
 
 function getPanelCard(key) {
@@ -35,7 +33,7 @@ function buildOverviewEmbed(interaction) {
     })
     .setTitle('Painéis da Vortex')
     .setDescription([
-      'A Vortex organiza seus sistemas em painéis de controle para administração, ponto, perfis, ausências e automações.',
+      'A Vortex organiza seus sistemas em painéis de controle para administração, perfis, ausências e automações.',
       '',
       'Selecione um painel para ver o resumo do que ele faz.',
     ].join('\n'))
@@ -47,7 +45,7 @@ function buildOverviewEmbed(interaction) {
       })),
       {
         name: 'Como funciona',
-        value: 'O sistema junta o painel do Discord com relatórios web, logs automáticos e configurações centralizadas no `/painel`.',
+        value: 'O sistema junta o painel do Discord com logs automáticos e configurações centralizadas no `/painel`.',
         inline: false,
       }
     )
@@ -119,3 +117,5 @@ module.exports = {
     }));
   },
 };
+
+

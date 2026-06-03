@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
-const { formatDate } = require('./pontoManager');
+const { formatDate } = require('./dateTime');
 const { buildThemedPanelPayload } = require('./panelTheme');
 const { isPrimaryGuild } = require('./guildScope');
 const { logger } = require('./logger');

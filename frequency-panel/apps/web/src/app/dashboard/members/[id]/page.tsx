@@ -1,31 +1,21 @@
 'use client';
 
-import { ArrowLeft, CalendarDays, Clock, Download, FileText, LineChart, Radio, RefreshCcw, UserCheck } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Clock, LineChart, Radio, RefreshCcw, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { PresenceChart } from '@/components/presence-chart';
 import { StatCard } from '@/components/stat-card';
-import { apiFetch, downloadFile } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { formatDate, formatDay, formatSeconds } from '@/lib/format';
 import { subscribeDashboardEvents } from '@/lib/realtime';
 import type { AttendanceSession, FrequencyDay, Member } from '@/lib/types';
 
-const tabs = ['Visao geral', 'Ponto', 'Frequencia', 'Ausencias', 'Relatorios', 'Graficos'];
+const tabs = ['Visao geral', 'Ponto', 'Frequencia', 'Ausencias', 'Graficos'];
 
 type MemberPayload = {
   member: Member;
-  report: {
-    summary: {
-      total_sessions: number;
-      open_sessions: number;
-      total_seconds: number;
-      active_days: number;
-      last_activity_at?: string | null;
-    };
-    days: FrequencyDay[];
-  };
 };
 
 export default function MemberProfilePage() {
@@ -65,10 +55,6 @@ export default function MemberProfilePage() {
     }
   }
 
-  async function exportReport() {
-    await downloadFile(`/members/${id}/export?${query}`, `frequencia-${id}.csv`);
-  }
-
   useEffect(() => {
     load();
   }, [id, query]);
@@ -76,7 +62,7 @@ export default function MemberProfilePage() {
   useEffect(() => subscribeDashboardEvents(load), [id, query]);
 
   const member = payload?.member;
-  const summary = payload?.report.summary;
+  const summary = buildSummary(sessions, frequency);
   const displayName = discordDisplayName(member);
 
   return (
@@ -104,10 +90,6 @@ export default function MemberProfilePage() {
           <button onClick={load} className="inline-flex items-center gap-2 rounded-lg border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-100">
             <RefreshCcw size={16} />
             Atualizar
-          </button>
-          <button onClick={exportReport} className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-400">
-            <Download size={16} />
-            Exportar
           </button>
         </div>
       </header>
@@ -171,7 +153,6 @@ export default function MemberProfilePage() {
       {activeTab === 'Ponto' ? <SessionsTable sessions={sessions} /> : null}
       {activeTab === 'Frequencia' ? <FrequencyTable days={frequency} /> : null}
       {activeTab === 'Ausencias' ? <AbsenceTable absences={absences} /> : null}
-      {activeTab === 'Relatorios' ? <ReportSummary summary={summary} sessions={sessions} onExport={exportReport} /> : null}
       {activeTab === 'Graficos' ? (
         <section className="panel rounded-lg p-5">
           <h2 className="mb-4 font-semibold text-white">Grafico de presenca</h2>
@@ -299,26 +280,20 @@ function AbsenceTable({ absences }: { absences: any[] }) {
   );
 }
 
-function ReportSummary({ summary, sessions, onExport }: { summary: MemberPayload['report']['summary'] | undefined; sessions: AttendanceSession[]; onExport: () => void }) {
-  return (
-    <section className="panel rounded-lg p-5">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <h2 className="font-semibold text-white">Relatorio do periodo</h2>
-          <p className="text-sm text-slate-400">Resumo pronto para exportacao.</p>
-        </div>
-        <button onClick={onExport} className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white">
-          <FileText size={16} />
-          Baixar CSV
-        </button>
-      </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
-        <StatCard label="Sessoes" value={summary?.total_sessions ?? 0} icon={Radio} />
-        <StatCard label="Tempo total" value={formatSeconds(summary?.total_seconds || 0)} icon={Clock} />
-        <StatCard label="Linhas exportadas" value={sessions.length} icon={FileText} />
-      </div>
-    </section>
-  );
+function buildSummary(sessions: AttendanceSession[], frequency: FrequencyDay[]) {
+  const lastActivityAt = sessions.reduce<string | null>((latest, session) => {
+    const current = session.closed_at || session.opened_at || null;
+    if (!current) return latest;
+    if (!latest) return current;
+    return String(current).localeCompare(String(latest)) > 0 ? current : latest;
+  }, null);
+
+  return {
+    total_sessions: sessions.length,
+    total_seconds: sessions.reduce((sum, session) => sum + Number(session.total_seconds || 0), 0),
+    active_days: frequency.filter((day) => Number(day.total_seconds || 0) > 0 || Number(day.points || day.sessions || 0) > 0).length,
+    last_activity_at: lastActivityAt
+  };
 }
 
 function Table({ title, children }: { title: string; children: React.ReactNode }) {

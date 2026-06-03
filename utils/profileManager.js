@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
-const { formatDate, formatDuration } = require('./pontoManager');
+const { formatDate, formatDuration } = require('./dateTime');
 const { logger } = require('./logger');
 const { deleteApprovedSetChannel, syncApprovedSetChannel } = require('./approvedSetChannels');
 const { applyApprovedHierarchy, resetToPendingHierarchy } = require('./vortexHierarchy');
@@ -10,7 +10,6 @@ const { isSilentLogUser } = require('./notifications');
 const { refreshMongoJsonKeys } = require('./mongoJsonStore');
 const { queueMemberSync, queuePointSnapshotSync } = require('./frequencyDashboardSync');
 const { cleanupDeletedUserDatabaseData, cleanupLocalJsonUserData } = require('./userDataCleanup');
-const { setOnlineChannelAccess, updateStatusPanel } = require('./pontoPanel');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'commands', 'perfis.json');
 const PROFILE_CONFIG_PATH = path.join(__dirname, '..', 'commands', 'perfisConfig.json');
@@ -1049,12 +1048,6 @@ async function deleteUserProfile(guild, userId, reason = 'Usuário saiu do servi
     logger.error('Erro ao limpar dados do usuario removido no banco:', error);
     return { ok: false, reason: error.message };
   });
-  await setOnlineChannelAccess(guild.client, normalizedGuildId, normalizedUserId, false).catch((error) => {
-    logger.error('Erro ao remover acesso do usuario ao canal online:', error);
-  });
-  await updateStatusPanel(guild.client, normalizedGuildId, { forceVisibilitySync: true }).catch((error) => {
-    logger.error('Erro ao atualizar painel de ponto apos apagar cadastro:', error);
-  });
   queueFrequencyDashboardRefresh(guild);
 
   let dmSent = false;
@@ -1147,3 +1140,4 @@ module.exports = {
   ensureAllProfileChannelAccess,
   initProfileManager,
 };
+

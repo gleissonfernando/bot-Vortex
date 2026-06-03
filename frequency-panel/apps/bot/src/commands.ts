@@ -4,25 +4,6 @@ import { env } from './env.js';
 export async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
-      .setName('ponto')
-      .setDescription('Registra entrada ou saida de ponto')
-      .addStringOption((option) =>
-        option
-          .setName('acao')
-          .setDescription('Escolha a acao')
-          .setRequired(true)
-          .addChoices(
-            { name: 'Entrada', value: 'open' },
-            { name: 'Saida', value: 'close' }
-          )
-      )
-      .addStringOption((option) =>
-        option
-          .setName('observacao')
-          .setDescription('Observacao opcional')
-          .setRequired(false)
-      ),
-    new SlashCommandBuilder()
       .setName('sync-membros')
       .setDescription('Sincroniza membros do Discord com o painel')
   ].map((command) => command.toJSON());

@@ -84,7 +84,7 @@ function pickGuildData(storage: Record<string, any>, requestedGuildId: string) {
   const guildId = requestedGuildId || fallbackGuildId;
   return {
     guildId,
-    guildData: guilds[guildId] || { chests: {}, events: [], reports: [] }
+    guildData: guilds[guildId] || { chests: {}, events: [] }
   };
 }
 
@@ -96,13 +96,11 @@ bauRouter.get('/', (req, res) => {
   const { guildId, guildData } = pickGuildData(storage, requestedGuildId);
   const chests = [normalizeChest(guildData, 'membros'), normalizeChest(guildData, 'gerencia')];
   const events = Array.isArray(guildData.events) ? guildData.events.slice(-300).reverse().map(normalizeEvent) : [];
-  const reports = Array.isArray(guildData.reports) ? guildData.reports.slice(-60).reverse() : [];
 
   res.json({
     ok: true,
     guildId,
     chests,
-    events,
-    reports
+    events
   });
 });

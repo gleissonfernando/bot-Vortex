@@ -13,13 +13,11 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  AttachmentBuilder
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { sendVortexLog, setChannelLogsEnabled } = require('../../utils/notifications');
-const { getUserPoint, deleteUserPoint, adjustPointSessionFlexible, closePoint, formatDuration, formatDate } = require('../../utils/pontoManager');
-const { setOnlineChannelAccess, syncOnlineChannelVisibility, updateStatusPanel } = require('../../utils/pontoPanel');
+const { formatDuration, formatDate } = require('../../utils/dateTime');
 const {
   safeReply,
   safeEdit,
@@ -27,7 +25,6 @@ const {
   safeShowModal,
   safeUpdate: safeInteractionUpdate,
 } = require('../../utils/safeReply');
-const { buildAllPointsReportPayload } = require('../../utils/pontoReport');
 const { getAbsenceConfig, saveAbsenceConfig, getActiveGuildAbsences, updateAbsenceReturn, formatDate: formatAbsenceDate, DEFAULT_ABSENCE_LOG_CHANNEL_ID } = require('../../utils/ausenciaManager');
 const {
   getGuildProfiles,
@@ -41,11 +38,7 @@ const {
   addBillingExemptUserId,
   deleteUserProfile,
 } = require('../../utils/profileManager');
-const { readAutomationConfig, updateAutomationConfig, runPointAutomationCheck, openPointCorrectionForClosedPoint, deletePointCorrectionChannels } = require('../../utils/pointAutomation');
 const { hasAnyVortexRole, hasVortexLevel, hasCommandRole, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
-const { getPointAllowedRoleIds, setPointAllowedRoleIds } = require('../../utils/pointRoleConfig');
-const { createPointTranscriptRecord } = require('../../utils/pointTranscriptStore');
-const { createPointActionTranscriptSummary } = require('../../utils/pointTranscriptNotifier');
 const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
   FACTION_HIERARCHY_ROLES,
@@ -84,13 +77,9 @@ const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const LOGS_MANAGER_IDS = ['289227932432334869'];
-const DEFAULT_POINT_ACTION_CHANNEL_ID = '1498087608390127806';
-const DEFAULT_POINT_ONLINE_CHANNEL_ID = '1498087749784178708';
-const DEFAULT_POINT_ADJUST_CATEGORY_ID = '1498087442304073870';
 const UPDATES_PATH = path.join(__dirname, '..', '..', 'SISTEMA_ATUALIZACOES.md');
 const commandPermissionSelections = new Map();
 const vortexRoleModeSelections = new Map();
-const pointReadjustSelections = new Map();
 const profileRegisterSelections = new Map();
 const logChannelSelections = new Map();
 const factionHierarchySelections = new Map();
@@ -115,11 +104,9 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/clipe', value: 'clipe', description: 'Quem pode enviar clipes' },
     { label: '/set', value: 'set', description: 'Quem pode usar o sistema de set' },
     { label: '/serve', value: 'serve', description: 'Quem pode consultar ou usar serve' },
-    { label: '/registro', value: 'registro', description: 'Quem pode consultar registro de ponto' },
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
-    { label: '/ativarponto', value: 'ativarponto', description: 'Quem pode publicar o painel de ponto' },
     { label: '/bau membro', value: 'bau', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: '/bau-membros', value: 'bau-membros', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: 'Acesso ao site', value: 'cadastrar-site', description: 'Quem pode cadastrar usuarios no site' },
@@ -131,11 +118,9 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Configurações - Set', value: 'config_set', description: 'Cargos liberados para o sistema de set', emoji: '📝' },
     { label: 'Configurações - Avisos', value: 'config_avisos', description: 'Avisos por DM e cargo mencionado', emoji: '🔔' },
     { label: 'Manutenção', value: 'tab_manutencao', description: 'Modo manutenção e ajustes gerais', emoji: '🛠️' },
-    { label: 'Pontos', value: 'tab_pontos', description: 'Folhas, reajustes e cargos de ponto', emoji: '🕒' },
     { label: 'Ausências', value: 'tab_ausencias', description: 'Cargos, retornos e mensagens de ausência', emoji: '📆' },
     { label: 'Comandos', value: 'tab_commands', description: 'Permissões por comando ou ação', emoji: '⌨️' },
     { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
-    { label: 'Cobranças', value: 'tab_cobrancas', description: 'Cobranças e penalidades automáticas', emoji: '💸' },
     { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
     { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
     { label: 'Hierarquia FAC', value: 'tab_fac_hierarchy', description: 'Painel automatico da hierarquia da fac', emoji: '🏛️' },
@@ -185,11 +170,9 @@ function getPanelTabMeta(tab) {
         case 'config_avisos': return { icon: '🔔', title: 'CONFIGURAÇÕES | AVISOS' };
         case 'config_logs': return { icon: '🧾', title: 'CONFIGURAÇÕES | LOGS' };
         case 'tab_manutencao': return { icon: '🛠️', title: 'MANUTENÇÃO' };
-        case 'tab_pontos': return { icon: '🕒', title: 'GESTÃO DE PONTOS' };
         case 'tab_ausencias': return { icon: '📆', title: 'GESTÃO DE AUSÊNCIAS' };
         case 'tab_commands': return { icon: '⌨️', title: 'PERMISSÕES DE COMANDOS' };
         case 'tab_perfil': return { icon: '👤', title: 'PERFIS' };
-        case 'tab_cobrancas': return { icon: '💸', title: 'COBRANÇAS E PENALIDADES' };
         case 'tab_mirror_messages': return { icon: '💬', title: 'MENSAGENS EM PAINEL' };
         case 'tab_adjust_calls': return { icon: '🔧', title: 'AJUSTE DE CALLS' };
         case 'tab_visual': return { icon: '🎨', title: 'VISUAL DOS PAINÉIS' };
@@ -627,7 +610,7 @@ async function safeUpdate(interaction, options) {
     }
 }
 
-async function reportPanelError(client, error, context = 'Painel') {
+async function logPanelError(client, error, context = 'Painel') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(PANEL_ERROR_LOG_CHANNEL_ID).catch(() => null);
     if (!channel?.isTextBased?.()) return false;
@@ -709,43 +692,6 @@ function buildProfileTable(title, profiles) {
         separator,
         rows.length ? rows.join('\n') : 'Nenhum usuario nesta categoria.',
     ].join('\n');
-}
-
-function buildRegisteredProfilesReport(guild, profiles) {
-    const sortedProfiles = Object.values(profiles)
-        .sort((a, b) => String(a.nomeGame || a.displayName || '').localeCompare(String(b.nomeGame || b.displayName || ''), 'pt-BR'));
-    const setProfiles = sortedProfiles.filter((profile) => !profile.registeredManually);
-    const manualProfiles = sortedProfiles.filter((profile) => profile.registeredManually);
-    const missingChannelProfiles = sortedProfiles.filter((profile) => !profile.callChannelId);
-
-    return [
-        `RELATORIO DE USUARIOS CADASTRADOS - ${guild.name}`,
-        '='.repeat(72),
-        `Total cadastrado: ${sortedProfiles.length}`,
-        `Aprovados no /set: ${setProfiles.length}`,
-        `Cadastro manual: ${manualProfiles.length}`,
-        `Sem call/canal vinculado: ${missingChannelProfiles.length}`,
-        `Gerado em: ${formatDate(new Date())}`,
-        '',
-        buildProfileTable('CADASTROS APROVADOS NO /SET', setProfiles),
-        '',
-        buildProfileTable('CADASTROS MANUAIS', manualProfiles),
-        '',
-        missingChannelProfiles.length
-            ? buildProfileTable('ATENCAO - CADASTROS SEM CALL/CANAL', missingChannelProfiles)
-            : 'ATENCAO - CADASTROS SEM CALL/CANAL\nNenhum cadastro sem call/canal vinculado.',
-    ].join('\n');
-}
-
-function formatTranscriptPeriod(startKey, endKey) {
-    const [sy, sm, sd] = String(startKey || '').split('-');
-    const [ey, em, ed] = String(endKey || '').split('-');
-    if (!sy || !sm || !sd || !ey || !em || !ed) return 'Periodo indisponivel';
-    return `${sd}/${sm}/${sy} ate ${ed}/${em}/${ey}`;
-}
-
-function formatTranscriptRecordPeriod(record) {
-    return record?.periodLabel || formatTranscriptPeriod(record?.weekStartKey, record?.weekEndKey);
 }
 
 async function getRealtimeGuildStats(guild) {
@@ -941,283 +887,6 @@ module.exports = {
       return renderDashboard(interaction, 'tab_visual', true);
     }
 
-    if (customId === 'show_all_points') {
-      return safeReply(interaction, {
-        content: 'Relatorios de ponto foram movidos para o site.',
-        ephemeral: true,
-      });
-      await safeDeferReply(interaction, { ephemeral: true });
-      const payload = await buildAllPointsReportPayload(interaction.guild);
-
-      sendVortexLog(interaction.client, {
-          title: 'Relatorio Completo de Pontos Gerado',
-          description: `O relatório completo de pontos foi gerado por <@${interaction.user.id}> (${interaction.user.id}).`,
-          color: '#7000FF',
-          type: 'PONTO',
-          userId: interaction.user.id
-      }).catch(() => {});
-
-      return safeEdit(interaction, payload);
-    }
-
-    if (customId === 'show_user_point_sheet') {
-      return safeReply(interaction, {
-        content: 'Folhas e relatorios de ponto foram movidos para o site.',
-        ephemeral: true,
-      });
-      await safeDeferReply(interaction, { ephemeral: true });
-      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
-
-      const target = await interaction.client.users.fetch(userId).catch(() => null);
-      if (!target) return safeEdit(interaction, { content: '❌ Não consegui encontrar esse usuário.' });
-
-      const data = await getUserPoint(interaction.guild.id, userId).catch(() => null);
-      if (!data || (!data.activePointStartedAt && !Array.isArray(data.sessions))) {
-        return safeEdit(interaction, { content: `❌ <@${userId}> ainda não possui ponto registrado.` });
-      }
-
-      let transcript = null;
-      try {
-        transcript = await createPointTranscriptRecord({
-          guild: interaction.guild,
-          target,
-          generatedBy: interaction.user,
-        });
-      } catch (error) {
-        await reportPanelError(interaction.client, error, 'Gerar folha/transcript de ponto');
-        return safeEdit(interaction, {
-          content: '❌ Não consegui salvar o transcript web deste usuário. O erro foi enviado para os logs.',
-        });
-      }
-
-      sendVortexLog(interaction.client, {
-        title: 'Folha de Ponto Gerada',
-        description: `A folha/transcript de <@${userId}> (${userId}) foi gerada por <@${interaction.user.id}> (${interaction.user.id}).`,
-        color: '#7000FF',
-        type: 'PONTO',
-        userId: interaction.user.id,
-      }).catch(() => {});
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('Ver Transcript')
-          .setStyle(ButtonStyle.Link)
-          .setURL(transcript.url)
-      );
-
-      const { record } = transcript;
-      const transcriptEmbed = new EmbedBuilder()
-        .setColor('#005DFF')
-        .setAuthor({
-          name: 'VORTEX | TRANSCRIPT DE PONTO',
-          iconURL: interaction.client.user?.displayAvatarURL?.() || undefined,
-        })
-        .setTitle('Relatorio de Ponto Gerado')
-        .setDescription([
-          `Folha/transcript de <@${userId}> gerada com sucesso.`,
-          '',
-          'O historico completo fica disponivel apenas no link web abaixo.',
-        ].join('\n'))
-        .addFields(
-          { name: 'Usuario', value: `<@${userId}>`, inline: true },
-          { name: 'Periodo', value: formatTranscriptRecordPeriod(record), inline: true },
-          { name: 'Cargo/faccao', value: record.factionName || 'N/A', inline: true },
-          { name: 'Total semanal', value: record.summary?.weeklyTotal || '0h', inline: true },
-          { name: 'Total mensal', value: record.summary?.monthlyTotal || '0h', inline: true },
-          { name: 'Dias trabalhados', value: String(record.summary?.daysWithPoints ?? 0), inline: true },
-          { name: 'Ajustes manuais', value: String(record.summary?.manualAdjustments ?? 0), inline: true },
-          { name: 'Transcript ID', value: `\`${record.id}\``, inline: true },
-          { name: 'Expira em', value: record.expiresAt ? formatDate(record.expiresAt) : 'N/A', inline: true }
-        )
-        .setFooter({ text: 'Vortex Bot • Transcript Web' })
-        .setTimestamp();
-
-      if (target.displayAvatarURL) {
-        transcriptEmbed.setThumbnail(target.displayAvatarURL({ size: 256 }));
-      }
-
-      return safeEdit(interaction, buildThemedPanelPayload('painelponto', transcriptEmbed, {
-        components: [row],
-        allowedMentions: { users: [userId] },
-      }));
-    }
-
-    if (customId === 'toggle_point_monitor') {
-      const current = readAutomationConfig();
-      const next = updateAutomationConfig({ POINT_MONITOR_ENABLED: !current.pointMonitorEnabled });
-      return renderDashboard(interaction, 'tab_pontos', true);
-    }
-
-    if (customId === 'toggle_offline_charge') {
-      const current = readAutomationConfig();
-      const next = updateAutomationConfig({ POINT_OFFLINE_CHARGE_ENABLED: !current.offlineChargeEnabled });
-      return renderDashboard(interaction, 'tab_pontos', true);
-    }
-
-    if (customId === 'run_point_automation') {
-      await safeDeferReply(interaction, { ephemeral: true });
-      await runPointAutomationCheck(interaction.client, { force: true });
-      return safeEdit(interaction, { content: '✅ Verificação de ponto, perfil e cobranças executada agora.' });
-    }
-
-    if (customId === 'close_selected_point') {
-      await safeDeferReply(interaction, { ephemeral: true });
-      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
-      const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId];
-      if (!pointData?.activePointStartedAt) {
-        return safeEdit(interaction, { content: `❌ <@${userId}> não está com ponto aberto.` });
-      }
-      const confirmRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`confirm_close_point_${userId}`)
-          .setLabel('Confirmar fechamento')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('cancel_close_point')
-          .setLabel('Cancelar')
-          .setStyle(ButtonStyle.Secondary)
-      );
-      return safeEdit(interaction, {
-        content: [
-          '⚠️ Confirme o fechamento manual do ponto.',
-          `Usuário: <@${userId}>`,
-          `Aberto desde: ${formatDate(pointData.activePointStartedAt)}`,
-          '',
-          'Ao confirmar, o ponto será fechado agora, o usuário receberá DM e será aberto um canal de correção de ponto.',
-        ].join('\n'),
-        components: [confirmRow],
-      });
-    }
-
-    if (customId === 'delete_point_correction_channel') {
-      await safeDeferReply(interaction, { ephemeral: true });
-      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
-      const deleted = await deletePointCorrectionChannels(interaction.client, interaction.guild, userId, interaction.user.id);
-
-      sendVortexLog(interaction.client, {
-        title: 'Call de ajuste de ponto deletada',
-        description: [
-          `Usuário: <@${userId}> (${userId})`,
-          `Gerente: <@${interaction.user.id}>`,
-          `Canais deletados: ${deleted.length ? deleted.map((id) => `#${id}`).join(', ') : 'nenhum'}`,
-        ].join('\n'),
-        color: '#ED4245',
-        type: 'PONTO',
-        userId: interaction.user.id,
-      }).catch(() => {});
-
-      return safeEdit(interaction, {
-        content: deleted.length
-          ? `✅ Call/canal de ajuste de <@${userId}> deletado. Total: ${deleted.length}.`
-          : `⚠️ Nenhuma call/canal de ajuste encontrada para <@${userId}>.`,
-      });
-    }
-
-    if (customId === 'clear_point_no_billing') {
-      await safeDeferReply(interaction, { ephemeral: true });
-      const userId = pointReadjustSelections.get(getSelectionKey(interaction));
-      if (!userId) return safeEdit(interaction, { content: '❌ Selecione um usuário primeiro.' });
-
-      const existed = await deleteUserPoint(interaction.guild.id, userId);
-      const exempt = addBillingExemptUserId(userId, interaction.user.id);
-      if (!exempt.ok) return safeEdit(interaction, { content: `❌ ${exempt.message}` });
-
-      await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
-      await updateStatusPanel(interaction.client, interaction.guild.id);
-      sendVortexLog(interaction.client, {
-        title: 'Ponto deletado e cobrança bloqueada',
-        description: [
-          `Usuário: <@${userId}> (${userId})`,
-          `Gerente: <@${interaction.user.id}>`,
-          `Registro de ponto existia: ${existed ? 'sim' : 'não'}`,
-          'O usuário foi colocado na lista de isenção de cobranças automáticas.',
-        ].join('\n'),
-        color: '#FF0055',
-        type: 'PONTO',
-        userId: interaction.user.id,
-      }).catch(() => {});
-
-      return safeEdit(interaction, {
-        content: [
-          existed
-            ? `✅ Dados de ponto de <@${userId}> deletados.`
-            : `⚠️ Nenhum dado de ponto encontrado para <@${userId}>.`,
-          '✅ Cobranças automáticas bloqueadas para esse usuário.',
-        ].join('\n'),
-      });
-    }
-
-    if (customId === 'cancel_close_point') {
-      return safeReply(interaction, { content: '✅ Fechamento manual cancelado.', ephemeral: true });
-    }
-
-    if (customId.startsWith('confirm_close_point_')) {
-      await safeDeferReply(interaction, { ephemeral: true });
-      const userId = customId.replace('confirm_close_point_', '');
-      const pointBeforeClose = loadJSON(path.join(__dirname, '..', 'pontos.json'))[interaction.guild.id]?.[userId] || {};
-      const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
-      const result = await closePoint(interaction.guild.id, userId);
-      if (result.action === 'already_closed') {
-        return safeEdit(interaction, { content: `❌ <@${userId}> não está com ponto aberto.` });
-      }
-      await setOnlineChannelAccess(interaction.client, interaction.guild.id, userId, false).catch(() => null);
-      await updateStatusPanel(interaction.client, interaction.guild.id).catch(() => null);
-      const pointSummary = targetUser ? await createPointActionTranscriptSummary({
-        guild: interaction.guild,
-        target: targetUser,
-        generatedBy: interaction.user,
-        action: 'closed',
-        result,
-      }) : null;
-      if (targetUser) {
-        await targetUser.send({
-          content: [
-            '⚠️ Seu ponto foi fechado manualmente pela gerência.',
-            `Fechado por: <@${interaction.user.id}>`,
-            '',
-            pointSummary?.content || [
-              `Horário registrado: ${formatDate(result.data.lastPointCloseAt)}`,
-              `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-            ].join('\n'),
-            '',
-            'Se esse horário estiver errado, solicite a correção de ponto pelo painel de ponto ou fale com a gerência.',
-          ].join('\n'),
-          allowedMentions: { users: [interaction.user.id] },
-        }).catch(() => null);
-      }
-      const correctionChannel = await openPointCorrectionForClosedPoint(interaction.client, interaction.guild, {
-        ...pointBeforeClose,
-        userId,
-      }, {
-        reason: 'Fechamento manual pela gerência',
-        closedAt: result.data.lastPointCloseAt,
-        durationMs: result.durationMs,
-        closedBy: interaction.user.id,
-      }).catch(() => null);
-      sendVortexLog(interaction.client, {
-        title: 'Ponto fechado pela gerência',
-        description: [
-          `Usuário: <@${userId}> (${userId})`,
-          `Gerente: <@${interaction.user.id}>`,
-          `Fechado em: ${formatDate(result.data.lastPointCloseAt)}`,
-          `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-        ].join('\n'),
-        color: '#ED4245',
-        type: 'PONTO',
-        userId: interaction.user.id,
-      }).catch(() => {});
-      return safeEdit(interaction, {
-        content: [
-          `✅ Ponto de <@${userId}> fechado. Tempo: ${formatDuration(result.durationMs)}.`,
-          pointSummary?.transcriptUrl ? `Transcript: ${pointSummary.transcriptUrl}` : null,
-          correctionChannel ? `Canal de correção: <#${correctionChannel.id}>` : 'Canal de correção: não criado.',
-        ].filter(Boolean).join('\n'),
-      });
-    }
-    
     if (customId === 'toggle_maint') {
       conf.MAINTENANCE_MODE = !conf.MAINTENANCE_MODE;
       conf.MAINTENANCE_BY = String(interaction.user.id);
@@ -1244,7 +913,7 @@ module.exports = {
         conf.DISABLE_CHANNEL_LOGS === true,
         interaction.user.id,
         'painel_logs'
-      ).catch((error) => reportPanelError(interaction.client, error, 'Alterar logs de canal'));
+      ).catch((error) => logPanelError(interaction.client, error, 'Alterar logs de canal'));
 
       return renderDashboard(interaction, 'config_logs', true);
     }
@@ -1326,7 +995,7 @@ module.exports = {
         color: '#00D9FF',
         type: 'CONFIGURAÇÃO',
         userId: interaction.user.id
-      }).catch((error) => reportPanelError(interaction.client, error, 'Enviar teste de logs'));
+      }).catch((error) => logPanelError(interaction.client, error, 'Enviar teste de logs'));
 
       return safeReply(interaction, { content: '✅ Teste de log enviado.', ephemeral: true });
     }
@@ -1486,7 +1155,7 @@ module.exports = {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
-        await syncVoiceChannelAccess(interaction.guild).catch((error) => reportPanelError(interaction.client, error, 'Sincronizar calls'));
+        await syncVoiceChannelAccess(interaction.guild).catch((error) => logPanelError(interaction.client, error, 'Sincronizar calls'));
         return renderDashboard(interaction, 'tab_adjust_calls', true);
     }
 
@@ -1526,7 +1195,7 @@ module.exports = {
                 reason: `Call de ajuste ${enabled ? 'ativada' : 'desativada'} por ${interaction.user.tag || interaction.user.id}`,
             });
         } catch (error) {
-            await reportPanelError(interaction.client, error, `Alterar call de ajuste: ${selectedChannelId}`);
+            await logPanelError(interaction.client, error, `Alterar call de ajuste: ${selectedChannelId}`);
             return safeReply(interaction, {
                 content: '❌ Não consegui alterar essa call. O erro foi enviado para os logs.',
                 ephemeral: true,
@@ -1573,63 +1242,6 @@ module.exports = {
         }).catch(() => {});
 
         return renderDashboard(interaction, 'tab_mirror_messages', true);
-    }
-
-    if (customId === 'clear_point_user' || customId === 'correct_point_close') {
-        const selectedUserId = pointReadjustSelections.get(getSelectionKey(interaction));
-        const modal = new ModalBuilder()
-            .setCustomId(customId === 'clear_point_user' ? 'modal_clear_point_user' : 'modal_correct_point_close')
-            .setTitle(customId === 'clear_point_user' ? 'Deletar Dados de Ponto' : 'Corrigir Ponto');
-
-        modal.addComponents(new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-                .setCustomId('user_id')
-                .setLabel('ID DO USUÁRIO')
-                .setPlaceholder('Selecione no painel ou cole o ID Discord')
-                .setValue(selectedUserId || '')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-        ));
-
-        if (customId === 'correct_point_close') {
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('point_date')
-                        .setLabel('DATA DO PONTO')
-                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('started_at')
-                        .setLabel('HORA QUE ENTROU')
-                        .setPlaceholder('Ex: 18:30 ou 18h30')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('closed_at')
-                        .setLabel('HORA QUE SAIU')
-                        .setPlaceholder('Ex: 23:00 ou 02h')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('reason')
-                        .setLabel('MOTIVO DO AJUSTE')
-                        .setPlaceholder('Explique por que o ponto foi ajustado')
-                        .setStyle(TextInputStyle.Paragraph)
-                        .setRequired(true)
-                        .setMaxLength(900)
-                )
-            );
-        }
-
-        return safeShowModal(interaction, modal);
     }
 
     if (customId === 'set_absence_role') {
@@ -1850,19 +1462,6 @@ module.exports = {
         return renderDashboard(interaction, 'tab_perfil', true);
     }
 
-    if (customId === 'profile_list_registered') {
-        await safeDeferReply(interaction, { ephemeral: true });
-        const profiles = getGuildProfiles(interaction.guild.id);
-        const report = buildRegisteredProfilesReport(interaction.guild, profiles);
-        const file = new AttachmentBuilder(Buffer.from(report, 'utf8'), {
-            name: `usuarios-cadastrados-${interaction.guild.id}.txt`,
-        });
-        return safeEdit(interaction, {
-            content: `✅ Relatório gerado com **${Object.keys(profiles).length}** usuários cadastrados.`,
-            files: [file],
-        });
-    }
-
   },
 
   async handleSelectMenu(interaction) {
@@ -1970,118 +1569,6 @@ module.exports = {
         return renderDashboard(interaction, 'tab_config', true);
     }
 
-    if (interaction.customId === 'select_point_action_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ponto.', ephemeral: true });
-        data.POINT_ACTION_CHANNEL_ID = String(interaction.values[0]);
-        saveJSON(CONFIG_PATH, data);
-
-        sendVortexLog(interaction.client, {
-            title: 'Canal de Bater Ponto Alterado',
-            description: `O canal onde os botoes do ponto funcionam foi alterado para <#${data.POINT_ACTION_CHANNEL_ID}> por <@${interaction.user.id}>.`,
-            color: '#00D9FF',
-            type: 'CONFIGURAÇÃO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_manutencao', true);
-    }
-
-    if (interaction.customId === 'select_point_online_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: 'Apenas Admin Vortex pode configurar ponto.', ephemeral: true });
-        const channelId = String(interaction.values[0]);
-        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
-        if (!isTextChannel(channel)) {
-            return safeReply(interaction, { content: 'Selecione um canal de texto valido para o painel online.', ephemeral: true });
-        }
-
-        data.POINT_ONLINE_CHANNEL_ID = channelId;
-        saveJSON(CONFIG_PATH, data);
-        await allowTextChannelAccess(channel, interaction.guild).catch(() => null);
-        await updateStatusPanel(interaction.client, interaction.guild.id, { forceVisibilitySync: true }).catch(() => null);
-
-        sendVortexLog(interaction.client, {
-            title: 'Canal do Painel Online Alterado',
-            description: `O painel online do ponto foi alterado para <#${data.POINT_ONLINE_CHANNEL_ID}> por <@${interaction.user.id}>.`,
-            color: '#00D9FF',
-            type: 'CONFIGURACAO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_manutencao', true);
-    }
-
-    if (interaction.customId === 'select_point_adjust_category') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ponto.', ephemeral: true });
-        data.POINT_ADJUST_CATEGORY_ID = String(interaction.values[0]);
-        saveJSON(CONFIG_PATH, data);
-
-        sendVortexLog(interaction.client, {
-            title: 'Categoria de Ajuste de Ponto Alterada',
-            description: `A categoria dos pedidos de ajuste de ponto foi alterada para <#${data.POINT_ADJUST_CATEGORY_ID}> por <@${interaction.user.id}>.`,
-            color: '#00D9FF',
-            type: 'CONFIGURAÇÃO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_manutencao', true);
-    }
-
-    if (interaction.customId === 'select_point_online_voice_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar a call online do ponto.', ephemeral: true });
-        const channelId = String(interaction.values[0]);
-        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
-        if (!isAdjustCallChannel(channel)) {
-            return safeReply(interaction, { content: '❌ Selecione uma call válida.', ephemeral: true });
-        }
-
-        data.POINT_ONLINE_VOICE_CHANNEL_ID = channelId;
-        saveJSON(CONFIG_PATH, data);
-        await allowVoiceChannelAccess(channel, interaction.guild).catch(() => null);
-        await syncOnlineChannelVisibility(interaction.guild, channel).catch(() => null);
-        await updateStatusPanel(interaction.client, interaction.guild.id, { forceVisibilitySync: true }).catch(() => null);
-
-        sendVortexLog(interaction.client, {
-            title: 'Call online do ponto alterada',
-            description: `A call liberada para quem estiver online no game foi alterada para <#${channelId}> por <@${interaction.user.id}>.`,
-            color: '#5865F2',
-            type: 'PONTO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_pontos', true);
-    }
-
-    if (interaction.customId === 'select_point_adjust_role') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar ajuste de ponto.', ephemeral: true });
-        data.POINT_ADJUST_STAFF_ROLES = interaction.values.map(String);
-        saveJSON(CONFIG_PATH, data);
-
-        sendVortexLog(interaction.client, {
-            title: 'Cargo de Ajuste de Ponto Alterado',
-            description: `Cargos extras para analisar ajuste de ponto: ${data.POINT_ADJUST_STAFF_ROLES.map(id => `<@&${id}>`).join(' ') || 'nenhum'} por <@${interaction.user.id}>.`,
-            color: '#00D9FF',
-            type: 'CONFIGURAÇÃO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_config', true);
-    }
-
-    if (interaction.customId === 'select_point_allowed_roles') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar cargos de ponto.', ephemeral: true });
-        data.POINT_ALLOWED_ROLE_IDS = setPointAllowedRoleIds(interaction.values);
-
-        sendVortexLog(interaction.client, {
-            title: 'Cargos de Ponto Alterados',
-            description: `Cargos liberados para bater ponto e ponto automático: ${data.POINT_ALLOWED_ROLE_IDS.map(id => `<@&${id}>`).join(' ') || 'nenhum'} por <@${interaction.user.id}>.`,
-            color: '#5865F2',
-            type: 'PONTO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return renderDashboard(interaction, 'tab_pontos', true);
-    }
-
     if (interaction.customId === 'select_fac_hierarchy_channel') {
         if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
         const hierarchy = setFactionHierarchyChannelId(interaction.values[0]);
@@ -2180,11 +1667,6 @@ module.exports = {
         }).catch(() => {});
 
         return renderDashboard(interaction, 'tab_commands', true);
-    }
-
-    if (interaction.customId === 'select_point_readjust_user' || interaction.customId === 'select_open_point_user') {
-        pointReadjustSelections.set(getSelectionKey(interaction), interaction.values[0]);
-        return renderDashboard(interaction, 'tab_pontos', true);
     }
 
     if (interaction.customId === 'select_profile_register_user') {
@@ -2350,92 +1832,6 @@ module.exports = {
         }).catch(() => {});
 
         return renderDashboard(interaction, 'tab_roles', true);
-    }
-
-    if (interaction.customId === 'modal_clear_point_user') {
-        const userId = interaction.fields.getTextInputValue('user_id').trim();
-        if (!/^\d{15,25}$/.test(userId)) {
-            return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
-        }
-
-        const existed = await deleteUserPoint(interaction.guild.id, userId);
-        await updateStatusPanel(interaction.client, interaction.guild.id);
-
-        sendVortexLog(interaction.client, {
-            title: 'Dados de Ponto Deletados',
-            description: `Os dados de ponto de <@${userId}> (${userId}) foram deletados por <@${interaction.user.id}>.\nRegistro existia: ${existed ? 'sim' : 'não'}.`,
-            color: '#FF0055',
-            type: 'PONTO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return safeReply(interaction, {
-            content: existed
-                ? `✅ Dados de ponto de <@${userId}> deletados.`
-                : `⚠️ Nenhum dado de ponto encontrado para <@${userId}>.`,
-            ephemeral: true
-        });
-    }
-
-    if (interaction.customId === 'modal_correct_point_close') {
-        const userId = interaction.fields.getTextInputValue('user_id').trim();
-        const dateInput = interaction.fields.getTextInputValue('point_date').trim();
-        const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
-        const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
-        const reason = interaction.fields.getTextInputValue('reason').trim();
-
-        if (!/^\d{15,25}$/.test(userId)) {
-            return safeReply(interaction, { content: '❌ ID de usuário inválido.', ephemeral: true });
-        }
-
-        const result = await adjustPointSessionFlexible(interaction.guild.id, userId, dateInput, `${startedAtInput} ate ${closedAtInput}`, interaction.member, reason);
-        if (!result.ok) {
-            return safeReply(interaction, { content: `❌ ${result.message}`, ephemeral: true });
-        }
-
-        await updateStatusPanel(interaction.client, interaction.guild.id);
-        const targetUser = await interaction.client.users.fetch(userId).catch(() => null);
-        if (targetUser) {
-            await targetUser.send({
-                content: [
-                    '✅ Seu ponto foi ajustado pela gerência.',
-                    `Abertura aplicada: ${formatDate(result.startedAt)}`,
-                    `Fechamento aplicado: ${formatDate(result.closedAt)}`,
-                    `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-                    formatOpenUntilAdjustmentLine(result),
-                    '',
-                    'O sistema foi alterado com a correção informada. Caso ainda exista divergência, fale com a gerência.',
-                ].filter(Boolean).join('\n'),
-            }).catch(() => null);
-        }
-
-        sendVortexLog(interaction.client, {
-            title: 'Ponto Reajustado',
-            description: [
-                `O ponto de <@${userId}> (${userId}) foi reajustado por <@${interaction.user.id}>.`,
-                `Abertura aplicada: ${formatDate(result.startedAt)}`,
-                `Fechamento aplicado: ${formatDate(result.closedAt)}`,
-                `Tempo contabilizado: ${formatDuration(result.durationMs)}`,
-                formatOpenUntilAdjustmentLine(result),
-                'O reajuste foi salvo em `commands/pontos.json`.',
-            ].filter(Boolean).join('\n'),
-            color: '#FEE75C',
-            type: 'PONTO',
-            userId: interaction.user.id
-        }).catch(() => {});
-
-        return safeReply(interaction, {
-            content: [
-                '✅ Ponto reajustado.',
-                `Usuário: <@${userId}>`,
-                `Abertura aplicada: ${formatDate(result.startedAt)}`,
-                `Fechamento aplicado: ${formatDate(result.closedAt)}`,
-                `Tempo somado: ${formatDuration(result.durationMs)}`,
-                formatOpenUntilAdjustmentLine(result),
-                'O reajuste foi salvo no JSON.',
-            ].filter(Boolean).join('\n'),
-            ephemeral: true
-        });
     }
 
     if (interaction.customId === 'modal_absence_role') {
@@ -2668,9 +2064,9 @@ async function renderDashboard(interaction, tab, edit = false) {
         `**Modo atual:** ${vortexRoleMode === 'remove' ? 'remover cargos selecionados' : 'definir cargos selecionados'}`,
         '',
         '**Níveis**',
-        '**Admin:** gerencia avisos, set e sistemas de ponto.',
+        '**Admin:** gerencia avisos, set e sistemas administrativos.',
         '**Médio:** analisa set e envia avisos.',
-        '**Membro:** usa ações básicas, como bater ponto.',
+        '**Membro:** usa ações básicas liberadas pela equipe.',
         '',
         `**Master:** ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')}`,
       ].join('\n'))
@@ -2684,9 +2080,6 @@ async function renderDashboard(interaction, tab, edit = false) {
         { name: '/painel privado', value: formatRoleList(permissions.painel, '`Somente Admin/Médio`'), inline: false },
         { name: 'Set', value: formatRoleList(permissions.set, '`Sem filtro extra`'), inline: true },
         { name: 'Avisos', value: formatRoleList(permissions.avisos, '`Sem filtro extra`'), inline: true },
-        { name: 'Registro', value: formatRoleList(permissions.registro, '`Sem filtro extra`'), inline: true },
-        { name: 'Ponto', value: formatRoleList(permissions.ponto, '`Sem filtro extra`'), inline: true },
-        { name: 'Ajuste de ponto', value: formatRoleList(conf.POINT_ADJUST_STAFF_ROLES, '`Admin Vortex`'), inline: true }
       );
 
     extraRows = [
@@ -2737,9 +2130,6 @@ async function renderDashboard(interaction, tab, edit = false) {
           { name: '📩 Logs por DM', value: conf.DISABLE_DM_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '🎮 Logs de atividades', value: conf.DISABLE_ACTIVITY_LOGS ? '`Desligados`' : '`Ligados`', inline: true },
           { name: '✨ Boas-vindas', value: '`Sempre ativa`', inline: true },
-          { name: 'Canal do ponto', value: `<#${conf.POINT_ACTION_CHANNEL_ID || DEFAULT_POINT_ACTION_CHANNEL_ID}>`, inline: true },
-          { name: 'Painel online', value: `<#${conf.POINT_ONLINE_CHANNEL_ID || DEFAULT_POINT_ONLINE_CHANNEL_ID}>`, inline: true },
-          { name: 'Categoria de ajuste', value: `<#${conf.POINT_ADJUST_CATEGORY_ID || DEFAULT_POINT_ADJUST_CATEGORY_ID}>`, inline: true },
           { name: 'Mudanças registradas', value: readUpdatesSummary().slice(0, 900), inline: false }
       )
 
@@ -2751,152 +2141,6 @@ async function renderDashboard(interaction, tab, edit = false) {
       new ButtonBuilder().setCustomId('config_logs').setLabel('Logs').setStyle(ButtonStyle.Secondary)
     );
 
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_point_action_channel')
-          .setPlaceholder('Selecionar canal de texto onde o ponto funciona')
-          .addChannelTypes(ChannelType.GuildText)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_point_online_channel')
-          .setPlaceholder('Selecionar canal de texto do painel online')
-          .addChannelTypes(ChannelType.GuildText)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_point_adjust_category')
-          .setPlaceholder('Selecionar categoria dos pedidos de ajuste de ponto')
-          .addChannelTypes(ChannelType.GuildCategory)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-    ];
-  } else if (tab === 'tab_config') {
-    const privateMode = Boolean(conf.PANEL_PRIVATE_MODE);
-    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#00D9FF')
-      .setDescription([
-        '### Configurações gerais',
-        '',
-        'Acesse as configurações de set e avisos.',
-        'O modo privado limita o uso do `/painel` aos cargos configurados.',
-      ].join('\n'))
-      .addFields(
-        { name: '/painel privado', value: privateMode ? '`Ativado`' : '`Desativado`', inline: true },
-        { name: 'Set', value: 'Permissões do sistema de set.', inline: true },
-        { name: 'Avisos', value: 'DMs e menções dos avisos.', inline: true }
-      );
-
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('config_avisos').setLabel('Avisos').setStyle(ButtonStyle.Secondary)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('toggle_panel_private_mode')
-          .setLabel(privateMode ? 'Desativar modo privado' : 'Ativar modo privado')
-          .setStyle(privateMode ? ButtonStyle.Success : ButtonStyle.Danger)
-      ),
-    ];
-  } else if (tab === 'config_logs') {
-    const selectedLogChannelId = logChannelSelections.get(getSelectionKey(interaction));
-    const disabledLogChannelIds = Array.isArray(conf.DISABLED_LOG_CHANNEL_IDS)
-      ? conf.DISABLED_LOG_CHANNEL_IDS.map(String)
-      : [];
-    const selectedLogChannelDisabled = selectedLogChannelId && disabledLogChannelIds.includes(selectedLogChannelId);
-    const activeLogSwitches = [
-      !conf.DISABLE_CHANNEL_LOGS,
-      !conf.DISABLE_DM_LOGS,
-      !conf.DISABLE_ACTIVITY_LOGS,
-      !conf.DISABLE_NOTICE_DMS,
-    ].filter(Boolean).length;
-    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES | LOGS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#00D9FF')
-      .setDescription([
-        '### Central de logs',
-        '',
-        'Controle o canal principal, os envios por DM e os canais onde auditoria deve ficar bloqueada.',
-        `Apenas <@${LOGS_MANAGER_IDS[0]}> ou ${SUPERIOR_IDS.map((roleId) => `<@&${roleId}>`).join(' ')} podem alterar esta área.`,
-        '',
-        `**Resumo:** ${activeLogSwitches}/4 sistemas ativos • ${disabledLogChannelIds.length} canal(is) bloqueado(s)`,
-        `**Selecionado:** ${formatLogChannelSelection(selectedLogChannelId, selectedLogChannelDisabled)}`,
-      ].join('\n'))
-      .addFields(
-        { name: 'Canal principal', value: conf.LOG_CHANNEL ? `<#${conf.LOG_CHANNEL}>` : '`Não configurado`', inline: true },
-        { name: 'Auditoria em canal', value: formatLogSwitch(conf.DISABLE_CHANNEL_LOGS), inline: true },
-        { name: 'Logs por DM', value: formatLogSwitch(conf.DISABLE_DM_LOGS), inline: true },
-        { name: 'Atividades FiveM/GTA', value: formatLogSwitch(conf.DISABLE_ACTIVITY_LOGS), inline: true },
-        { name: 'Avisos por DM', value: formatLogSwitch(conf.DISABLE_NOTICE_DMS), inline: true },
-        { name: 'Canal selecionado', value: formatLogChannelSelection(selectedLogChannelId, selectedLogChannelDisabled), inline: true },
-        { name: `Canais bloqueados (${disabledLogChannelIds.length})`, value: formatChannelList(disabledLogChannelIds), inline: false }
-      );
-
-    actionRow.addComponents(
-      new ButtonBuilder().setCustomId('toggle_channel_logs').setLabel(conf.DISABLE_CHANNEL_LOGS ? 'Ligar auditoria' : 'Desligar auditoria').setStyle(conf.DISABLE_CHANNEL_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_dm_logs').setLabel(conf.DISABLE_DM_LOGS ? 'Ligar logs por DM' : 'Desligar logs por DM').setStyle(conf.DISABLE_DM_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_activity_logs').setLabel(conf.DISABLE_ACTIVITY_LOGS ? 'Ligar atividades' : 'Desligar atividades').setStyle(conf.DISABLE_ACTIVITY_LOGS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('toggle_notice_dms').setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs avisos' : 'Desligar DMs avisos').setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('send_test_log').setLabel('Enviar teste').setStyle(ButtonStyle.Secondary).setDisabled(!conf.LOG_CHANNEL)
-    );
-
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_log')
-          .setPlaceholder('Selecionar canal principal de logs')
-          .addChannelTypes(ChannelType.GuildText)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_disabled_log_channel')
-          .setPlaceholder('Selecionar canal/call para ligar ou desligar logs')
-          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('toggle_selected_log_channel')
-          .setLabel(selectedLogChannelDisabled ? 'Reativar logs desse canal' : 'Desativar logs desse canal')
-          .setStyle(selectedLogChannelDisabled ? ButtonStyle.Success : ButtonStyle.Danger)
-          .setDisabled(!selectedLogChannelId)
-      ),
-    ];
-  } else if (tab === 'config_avisos') {
-    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | CONFIGURAÇÕES | AVISOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() }).setColor('#7000FF')
-      .setDescription([
-        '### Avisos',
-        '',
-        'Controle o envio de avisos por DM e o cargo extra mencionado nos comunicados.',
-      ].join('\n'))
-      .addFields(
-        { name: 'Avisos por DM', value: conf.DISABLE_NOTICE_DMS ? '`Desativados`' : '`Ativados`', inline: true },
-        { name: 'Cargo extra mencionado', value: conf.NOTICE_MENTION_ROLE_ID ? `<@&${conf.NOTICE_MENTION_ROLE_ID}>` : '`Não configurado`', inline: true }
-      );
-
-    const noticeRoleRow = new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder().setCustomId('select_notice_mention_role').setPlaceholder('Selecionar cargo mencionado nos avisos').setMinValues(1).setMaxValues(1)
-    );
-    const noticeButtonRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('toggle_notice_dms')
-        .setLabel(conf.DISABLE_NOTICE_DMS ? 'Ligar DMs de avisos' : 'Desligar DMs de avisos')
-        .setStyle(conf.DISABLE_NOTICE_DMS ? ButtonStyle.Success : ButtonStyle.Danger)
-    );
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('config_set').setLabel('Set').setStyle(ButtonStyle.Primary)
-      ),
-      noticeRoleRow,
-      noticeButtonRow,
-    ];
   } else if (tab === 'config_set') {
     const permissions = ensureCommandPermissions(conf);
     const setRoles = permissions.set || [];
@@ -2921,98 +2165,6 @@ async function renderDashboard(interaction, tab, edit = false) {
       ),
       pointRoleRow,
     ];
-  } else if (tab === 'tab_pontos') {
-    const selectedReadjustUserId = pointReadjustSelections.get(getSelectionKey(interaction));
-    const pointData = loadJSON(path.join(__dirname, '..', 'pontos.json'))[guild.id] || {};
-    const pointAllowedRoles = getPointAllowedRoleIds();
-    const onlineVoiceChannelId = conf.POINT_ONLINE_VOICE_CHANNEL_ID || '';
-    const openPointOptions = Object.values(pointData)
-      .filter((point) => point?.activePointStartedAt)
-      .slice(0, 25)
-      .map((point) => ({
-        label: String(point.userName || point.userId).slice(0, 100),
-        description: `Aberto desde ${formatDate(point.activePointStartedAt)}`.slice(0, 100),
-        value: String(point.userId),
-      }));
-    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | GESTÃO DE PONTOS`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
-      .setColor('#ED4245')
-      .setDescription([
-        '### Controle de dados de ponto',
-        '',
-        '**Como funciona**',
-        'Use esta aba para deletar dados de ponto ou fazer um reajuste manual.',
-        'Para achar a pessoa com mais facilidade, selecione o usuário abaixo antes de clicar em `Corrigir ponto`.',
-        '',
-        `**Usuário selecionado:** ${selectedReadjustUserId ? `<@${selectedReadjustUserId}>` : '`Nenhum`'}`,
-        `**Pontos abertos:** ${openPointOptions.length}`,
-        `**Cargos que podem bater ponto/detectar:** ${formatRoleList(pointAllowedRoles)}`,
-        `**Call liberada no game:** ${onlineVoiceChannelId ? `<#${onlineVoiceChannelId}>` : '`Não configurada`'}`,
-        '',
-        '**Reajuste de ponto**',
-        'Informe a data, a hora que entrou e a hora que saiu. O sistema soma esse período no total do usuário e salva em `commands/pontos.json`.',
-        'Esse ajuste pode ser feito mesmo quando o usuário não está com ponto aberto.',
-        '',
-        'Use data como `23/04/2026` e horários como `18:30` e `02h`. Se virar o dia, informe a data como `23 ate 24`.',
-      ].join('\n'));
-
-    actionRow.addComponents(
-      new ButtonBuilder().setCustomId('correct_point_close').setLabel('Corrigir ponto').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('close_selected_point').setLabel('Fechar ponto').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('clear_point_user').setLabel('Deletar ponto').setStyle(ButtonStyle.Danger)
-    );
-    extraRows = [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('delete_point_correction_channel').setLabel('Deletar call ajuste').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('clear_point_no_billing').setLabel('Deletar ponto + sem cobrança').setStyle(ButtonStyle.Danger)
-      ),
-      new ActionRowBuilder().addComponents(
-        new UserSelectMenuBuilder()
-          .setCustomId('select_point_readjust_user')
-          .setPlaceholder('Selecionar usuário para folha, reajuste, fechamento ou exclusão')
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder()
-          .setCustomId('select_point_allowed_roles')
-          .setPlaceholder('Selecionar cargos que podem bater ponto e detectar')
-          .setMinValues(1)
-          .setMaxValues(10)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId('select_point_online_voice_channel')
-          .setPlaceholder('Selecionar call liberada para quem está no game')
-          .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
-          .setMinValues(1)
-          .setMaxValues(1)
-      ),
-    ];
-  } else if (tab === 'tab_cobrancas') {
-    const automationConfig = readAutomationConfig();
-    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | COBRANÇAS E PENALIDADES`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
-      .setColor('#FEE75C')
-      .setDescription([
-        '### Cobranças automáticas',
-        '',
-        `Confirmação de ponto aberto: **${automationConfig.pointMonitorEnabled ? 'ligada' : 'desligada'}**`,
-        `Cobrança por offline sem ausência: **${automationConfig.offlineChargeEnabled ? 'ligada' : 'desligada'}**`,
-        `Confirmação: **a cada ${automationConfig.pointMonitorDmIntervalHours}h**, até **${automationConfig.pointMonitorMaxDmAttempts} DMs** por ciclo.`,
-        `Cobrança offline: **toda segunda-feira às ${String(automationConfig.offlineChargeHour).padStart(2, '0')}:00**.`,
-        `Limite para considerar offline: **${automationConfig.offlineThresholdHours}h sem login/ponto**.`,
-        '',
-        `Canal de penalidades: <#${automationConfig.penaltyChannelId}>`,
-        `Categoria de correção: <#${automationConfig.pointCorrectionCategoryId}>`,
-        '',
-        'Usuários em ausência não recebem cobrança offline.',
-        '',
-        'Use **Verificar agora** para executar a checagem manualmente.',
-      ].join('\n'));
-    actionRow.addComponents(
-      new ButtonBuilder().setCustomId('toggle_point_monitor').setLabel(automationConfig.pointMonitorEnabled ? 'Desligar confirmação' : 'Ligar confirmação').setStyle(automationConfig.pointMonitorEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('toggle_offline_charge').setLabel(automationConfig.offlineChargeEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(automationConfig.offlineChargeEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('run_point_automation').setLabel('Verificar agora').setStyle(ButtonStyle.Primary)
-    );
   } else if (tab === 'tab_mirror_messages') {
     ensureMirrorMessageConfig(conf);
     const mirrorChannelIds = getMirrorMessageChannelIds(conf);
@@ -3438,7 +2590,6 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('profile_list_registered').setLabel('Listar perfis').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('profile_test').setLabel('Testar cobrança').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar cadastro').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
@@ -3484,13 +2635,18 @@ async function renderDashboard(interaction, tab, edit = false) {
   const options = buildPanelV2Payload(embed, components);
   if (edit) {
     return safeUpdate(interaction, options).catch(async (err) => {
-      await reportPanelError(interaction.client, err, `Atualizar painel: ${tab}`);
+      await logPanelError(interaction.client, err, `Atualizar painel: ${tab}`);
       return safeReply(interaction, { content: '❌ Erro ao atualizar o painel. O bug foi enviado para o canal de logs.', ephemeral: true });
     });
   } else {
     return safeReply(interaction, options).catch(async (err) => {
-      await reportPanelError(interaction.client, err, `Enviar painel: ${tab}`);
+      await logPanelError(interaction.client, err, `Enviar painel: ${tab}`);
       return null;
     });
   }
 }
+
+
+
+
+

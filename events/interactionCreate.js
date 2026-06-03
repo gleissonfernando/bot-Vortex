@@ -3,27 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config/config');
 const { sendVortexLog, notifyError, notifyDmFailure, isDmLogDisabled, handleReenableChannelLogsButton, isPrimaryGuild } = require('../utils/notifications');
-const { openPoint, closePoint, formatDuration, formatDate } = require('../utils/pontoManager');
-const { updateStatusPanel, getPointConfig, setOnlineChannelAccess } = require('../utils/pontoPanel');
+const { formatDate } = require('../utils/dateTime');
 const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbsence, formatDate: formatAbsenceDate } = require('../utils/ausenciaManager');
-const {
-    createAdjustmentRequest,
-    decideAdjustment,
-    decideAdjustmentWithManualRange,
-    getAdjustmentApprovalContext,
-} = require('../utils/pontoAdjustmentManager');
-const { confirmPointPresence, handlePenaltyButton } = require('../utils/pointAutomation');
 const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { handleBauButton, handleBauModal } = require('../utils/bauManager');
 const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
-const { getPointAllowedRoleIds } = require('../utils/pointRoleConfig');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
 const { isPrimaryGuildChannel } = require('../utils/guildScope');
-const { createPointActionTranscriptSummary } = require('../utils/pointTranscriptNotifier');
-const { queuePointSnapshotSync } = require('../utils/frequencyDashboardSync');
 const { buildMaintenanceEmbed, isMaintenanceControlInteraction } = require('../utils/maintenanceMode');
 
 const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
@@ -40,69 +29,12 @@ function hasStaffPermission(member) {
     return hasVortexLevel(member, ['admin', 'medio']);
 }
 
-function buildManualAdjustmentApprovalModal(requestId, request = {}) {
-    const legacyCloseInput = String(request.closedAtInput || '').trim();
-    const closePlaceholder = legacyCloseInput
-        ? `Ex: 03:00 | Saida pedida: ${legacyCloseInput}`.slice(0, 100)
-        : 'Ex: 03:00 ou 03h';
-
-    const modal = new ModalBuilder()
-        .setCustomId(`modal_ponto_adjust_accept_range_${requestId}`)
-        .setTitle('Corrigir ponto');
-
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-                .setCustomId('point_date')
-                .setLabel('Data do ponto')
-                .setPlaceholder('Ex: 28/05/2026 ou 28 ate 29')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-        ),
-        new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-                .setCustomId('started_at')
-                .setLabel('Hora que entrou')
-                .setPlaceholder('Ex: 22:00 ou 22h')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-        ),
-        new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-                .setCustomId('closed_at')
-                .setLabel('Hora que saiu')
-                .setPlaceholder(closePlaceholder)
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-        )
-    );
-
-    return modal;
-}
-
-async function schedulePointAdjustmentChannelDelete(channel) {
-    if (!channel?.delete || !channel?.guild) return;
-
-    await channel.send({
-        content: '🗑️ Ajuste finalizado. Este canal será apagado em **15 segundos**.',
-    }).catch(() => {});
-
-    setTimeout(() => {
-        channel.delete('Ajuste de ponto finalizado.').catch(() => null);
-    }, 15 * 1000);
-}
-
 function hasMasterPermission(member) {
     return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
 }
 
-function hasPointRole(member) {
-    const roleIds = getPointAllowedRoleIds();
-    return Boolean(member?.roles?.cache && roleIds.some(roleId => member.roles.cache.has(roleId)));
-}
-
 function hasAbsenceAccess(member) {
-    return hasPointRole(member) || hasAnyVortexRole(member);
+    return hasAnyVortexRole(member);
 }
 
 function isPublicExibirInteraction(interaction) {
@@ -145,7 +77,7 @@ function isCommandDisabled(conf, commandName) {
     return disabled.includes(String(commandName));
 }
 
-async function reportInteractionError(client, error, context = 'Interação') {
+async function logInteractionError(client, error, context = 'Interação') {
     const message = error instanceof Error ? error.stack || error.message : String(error);
     const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
     if (!isPrimaryGuildChannel(channel)) return false;
@@ -172,7 +104,7 @@ async function runInteractionHandler(interaction, context, handler) {
     try {
         return await handler();
     } catch (error) {
-        await reportInteractionError(interaction.client, error, context);
+        await logInteractionError(interaction.client, error, context);
         if (interaction.isRepliable?.()) {
             await safeReply(interaction, {
                 content: '❌ Essa interação deu erro. O bug foi enviado para o canal de logs.',
@@ -325,231 +257,6 @@ module.exports = {
                 }
             }
             return;
-        }
-
-        // Interações do Painel
-        if (interaction.isButton() && interaction.customId === 'ponto_adjust_request') {
-            const modal = new ModalBuilder()
-                .setCustomId('modal_ponto_adjust_request')
-                .setTitle('Corrigir ponto');
-
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('point_date')
-                        .setLabel('Data do ponto')
-                        .setPlaceholder('Ex: 23, 23/04, 23/04/2026 ou 23 ate 24')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('started_at')
-                        .setLabel('Hora que entrou')
-                        .setPlaceholder('Ex: 18:30 ou 18h30')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('closed_at')
-                        .setLabel('Hora que saiu')
-                        .setPlaceholder('Ex: 23:00 ou 02h')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('reason')
-                        .setLabel('Motivo do ajuste')
-                        .setPlaceholder('Explique por que o ponto não foi fechado corretamente.')
-                        .setStyle(TextInputStyle.Paragraph)
-                        .setRequired(true)
-                        .setMaxLength(900)
-                )
-            );
-
-            return safeShowModal(interaction, modal);
-        }
-
-        if (interaction.isModalSubmit() && interaction.customId === 'modal_ponto_adjust_request') {
-            await safeDeferReply(interaction, { ephemeral: true });
-            const pointDateInput = interaction.fields.getTextInputValue('point_date').trim();
-            const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
-            const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
-            const reason = interaction.fields.getTextInputValue('reason').trim();
-            const result = await createAdjustmentRequest(interaction, pointDateInput, startedAtInput, closedAtInput, reason);
-            if (!result.ok) {
-                return safeEdit(interaction, { content: `❌ ${result.message}` });
-            }
-            return safeEdit(interaction, {
-                content: `✅ Pedido de ajuste aberto em <#${result.channel.id}>. Aguarde a análise da staff.`,
-            });
-        }
-
-        if (interaction.isButton() && (interaction.customId.startsWith('ponto_adjust_accept_') || interaction.customId.startsWith('ponto_adjust_reject_'))) {
-            const approved = interaction.customId.startsWith('ponto_adjust_accept_');
-            const requestId = interaction.customId.replace(approved ? 'ponto_adjust_accept_' : 'ponto_adjust_reject_', '');
-
-            if (approved) {
-                const approvalContext = await getAdjustmentApprovalContext(interaction, requestId);
-                if (!approvalContext.ok) {
-                    return safeReply(interaction, { content: `❌ ${approvalContext.message}`, ephemeral: true });
-                }
-                if (approvalContext.needsManualRange) {
-                    return safeShowModal(interaction, buildManualAdjustmentApprovalModal(requestId, approvalContext.request));
-                }
-            }
-
-            await safeDeferReply(interaction, { ephemeral: true });
-            const result = await decideAdjustment(interaction, requestId, approved);
-            if (!result.ok) {
-                return safeEdit(interaction, { content: `❌ ${result.message}` });
-            }
-
-            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
-            await interaction.message.edit({ components: [] }).catch(() => {});
-            await interaction.channel.send({
-                content: [
-                    approved ? '✅ Ajuste aprovado.' : '❌ Ajuste recusado.',
-                    result.message,
-                    `Analisado por: <@${interaction.user.id}>`,
-                ].join('\n'),
-            }).catch(() => {});
-            await schedulePointAdjustmentChannelDelete(interaction.channel);
-
-            return safeEdit(interaction, { content: result.message });
-        }
-
-        if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_ponto_adjust_accept_range_')) {
-            await safeDeferReply(interaction, { ephemeral: true });
-            const requestId = interaction.customId.replace('modal_ponto_adjust_accept_range_', '');
-            const pointDateInput = interaction.fields.getTextInputValue('point_date').trim();
-            const startedAtInput = interaction.fields.getTextInputValue('started_at').trim();
-            const closedAtInput = interaction.fields.getTextInputValue('closed_at').trim();
-            const result = await decideAdjustmentWithManualRange(interaction, requestId, pointDateInput, startedAtInput, closedAtInput);
-            if (!result.ok) {
-                return safeEdit(interaction, { content: `❌ ${result.message}` });
-            }
-
-            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
-            await interaction.channel.send({
-                content: [
-                    '✅ Ajuste aprovado.',
-                    result.message,
-                    `Analisado por: <@${interaction.user.id}>`,
-                ].join('\n'),
-            }).catch(() => {});
-            await schedulePointAdjustmentChannelDelete(interaction.channel);
-
-            return safeEdit(interaction, { content: result.message });
-        }
-
-        if (interaction.isButton() && (interaction.customId === 'ponto_open' || interaction.customId === 'ponto_close')) {
-            const pointConfig = getPointConfig();
-            if (interaction.channel.id !== pointConfig.actionChannelId) {
-                return safeReply(interaction, {
-                    content: `Você só pode bater ponto em <#${pointConfig.actionChannelId}>.`,
-                    ephemeral: true
-                });
-            }
-
-            if (!hasPointRole(member)) {
-                const roleIds = getPointAllowedRoleIds();
-                return safeReply(interaction, {
-                    content: `❌ Você não tem cargo liberado para bater ponto. Cargos permitidos: ${roleIds.map(roleId => `<@&${roleId}>`).join(' ')}`,
-                    ephemeral: true,
-                    allowedMentions: { roles: [] },
-                });
-            }
-
-            await safeDeferReply(interaction, { ephemeral: true });
-
-            const opening = interaction.customId === 'ponto_open';
-            const result = opening
-                ? await openPoint(guild.id, user.id, {
-                    userName: member?.displayName || user.username,
-                    userMention: `<@${user.id}>`,
-                    registro: user.id
-                })
-                : await closePoint(guild.id, user.id);
-
-            if (result.action === 'opened' || (opening && result.action === 'already_open')) {
-                await setOnlineChannelAccess(client, guild.id, user.id, true);
-            }
-            if (result.action === 'closed' || (!opening && result.action === 'already_closed')) {
-                await setOnlineChannelAccess(client, guild.id, user.id, false);
-            }
-
-            await updateStatusPanel(client, guild.id, { forceVisibilitySync: true });
-            if (result.action === 'opened' || result.action === 'closed') {
-                queuePointSnapshotSync(client);
-            }
-
-            if (result.action === 'already_open') {
-                return safeEdit(interaction, {
-                    content: '❌ Seu ponto já está aberto.',
-                });
-            }
-
-            if (result.action === 'already_closed') {
-                return safeEdit(interaction, {
-                    content: '❌ Você não possui ponto aberto.',
-                });
-            }
-
-            if (result.action === 'too_soon') {
-                return safeEdit(interaction, {
-                    content: `⏳ O ponto só pode ser fechado depois de **60 segundos** aberto. Tempo atual: **${formatDuration(result.durationMs)}**. Aguarde mais **${formatDuration(result.waitMs)}**.`,
-                });
-            }
-
-            sendVortexLog(client, {
-                title: opening ? 'Ponto Aberto' : 'Ponto Fechado',
-                description: opening
-                    ? `<@${user.id}> abriu o ponto as ${formatDate(result.data.activePointStartedAt)}.`
-                    : `<@${user.id}> fechou o ponto às ${formatDate(result.data.lastPointCloseAt)}. Duração: ${formatDuration(result.durationMs)}.`,
-                color: opening ? '#57F287' : '#ED4245',
-                type: 'PONTO',
-                userId: user.id,
-                channelId: interaction.channelId,
-            }).catch(() => {});
-
-            const summary = await createPointActionTranscriptSummary({
-                guild,
-                target: user,
-                generatedBy: user,
-                action: opening ? 'opened' : 'closed',
-                result,
-            });
-
-            return safeEdit(interaction, {
-                content: summary.content,
-                allowedMentions: { users: [user.id] },
-            });
-        }
-
-        if (interaction.isButton() && interaction.customId.startsWith('point_presence_confirm_')) {
-            return confirmPointPresence(interaction);
-        }
-
-        if (interaction.isButton() && String(interaction.customId || '').startsWith('live_')) {
-            const lives = client.commands.get('lives');
-            if (lives?.handleButton) {
-                return runInteractionHandler(interaction, `Lives botão: ${interaction.customId}`, () => lives.handleButton(interaction));
-            }
-        }
-
-        if (interaction.isModalSubmit() && String(interaction.customId || '').startsWith('live_modal_')) {
-            const lives = client.commands.get('lives');
-            if (lives?.handleModal) {
-                return runInteractionHandler(interaction, `Lives modal: ${interaction.customId}`, () => lives.handleModal(interaction));
-            }
-        }
-
-        if (interaction.isButton() && (interaction.customId.startsWith('point_penalty_accept_') || interaction.customId.startsWith('point_penalty_reject_'))) {
-            if (!hasStaffPermission(member)) return safeReply(interaction, { content: '❌ Sem permissão.', ephemeral: true });
-            return handlePenaltyButton(interaction);
         }
 
         if (interaction.isButton() && (interaction.customId.startsWith('approved_channel_guide_') || interaction.customId === 'approved_channel_guide_done')) {
@@ -710,25 +417,25 @@ module.exports = {
         // Interações do Painel
         const painel = client.commands.get('painel');
         if (painel) {
-            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('panel_back_') || interaction.customId.startsWith('confirm_close_point_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'send_test_log', 'toggle_panel_private_mode', 'toggle_vortex_role_remove_mode', 'set_vortex_auto_pending', 'set_vortex_auto_approved', 'publish_fac_hierarchy_panel', 'refresh_fac_hierarchy_panel', 'toggle_selected_log_channel', 'toggle_mirror_message_channel', 'open_adjust_call_v2', 'adjust_call_activate', 'adjust_call_deactivate', 'adjust_call_select_by_id', 'adjust_call_sync', 'visual_set_color', 'visual_set_banner', 'visual_clear_target', 'toggle_absence_end_message', 'test_notice', 'clear_point_user', 'clear_point_no_billing', 'correct_point_close', 'close_selected_point', 'delete_point_correction_channel', 'cancel_close_point', 'show_all_points', 'show_user_point_sheet', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'site_access_register', 'toggle_point_monitor', 'toggle_offline_charge', 'run_point_automation'].includes(interaction.customId))) {
+            if (interaction.isButton() && (interaction.customId.startsWith('tab_') || interaction.customId.startsWith('panel_back_') || ['config_set', 'config_avisos', 'config_logs', 'toggle_maint', 'toggle_channel_logs', 'toggle_dm_logs', 'toggle_activity_logs', 'toggle_notice_dms', 'send_test_log', 'toggle_panel_private_mode', 'toggle_vortex_role_remove_mode', 'set_vortex_auto_pending', 'set_vortex_auto_approved', 'publish_fac_hierarchy_panel', 'refresh_fac_hierarchy_panel', 'toggle_selected_log_channel', 'toggle_mirror_message_channel', 'open_adjust_call_v2', 'adjust_call_activate', 'adjust_call_deactivate', 'adjust_call_select_by_id', 'adjust_call_sync', 'visual_set_color', 'visual_set_banner', 'visual_clear_target', 'toggle_absence_end_message', 'test_notice', 'set_absence_role', 'change_absence_return', 'profile_test', 'profile_register', 'profile_delete_no_billing', 'profile_list_registered', 'profile_toggle_billing', 'site_access_register'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel botão: ${interaction.customId}`, () => painel.handleButton(interaction));
             }
             if (interaction.isStringSelectMenu() && interaction.customId === 'select_panel_tool') {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_point_action_channel', 'select_point_online_channel', 'select_point_adjust_category', 'select_point_online_voice_channel', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
+            if (interaction.isChannelSelectMenu() && ['select_log', 'select_disabled_log_channel', 'select_mirror_message_channel', 'select_adjust_call_channel', 'select_profile_register_channel', 'select_fac_hierarchy_channel'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_fac_hierarchy_target' || interaction.customId === 'select_open_point_user' || interaction.customId === 'select_visual_target' || interaction.customId === 'select_adjust_call_id' || interaction.customId === 'select_site_access_role')) {
+            if (interaction.isStringSelectMenu() && (interaction.customId === 'select_command_permission_target' || interaction.customId === 'select_fac_hierarchy_target' || interaction.customId === 'select_visual_target' || interaction.customId === 'select_adjust_call_id' || interaction.customId === 'select_site_access_role')) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isRoleSelectMenu() && (interaction.customId.startsWith('select_fac_hierarchy_role_') || ['select_notice_mention_role', 'select_point_adjust_role', 'select_point_allowed_roles', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId))) {
+            if (interaction.isRoleSelectMenu() && (interaction.customId.startsWith('select_fac_hierarchy_role_') || ['select_notice_mention_role', 'select_vortex_role_admin', 'select_vortex_role_medio', 'select_vortex_role_membro', 'select_command_permission_roles'].includes(interaction.customId))) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isUserSelectMenu() && ['select_point_readjust_user', 'select_profile_register_user', 'select_site_access_user'].includes(interaction.customId)) {
+            if (interaction.isUserSelectMenu() && ['select_profile_register_user', 'select_site_access_user'].includes(interaction.customId)) {
                 return runInteractionHandler(interaction, `Painel select: ${interaction.customId}`, () => painel.handleSelectMenu(interaction));
             }
-            if (interaction.isModalSubmit() && (interaction.customId === 'modal_clear_point_user' || interaction.customId === 'modal_correct_point_close' || interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register' || interaction.customId === 'modal_visual_color' || interaction.customId === 'modal_visual_banner' || interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved' || interaction.customId === 'modal_adjust_call_id')) {
+            if (interaction.isModalSubmit() && (interaction.customId === 'modal_absence_role' || interaction.customId === 'modal_absence_return' || interaction.customId === 'modal_profile_test' || interaction.customId === 'modal_profile_register' || interaction.customId === 'modal_visual_color' || interaction.customId === 'modal_visual_banner' || interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved' || interaction.customId === 'modal_adjust_call_id')) {
                 return runInteractionHandler(interaction, `Painel modal: ${interaction.customId}`, () => painel.handleModal(interaction));
             }
         }
@@ -998,3 +705,9 @@ module.exports = {
         }
     }
 };
+
+
+
+
+
+

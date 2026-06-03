@@ -258,18 +258,10 @@ function buildGuideEmbed(userId, step = 1) {
       ],
     },
     3: {
-      title: 'Como funciona o /ponto',
-      description: [
-        'Abra o ponto quando entrar em serviço e feche quando sair.',
-        'Se esquecer de fechar, use o pedido de ajuste de ponto ou fale com a gerência.',
-        'Quem ignora confirmações de ponto aberto por DM pode cair em correção e penalidade.',
-      ],
-    },
-    4: {
       title: 'Como funciona a /ausencia',
       description: [
         'Use `/ausencia` quando precisar ficar afastado.',
-        'Quem não está em ausência e fica sem bater ponto pode receber cobrança.',
+        'Leia sempre as DMs do Vortex quando enviar ou atualizar uma solicitação.',
         'Leia sempre as DMs do Vortex. Ignorar informações do bot pode causar penalidade.',
       ],
     },
@@ -279,7 +271,7 @@ function buildGuideEmbed(userId, step = 1) {
     .setColor('#7000FF')
     .setTitle(page.title)
     .setDescription(page.description.join('\n'))
-    .setFooter({ text: `Vortex - Guia inicial ${step}/4` })
+    .setFooter({ text: `Vortex - Guia inicial ${step}/3` })
     .setTimestamp();
 }
 
@@ -287,9 +279,9 @@ function buildGuideRow(step = 1) {
   const nextStep = Number(step) + 1;
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(nextStep > 4 ? 'approved_channel_guide_done' : `approved_channel_guide_${nextStep}`)
-      .setLabel(nextStep > 4 ? 'Finalizar' : 'Entendi, próximo')
-      .setStyle(nextStep > 4 ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setCustomId(nextStep > 3 ? 'approved_channel_guide_done' : `approved_channel_guide_${nextStep}`)
+      .setLabel(nextStep > 3 ? 'Finalizar' : 'Entendi, próximo')
+      .setStyle(nextStep > 3 ? ButtonStyle.Success : ButtonStyle.Primary)
   );
 }
 

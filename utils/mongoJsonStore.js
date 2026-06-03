@@ -190,36 +190,7 @@ function getLocalSourcePath(key, sourcePath = null) {
   return fallback;
 }
 
-function enrichPointTranscriptRecords(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
-  const fsOriginal = getOriginalFs();
-  const next = clone(data);
-
-  for (const record of Object.values(next)) {
-    if (!record || typeof record !== 'object') continue;
-    if (record.html || record.htmlShell) continue;
-
-    const fileName = record.htmlFileName ? path.basename(record.htmlFileName) : null;
-    const candidates = [
-      record.htmlPath,
-      fileName ? path.join(ROOT_DIR, 'public', 'transcripts', fileName) : null,
-    ].filter(Boolean);
-
-    const htmlPath = candidates.find((candidate) => fsOriginal.existsSync(candidate));
-    if (!htmlPath) continue;
-
-    try {
-      record.htmlShell = fsOriginal.readFileSync(htmlPath, 'utf8');
-    } catch {
-      // Mantem o registro sem HTML inline se o arquivo estiver bloqueado/indisponivel.
-    }
-  }
-
-  return next;
-}
-
 function normalizeDataForMongo(key, data) {
-  if (key === 'commands/pointTranscripts.json') return enrichPointTranscriptRecords(data);
   return data;
 }
 

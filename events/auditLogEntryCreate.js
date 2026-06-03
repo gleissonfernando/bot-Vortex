@@ -1,7 +1,7 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, isSilentLogUser, sendVortexLog } = require('../utils/notifications');
 const { logger } = require('../utils/logger');
-const { formatDate } = require('../utils/pontoManager');
+const { formatDate } = require('../utils/dateTime');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('../utils/guildScope');
 
 const ACTION_DETAILS = {

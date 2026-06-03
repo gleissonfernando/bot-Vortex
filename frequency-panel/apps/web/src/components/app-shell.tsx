@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Bot, CalendarOff, Clock3, Command, LayoutDashboard, LogOut, PackageOpen, Radio, Search, Server, ShieldCheck, UserCog, Users } from 'lucide-react';
+import { Bot, CalendarOff, Clock3, Command, LayoutDashboard, LogOut, PackageOpen, Radio, Search, Server, ShieldCheck, UserCog, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -12,7 +12,6 @@ const navGroups = [
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/dashboard/members', label: 'Membros', icon: Users },
-      { href: '/dashboard/reports', label: 'Relatorios', icon: BarChart3 },
       { href: '/dashboard/site-users', label: 'Usuarios do site', icon: UserCog, roles: ['admin', 'manager'] }
     ]
   },

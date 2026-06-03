@@ -5,7 +5,6 @@ import { requireManager } from '../middleware.js';
 import { getAbsences, getFrequency, getMemberAttendance } from '../services/attendance.js';
 import { getMember, listMembers } from '../services/members.js';
 import { isRegisteredProfile } from '../services/profileRegistry.js';
-import { memberReport, secondsToLabel, toCsv } from '../services/reports.js';
 
 export const membersRouter = Router();
 
@@ -61,8 +60,7 @@ membersRouter.get('/:id', async (req, res) => {
     const member = await getMember(req.params.id);
     if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
 
-    const report = await memberReport(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-    return res.json({ ok: true, member, report });
+    return res.json({ ok: true, member });
   } catch {
     return res.status(404).json({ ok: false, error: 'Member database unavailable' });
   }
@@ -102,30 +100,6 @@ membersRouter.get('/:id/absences', async (req, res) => {
   } catch {
     return res.json({ ok: true, absences: [] });
   }
-});
-
-membersRouter.get('/:id/export', async (req, res) => {
-  let sessions: any[] = [];
-  try {
-    const member = await getMember(req.params.id);
-    if (!member) return res.status(404).json({ ok: false, error: 'Member not found' });
-
-    sessions = await getMemberAttendance(req.params.id, String(req.query.from || ''), String(req.query.to || ''));
-  } catch {
-    sessions = [];
-  }
-  const rows = sessions.map((session: any) => ({
-    opened_at: session.opened_at,
-    closed_at: session.closed_at || '',
-    total: secondsToLabel(session.total_seconds),
-    total_seconds: session.total_seconds,
-    source: session.source,
-    opened_by: session.opened_by || '',
-    closed_by: session.closed_by || ''
-  }));
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="member-${req.params.id}-attendance.csv"`);
-  return res.send(toCsv(rows));
 });
 
 membersRouter.post('/:id/absences', requireManager, async (_req, res) => {

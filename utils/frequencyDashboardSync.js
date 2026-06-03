@@ -1,18 +1,13 @@
-const { listGuildPoints } = require('./pontoManager');
 const { isPrimaryGuild } = require('./guildScope');
 const { logger } = require('./logger');
 
 const DEFAULT_API_URL = 'http://127.0.0.1:4100';
 const MEMBER_CHUNK_SIZE = 100;
-const SESSION_CHUNK_SIZE = 150;
 const MEMBER_SYNC_INTERVAL_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || 15 * 60 * 1000));
-const POINT_SYNC_INTERVAL_MS = Math.max(30 * 1000, Number(process.env.FREQUENCY_POINT_SYNC_INTERVAL_MS || 60 * 1000));
 const DISCORD_PROFILE_CACHE_MS = Math.max(5 * 60 * 1000, Number(process.env.FREQUENCY_DISCORD_PROFILE_CACHE_MS || 30 * 60 * 1000));
 let intervalsStarted = false;
-let pointSyncQueued = false;
 let memberSyncQueued = false;
 let memberSyncRunning = false;
-let pointSyncRunning = false;
 const discordProfileCache = new Map();
 
 function hasRegisteredProfile(guildId, userId) {
@@ -125,92 +120,8 @@ async function syncGuildMembers(client) {
   return { total };
 }
 
-function buildSessionId(guildId, userId, startedAt, closedAt, index = 0) {
-  return [
-    'vortex',
-    String(guildId).replace(/\D/g, ''),
-    String(userId).replace(/\D/g, ''),
-    String(startedAt || '').replace(/[^a-zA-Z0-9]/g, ''),
-    String(closedAt || 'open').replace(/[^a-zA-Z0-9]/g, ''),
-    index,
-  ].join('-').slice(0, 180);
-}
-
-function pointSessionsFromRecord(point) {
-  const sessions = [];
-  const guildId = String(point.guildId);
-  const userId = String(point.userId);
-
-  for (const [index, session] of (point.sessions || []).entries()) {
-    if (!session?.startedAt) continue;
-    sessions.push({
-      id: String(session.pointId || buildSessionId(guildId, userId, session.startedAt, session.closedAt, index)),
-      guildId,
-      discordUserId: userId,
-      openedAt: session.startedAt,
-      closedAt: session.closedAt || null,
-      totalSeconds: Math.max(0, Math.floor(Number(session.durationMs || 0) / 1000)),
-      source: session.source || point.activePointSource || 'vortex-point',
-      openedBy: session.openedBy || userId,
-      closedBy: session.closedBy || session.correctedBy || session.adjustedBy || userId,
-      note: session.reason || session.serverName || null,
-    });
-  }
-
-  if (point.activePointStartedAt) {
-    sessions.push({
-      id: String(point.activePointId || buildSessionId(guildId, userId, point.activePointStartedAt, 'open')),
-      guildId,
-      discordUserId: userId,
-      openedAt: point.activePointStartedAt,
-      closedAt: null,
-      totalSeconds: 0,
-      source: point.activePointSource || 'vortex-point',
-      openedBy: userId,
-      closedBy: null,
-      note: point.activePointReason || point.activePointServerName || null,
-    });
-  }
-
-  return sessions;
-}
-
-async function syncPointSnapshot(client) {
-  if (!isEnabled()) return { skipped: true };
-  let total = 0;
-  let cityPresenceTotal = 0;
-  for (const guild of getPrimaryGuilds(client).values()) {
-    const points = (await listGuildPoints(guild.id))
-      .filter((point) => hasRegisteredProfile(guild.id, point.userId));
-    const membersById = new Map();
-    const sessions = points.flatMap(pointSessionsFromRecord);
-
-    for (const point of points) {
-      const member = guild.members.cache.get(point.userId)
-        || await guild.members.fetch(point.userId).catch(() => null);
-      if (member && !member.user?.bot) membersById.set(member.id, await mapMember(member));
-    }
-
-    for (let index = 0; index < sessions.length; index += SESSION_CHUNK_SIZE) {
-      const chunk = sessions.slice(index, index + SESSION_CHUNK_SIZE);
-      const memberIds = new Set(chunk.map((item) => item.discordUserId));
-      const members = Array.from(membersById.values()).filter((member) => memberIds.has(member.discordUserId));
-      await postToFrequencyApi('/ingest/point-snapshot', { members, sessions: chunk });
-    }
-    total += sessions.length;
-    cityPresenceTotal += await syncGuildCityPresences(guild);
-  }
-  logger.info(`Frequency dashboard: ${total} sessao(oes) de ponto e ${cityPresenceTotal} presenca(s) de cidade sincronizada(s).`);
-  return { total, cityPresenceTotal };
-}
-
 function queuePointSnapshotSync(client, delayMs = 1500) {
-  if (pointSyncQueued) return;
-  pointSyncQueued = true;
-  setTimeout(() => {
-    pointSyncQueued = false;
-    runPointSyncScheduled(client);
-  }, Math.max(1000, Number(delayMs) || 1500));
+  return queueMemberSync(client, delayMs);
 }
 
 function queueMemberSync(client, delayMs = 1500) {
@@ -278,19 +189,6 @@ function runMemberSyncScheduled(client) {
     });
 }
 
-function runPointSyncScheduled(client) {
-  if (pointSyncRunning) return;
-  pointSyncRunning = true;
-  syncPointSnapshot(client)
-    .catch((error) => {
-      logger.warn('Falha ao sincronizar pontos com o dashboard:', error.message);
-      queuePointSnapshotSync(client, 60 * 1000);
-    })
-    .finally(() => {
-      pointSyncRunning = false;
-    });
-}
-
 function initFrequencyDashboardSync(client) {
   if (!isEnabled()) {
     logger.info(`Frequency dashboard sync desativado: ${getDisabledReason()}.`);
@@ -301,16 +199,12 @@ function initFrequencyDashboardSync(client) {
 
   setTimeout(() => {
     runMemberSyncScheduled(client);
-    runPointSyncScheduled(client);
   }, 10 * 1000);
 
   setInterval(() => {
     runMemberSyncScheduled(client);
   }, MEMBER_SYNC_INTERVAL_MS);
 
-  setInterval(() => {
-    runPointSyncScheduled(client);
-  }, POINT_SYNC_INTERVAL_MS);
 }
 
 module.exports = {
@@ -319,6 +213,5 @@ module.exports = {
   queuePointSnapshotSync,
   syncGuildCityPresences,
   syncGuildMembers,
-  syncPointSnapshot,
   syncPresence,
 };

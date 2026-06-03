@@ -18,19 +18,6 @@ function cityPresenceFreshSince() {
   return new Date(Date.now() - staleSeconds * 1000);
 }
 
-function rangeFilter(field: string, from?: string, to?: string) {
-  const range: Record<string, Date> = {};
-  const fromDate = toDate(from);
-  const toDateValue = toDate(to);
-  if (fromDate) range.$gte = fromDate;
-  if (toDateValue) {
-    const nextDay = new Date(toDateValue);
-    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-    range.$lt = nextDay;
-  }
-  return Object.keys(range).length ? { [field]: range } : {};
-}
-
 export async function dashboardMetrics() {
   const members = await collection('discord_members');
   const sessions = await collection('attendance_sessions');
@@ -124,61 +111,4 @@ export async function dashboardMetrics() {
     trend: [...trendMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key)),
     activity
   };
-}
-
-export async function memberReport(memberId: string, from?: string, to?: string) {
-  const sessions = await collection('attendance_sessions');
-  const docs = await sessions.find({
-    member_id: memberId,
-    ...rangeFilter('opened_at', from, to)
-  }).sort({ opened_at: 1 }).toArray();
-
-  const daysMap = new Map<string, { date_key: string; sessions: number; total_seconds: number }>();
-  let lastActivity: Date | null = null;
-  let openSessions = 0;
-  let totalSeconds = 0;
-
-  for (const session of docs as any[]) {
-    const key = dateKey(session.opened_at);
-    const day = daysMap.get(key) || { date_key: key, sessions: 0, total_seconds: 0 };
-    const seconds = Number(session.total_seconds || 0);
-    day.sessions += 1;
-    day.total_seconds += seconds;
-    totalSeconds += seconds;
-    if (!session.closed_at) openSessions += 1;
-
-    const activity = session.closed_at || session.opened_at;
-    if (activity && (!lastActivity || activity > lastActivity)) lastActivity = activity;
-    daysMap.set(key, day);
-  }
-
-  return {
-    summary: {
-      total_sessions: docs.length,
-      open_sessions: openSessions,
-      total_seconds: totalSeconds,
-      active_days: daysMap.size,
-      last_activity_at: lastActivity ? lastActivity.toISOString() : null
-    },
-    days: [...daysMap.values()].sort((a, b) => a.date_key.localeCompare(b.date_key))
-  };
-}
-
-export function secondsToLabel(seconds: number) {
-  const totalMinutes = Math.max(0, Math.round(Number(seconds || 0) / 60));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (!hours) return `${minutes}min`;
-  if (!minutes) return `${hours}h`;
-  return `${hours}h ${minutes}min`;
-}
-
-export function toCsv(rows: Record<string, unknown>[]) {
-  if (!rows.length) return '';
-  const headers = Object.keys(rows[0]);
-  const lines = [headers.join(',')];
-  for (const row of rows) {
-    lines.push(headers.map((key) => JSON.stringify(row[key] ?? '')).join(','));
-  }
-  return lines.join('\n');
 }

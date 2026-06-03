@@ -10,7 +10,7 @@ module.exports = {
     if (isMaintenanceMode()) return;
 
     await handleFiveMActivityAlert(oldPresence, newPresence).catch((error) => {
-      logger.error('Erro ao processar atividade FiveM/ponto automatico:', error);
+      logger.error('Erro ao processar atividade FiveM:', error);
     });
     await syncPresence(newPresence);
   },

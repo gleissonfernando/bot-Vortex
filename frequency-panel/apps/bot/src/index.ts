@@ -43,36 +43,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.editReply(`Sincronizacao concluida: ${count} membros.`);
     return;
   }
-
-  if (interaction.commandName === 'ponto') {
-    await interaction.deferReply({ ephemeral: true });
-    const guildMember = await interaction.guild?.members.fetch(interaction.user.id);
-    if (!guildMember || !interaction.guild) {
-      await interaction.editReply('Nao foi possivel identificar o membro.');
-      return;
-    }
-
-    const action = interaction.options.getString('acao', true) as 'open' | 'close';
-    const note = interaction.options.getString('observacao') || null;
-    const result = await postToApi('/ingest/attendance', {
-      action,
-      guildId: interaction.guild.id,
-      discordUserId: interaction.user.id,
-      actorId: interaction.user.id,
-      note,
-      member: await mapMember(guildMember)
-    });
-
-    const label = result.result?.action === 'opened'
-      ? 'Entrada registrada.'
-      : result.result?.action === 'closed'
-        ? 'Saida registrada.'
-        : result.result?.action === 'already_open'
-          ? 'Seu ponto ja esta aberto.'
-          : 'Seu ponto ja esta fechado.';
-
-    await interaction.editReply(label);
-  }
 });
 
 client.on(Events.PresenceUpdate, async (_oldPresence, newPresence) => {

@@ -18,7 +18,6 @@ import {
   MessageSquare,
   PackageOpen,
   Palette,
-  Radio,
   RefreshCw,
   Save,
   Search,
@@ -60,12 +59,9 @@ const commandOptions: CommandOption[] = [
   { key: 'clear', label: '/clear', description: 'Quem pode limpar mensagens no chat.' },
   { key: 'clipe', label: '/clipe', description: 'Quem pode enviar clipes.' },
   { key: 'set', label: '/set', description: 'Quem pode usar o sistema de set.' },
-  { key: 'serve', label: '/serve', description: 'Quem pode consultar ou usar serve.' },
-  { key: 'registro', label: '/registro', description: 'Quem pode consultar registros.' },
   { key: 'ausencia', label: '/ausencia', description: 'Quem pode usar ausencia.' },
   { key: 'perfil', label: '/perfil', description: 'Quem pode consultar e atualizar perfil.' },
   { key: 'cadastro', label: '/cadastro', description: 'Quem pode ligar cadastro por mensagens.' },
-  { key: 'ativarponto', label: '/ativarponto', description: 'Quem pode publicar o painel de ponto.' },
   { key: 'bau', label: '/bau membro', description: 'Quem pode publicar e cadastrar produtos no bau.' },
   { key: 'bau-membros', label: '/bau-membros', description: 'Quem pode gerenciar bau de membros.' }
 ];
@@ -77,8 +73,6 @@ const visualTargets = [
   { id: 'avisos', name: '/avisos' },
   { id: 'mirrorMessages', name: 'Mensagens em painel' },
   { id: 'ausencia', name: '/ausencia' },
-  { id: 'ponto', name: 'Painel de ponto' },
-  { id: 'pontoStatus', name: 'Status do ponto' },
   { id: 'exibir', name: '/exibir' },
   { id: 'facHierarchy', name: 'Hierarquia FAC' },
   { id: 'bau', name: 'Bau' }
@@ -102,15 +96,14 @@ const ratioOptions = [
 ];
 
 const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
-  stats: { icon: Gauge, keys: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE', 'POINT_MONITOR_ENABLED', 'POINT_OFFLINE_CHARGE_ENABLED'] },
+  stats: { icon: Gauge, keys: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE'] },
   roles: { icon: Shield, keys: ['VORTEX_ROLE_LEVELS', 'VORTEX_AUTO_ROLES'] },
-  points: { icon: Radio, keys: ['POINT_'] },
   absence: { icon: Clock3, keys: ['ABSENCE_'] },
   commands: { icon: Lock, keys: ['COMMAND_ROLE_PERMISSIONS', 'COMMAND_DISABLED_COMMANDS'] },
   profile: { icon: Users, keys: ['PROFILE_'] },
-  billing: { icon: CreditCard, keys: ['PROFILE_BILLING_ENABLED', 'POINT_OFFLINE_CHARGE_ENABLED', 'POINT_OFFLINE_THRESHOLD_HOURS'] },
+  billing: { icon: CreditCard, keys: ['PROFILE_BILLING_ENABLED'] },
   messages: { icon: MessageSquare, keys: ['MIRROR_MESSAGE_CHANNEL_IDS', 'DISABLE_NOTICE_DMS', 'NOTICE_MENTION_ROLE_ID'] },
-  adjust: { icon: Wrench, keys: ['ADJUST_CALL_CHANNEL_IDS', 'POINT_ADJUST_'] },
+  adjust: { icon: Wrench, keys: ['ADJUST_CALL_CHANNEL_IDS'] },
   bau: { icon: PackageOpen, keys: ['COMMAND_ROLE_PERMISSIONS'] },
   visual: { icon: Palette, keys: ['PANEL_VISUALS', 'PANEL_THEME'] },
   hierarchy: { icon: Eye, keys: ['FACTION_HIERARCHY'] },
@@ -120,8 +113,6 @@ const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
 const keyLabels: Record<string, string> = {
   MAINTENANCE_MODE: 'manutencao',
   PANEL_PRIVATE_MODE: 'painel privado',
-  POINT_MONITOR_ENABLED: 'monitor de ponto',
-  POINT_OFFLINE_CHARGE_ENABLED: 'cobranca offline',
   COMMAND_ROLE_PERMISSIONS: 'permissoes',
   COMMAND_DISABLED_COMMANDS: 'comandos desativados',
   VORTEX_ROLE_LEVELS: 'cargos vortex',
@@ -174,7 +165,6 @@ export default function BotVortexPage() {
 
   const textChannels = useMemo(() => channels.filter((channel) => channel.type === 0 || channel.type === 5), [channels]);
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 2), [channels]);
-  const categories = useMemo(() => channels.filter((channel) => channel.type === 4), [channels]);
   const logChannels = useMemo(() => channels.filter((channel) => [0, 2, 5].includes(Number(channel.type))), [channels]);
   const filteredTools = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -555,42 +545,6 @@ export default function BotVortexPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <ConfigToggleCard icon={ToggleLeft} label="Modo manutencao" description="Pausa o uso normal do bot e mostra alerta no site." value={config.MAINTENANCE_MODE} onChange={(value) => update('MAINTENANCE_MODE', value)} />
                     <ConfigToggleCard icon={Lock} label="Painel privado" description="Limita o /painel aos cargos configurados." value={config.PANEL_PRIVATE_MODE} onChange={(value) => update('PANEL_PRIVATE_MODE', value)} />
-                    <ConfigToggleCard icon={Radio} label="Monitor de ponto" description="Mantem a automacao de ponto e presenca ativa." value={config.POINT_MONITOR_ENABLED} onChange={(value) => update('POINT_MONITOR_ENABLED', value)} />
-                    <ConfigToggleCard icon={CreditCard} label="Cobranca offline" description="Aplica regras de cobranca por ausencia/offline." value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />
-                  </div>
-                </ControlGroup>
-              </ToolPanel>
-            ) : null}
-
-            {config && selected === 'points' ? (
-              <ToolPanel title="Gestao de pontos" description="Canais, automacao, cargos e tempos usados pelo sistema de ponto." icon={Radio}>
-                <ControlGroup title="Canais do ponto" description="Os botoes e avisos do ponto usam estes canais no Discord.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Select label="Canal para bater ponto" value={config.POINT_ACTION_CHANNEL_ID || ''} options={textChannels} onChange={(value) => update('POINT_ACTION_CHANNEL_ID', value)} />
-                    <Select label="Canal de membros online" value={config.POINT_ONLINE_CHANNEL_ID || ''} options={textChannels} onChange={(value) => update('POINT_ONLINE_CHANNEL_ID', value)} />
-                    <Select label="Call liberada no game" value={config.POINT_ONLINE_VOICE_CHANNEL_ID || ''} options={voiceChannels} onChange={(value) => update('POINT_ONLINE_VOICE_CHANNEL_ID', value)} />
-                    <Select label="Categoria de ajuste" value={config.POINT_ADJUST_CATEGORY_ID || ''} options={categories} onChange={(value) => update('POINT_ADJUST_CATEGORY_ID', value)} />
-                    <Select label="Categoria de correcao" value={config.POINT_MONITOR_CORRECTION_CATEGORY_ID || ''} options={categories} onChange={(value) => update('POINT_MONITOR_CORRECTION_CATEGORY_ID', value)} />
-                    <Select label="Canal de penalidade" value={config.POINT_PENALTY_CHANNEL_ID || ''} options={textChannels} onChange={(value) => update('POINT_PENALTY_CHANNEL_ID', value)} />
-                  </div>
-                </ControlGroup>
-
-                <ControlGroup title="Automacao" description="Tempos usados pelo monitor para avisar, fechar e cobrar ponto.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <SwitchRow label="Monitor de ponto" value={config.POINT_MONITOR_ENABLED} onChange={(value) => update('POINT_MONITOR_ENABLED', value)} />
-                    <SwitchRow label="Cobranca offline" value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />
-                    <NumberInput label="Fechar automatico apos horas" value={config.POINT_MONITOR_AUTO_CLOSE_HOURS} onChange={(value) => update('POINT_MONITOR_AUTO_CLOSE_HOURS', value)} />
-                    <NumberInput label="Intervalo de DM em horas" value={config.POINT_MONITOR_DM_INTERVAL_HOURS} onChange={(value) => update('POINT_MONITOR_DM_INTERVAL_HOURS', value)} />
-                    <NumberInput label="Maximo de DMs por ponto" value={config.POINT_MONITOR_MAX_DM_ATTEMPTS} onChange={(value) => update('POINT_MONITOR_MAX_DM_ATTEMPTS', value)} />
-                    <NumberInput label="Limite offline em horas" value={config.POINT_OFFLINE_THRESHOLD_HOURS} onChange={(value) => update('POINT_OFFLINE_THRESHOLD_HOURS', value)} />
-                  </div>
-                </ControlGroup>
-
-                <ControlGroup title="Permissoes do ponto" description="Cargos liberados para bater ponto e analisar ajustes.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <MultiSelect label="Cargos que podem bater ponto" value={config.POINT_ALLOWED_ROLE_IDS || []} options={roles} onChange={(value) => update('POINT_ALLOWED_ROLE_IDS', value)} />
-                    <MultiSelect label="Cargos staff de ajuste" value={config.POINT_ADJUST_STAFF_ROLES || []} options={roles} onChange={(value) => update('POINT_ADJUST_STAFF_ROLES', value)} />
-                    <StringListInput label="Gestores por DM" value={config.POINT_MANAGER_DM_USER_IDS || []} onChange={(value) => update('POINT_MANAGER_DM_USER_IDS', value)} placeholder="IDs separados por virgula" />
                   </div>
                 </ControlGroup>
               </ToolPanel>
@@ -776,12 +730,10 @@ export default function BotVortexPage() {
             ) : null}
 
             {config && selected === 'billing' ? (
-              <ToolPanel title="Cobrancas" description="Regras automaticas de perfil e ponto offline." icon={CreditCard}>
+              <ToolPanel title="Cobrancas" description="Regras automaticas de perfil." icon={CreditCard}>
                 <ControlGroup title="Regras ativas" description="As cobrancas automaticas rodam toda segunda-feira no bot.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <SwitchRow label="Cobrancas de perfil" value={config.PROFILE_BILLING_ENABLED} onChange={(value) => update('PROFILE_BILLING_ENABLED', value)} />
-                    <SwitchRow label="Cobranca offline" value={config.POINT_OFFLINE_CHARGE_ENABLED} onChange={(value) => update('POINT_OFFLINE_CHARGE_ENABLED', value)} />
-                    <NumberInput label="Limite offline em horas" value={config.POINT_OFFLINE_THRESHOLD_HOURS} onChange={(value) => update('POINT_OFFLINE_THRESHOLD_HOURS', value)} />
                   </div>
                 </ControlGroup>
               </ToolPanel>
@@ -808,11 +760,10 @@ export default function BotVortexPage() {
             ) : null}
 
             {config && selected === 'adjust' ? (
-              <ToolPanel title="Ajuste" description="Calls e cargos usados para correcao de ponto." icon={Wrench}>
+              <ToolPanel title="Ajuste" description="Calls usadas pelo painel." icon={Wrench}>
                 <ControlGroup title="Calls de ajuste" description="Calls liberadas para o sistema de ajuste.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <MultiSelect label="Calls de ajuste" value={config.ADJUST_CALL_CHANNEL_IDS || []} options={voiceChannels} onChange={(value) => update('ADJUST_CALL_CHANNEL_IDS', value)} />
-                    <MultiSelect label="Staff de ajuste" value={config.POINT_ADJUST_STAFF_ROLES || []} options={roles} onChange={(value) => update('POINT_ADJUST_STAFF_ROLES', value)} />
                   </div>
                 </ControlGroup>
               </ToolPanel>
@@ -1106,7 +1057,6 @@ function CommandPermissionCard({
 
 function commandIcon(key: string): LucideIcon {
   if (key.includes('bau')) return PackageOpen;
-  if (key.includes('ponto') || key === 'ativarponto') return Radio;
   if (key === 'painel') return Settings2;
   if (key === 'avisos') return MessageSquare;
   if (key === 'perfil' || key === 'cadastro') return Users;
