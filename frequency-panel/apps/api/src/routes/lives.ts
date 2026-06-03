@@ -5,7 +5,6 @@ import { collection, serializeDoc, serializeDocs } from '../db.js';
 import { env } from '../env.js';
 import { requireManager } from '../middleware.js';
 
-const DEFAULT_MESSAGE = '@{streamer} {title}';
 const PLATFORMS = ['twitch', 'kick', 'youtube', 'tiktok', 'facebook', 'trovo'] as const;
 const PLATFORM_LABELS: Record<string, string> = {
   twitch: 'Twitch',
@@ -71,17 +70,12 @@ const optionalDiscordId = z.preprocess(
   z.string().min(1).max(32).optional().nullable()
 );
 
-const optionalText = (max: number) => z.preprocess(
-  (value) => value === '' ? null : value,
-  z.string().max(max).optional().nullable()
-);
-
 const liveSchema = z.object({
   platform: z.enum(PLATFORMS).optional(),
   url: z.string().trim().min(3).max(300),
   discordChannelId: z.string().min(5).max(32),
   discordRoleId: optionalDiscordId,
-  customMessage: optionalText(1200),
+  customMessage: z.unknown().optional(),
   guildId: z.string().min(5).max(32).optional()
 });
 
@@ -349,17 +343,6 @@ async function checkLiveStatus(item: LiveNotificationDoc) {
   return checkPageHeuristic(item);
 }
 
-function renderTemplate(template: string, item: LiveNotificationDoc, status: LiveStatus) {
-  return String(template || DEFAULT_MESSAGE)
-    .replaceAll('{streamer}', item.streamer_name)
-    .replaceAll('{title}', status.title || 'Live')
-    .replaceAll('{game}', status.game || 'Nao informado')
-    .replaceAll('{viewers}', status.viewers === null || status.viewers === undefined ? 'Nao informado' : String(status.viewers))
-    .replaceAll('{url}', status.url || item.channel_url)
-    .replaceAll('{thumbnail}', status.thumbnail || '')
-    .replaceAll('{platform}', PLATFORM_LABELS[item.platform] || item.platform);
-}
-
 function allowedMentions(roleId: string | null, guildId: string) {
   if (!roleId) return { parse: [] };
   if (roleId === guildId || roleId === '@everyone') return { parse: ['everyone'] };
@@ -526,7 +509,7 @@ function normalizeLive(doc: LiveNotificationDoc) {
   item.streamerName = doc.streamer_name;
   item.discordChannelId = doc.discord_channel_id;
   item.discordRoleId = doc.discord_role_id;
-  item.customMessage = doc.custom_message;
+  item.customMessage = null;
   item.lastStatus = doc.last_status;
   item.lastLiveId = doc.last_live_id;
   item.lastTitle = doc.last_title || null;
@@ -635,7 +618,7 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
     streamer_name: resolved.streamerName,
     discord_channel_id: input.discordChannelId,
     discord_role_id: input.discordRoleId || guildId,
-    custom_message: input.customMessage || null,
+    custom_message: null,
     avatar_url: resolvedAvatarUrl(resolved),
     last_status: 'unknown',
     last_live_id: null,
@@ -672,7 +655,7 @@ livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
   }
   if (input.discordChannelId !== undefined) update.discord_channel_id = input.discordChannelId;
   if (input.discordRoleId !== undefined) update.discord_role_id = input.discordRoleId || null;
-  if (input.customMessage !== undefined) update.custom_message = input.customMessage || null;
+  update.custom_message = null;
   const row = await (await collection<LiveNotificationDoc>('live_notifications')).findOneAndUpdate({ _id: id }, { $set: update }, { returnDocument: 'after' });
   if (!row) return res.status(404).json({ ok: false, error: 'Canal nao encontrado.' });
   return res.json({ ok: true, live: normalizeLive(row) });

@@ -17,7 +17,7 @@ const { logger } = require('./logger');
 const { connectDatabase, isMongoConnected, isMongoConfigured } = require('./database');
 
 const STORE_PATH = path.join(__dirname, '..', 'commands', 'liveAlerts.json');
-const DEFAULT_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+const DEFAULT_MESSAGE = '@{streamer} {title}';
 const DEFAULT_INTERVAL_SECONDS = 30;
 const MIN_INTERVAL_MS = 30 * 1000;
 const LIVE_ALERT_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
@@ -180,7 +180,7 @@ function normalizeLive(row) {
     alertChannelId: row.alert_channel_id || row.alertChannelId || null,
     mentionRoleId: row.mention_role_id || row.mentionRoleId || null,
     enabled: row.enabled !== false,
-    customMessage: row.custom_message || row.customMessage || null,
+    customMessage: null,
     status: row.status || 'unknown',
     lastAnnouncedLiveId: row.last_announced_live_id || row.lastAnnouncedLiveId || null,
     lastAlertMessageId: row.last_alert_message_id || row.lastAlertMessageId || null,
@@ -201,7 +201,7 @@ function normalizeSettings(row = {}) {
     enabled: row.enabled !== false,
     defaultAlertChannelId: row.default_alert_channel_id || row.defaultAlertChannelId || null,
     defaultMentionRoleId: row.default_mention_role_id || row.defaultMentionRoleId || null,
-    defaultMessage: row.default_message || row.defaultMessage || DEFAULT_MESSAGE,
+    defaultMessage: DEFAULT_MESSAGE,
     checkIntervalSeconds: Number(row.check_interval_seconds || row.checkIntervalSeconds || DEFAULT_INTERVAL_SECONDS),
   };
 }
@@ -270,7 +270,7 @@ async function saveLiveSettings(guildId, patch) {
           enabled: next.enabled !== false,
           default_alert_channel_id: next.defaultAlertChannelId || null,
           default_mention_role_id: next.defaultMentionRoleId || null,
-          default_message: next.defaultMessage || DEFAULT_MESSAGE,
+          default_message: DEFAULT_MESSAGE,
           check_interval_seconds: next.checkIntervalSeconds || DEFAULT_INTERVAL_SECONDS,
           updated_at: new Date(),
         },
@@ -311,7 +311,7 @@ async function createLiveAlert(guildId, input) {
     alert_channel_id: input.alertChannelId || input.alert_channel_id || null,
     mention_role_id: input.mentionRoleId || input.mention_role_id || null,
     enabled: input.enabled !== false,
-    custom_message: input.customMessage || input.custom_message || null,
+    custom_message: null,
     status: 'unknown',
     last_live_title: null,
     last_live_url: null,
@@ -622,14 +622,6 @@ async function checkLiveStatus(live) {
   return checkPageLive(live);
 }
 
-function renderMessage(template, live, status) {
-  return String(template || DEFAULT_MESSAGE)
-    .replaceAll('{streamer}', live.streamerName)
-    .replaceAll('{platform}', live.platform)
-    .replaceAll('{title}', status.title || 'Live da Vortex')
-    .replaceAll('{url}', status.url || live.url);
-}
-
 function isEveryoneMention(roleId, guildId) {
   return Boolean(roleId && guildId && String(roleId) === String(guildId));
 }
@@ -647,14 +639,6 @@ function liveAlertAllowedMentions(roleId, guildId) {
 
 function liveAlertRoleId(live, settings) {
   return live.mentionRoleId || settings.defaultMentionRoleId || process.env.LIVE_MENTION_ROLE_ID || null;
-}
-
-function liveAlertContent(roleId, live, status, template) {
-  const mention = formatAlertMention(roleId, live.guildId);
-  if (template && template !== DEFAULT_MESSAGE) {
-    return [mention, renderMessage(template, live, status)].filter(Boolean).join('\n\n');
-  }
-  return mention || '';
 }
 
 function twitchPreviewUrl(status) {

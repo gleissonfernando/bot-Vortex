@@ -12,7 +12,6 @@ type LiveItem = {
   streamerName: string;
   discordChannelId: string;
   discordRoleId: string | null;
-  customMessage: string | null;
   lastStatus: 'online' | 'offline' | 'unknown';
   lastTitle?: string | null;
   lastGame?: string | null;
@@ -38,8 +37,6 @@ type Stats = {
 
 type PlatformId = 'twitch' | 'youtube' | 'tiktok' | 'kick' | 'facebook' | 'trovo';
 
-const defaultMessage = '@{streamer} {title}';
-
 const platformCards: Array<{ id: PlatformId; name: string; description: string; color: string; accent: string }> = [
   { id: 'twitch', name: 'Twitch', description: 'Monitora lives pela Twitch Helix API.', color: 'bg-[#9146ff]', accent: 'text-violet-200' },
   { id: 'youtube', name: 'YouTube Live', description: 'Monitora canais e transmissões públicas.', color: 'bg-[#ff0033]', accent: 'text-red-200' },
@@ -53,8 +50,7 @@ const initialForm = {
   platform: 'twitch' as PlatformId,
   discordChannelId: '',
   discordRoleId: '',
-  url: '',
-  customMessage: defaultMessage
+  url: ''
 };
 
 export default function LivesPage() {
@@ -98,7 +94,7 @@ export default function LivesPage() {
 
   function openAdd(platform: PlatformId) {
     setEditingId(null);
-    setForm({ ...initialForm, platform, customMessage: defaultMessage });
+    setForm({ ...initialForm, platform });
     setModalOpen(true);
   }
 
@@ -108,8 +104,7 @@ export default function LivesPage() {
       platform: live.platform,
       discordChannelId: live.discordChannelId || '',
       discordRoleId: live.discordRoleId || '',
-      url: live.channelUrl,
-      customMessage: live.customMessage || defaultMessage
+      url: live.channelUrl
     });
     setModalOpen(true);
   }
@@ -122,8 +117,7 @@ export default function LivesPage() {
         platform: form.platform,
         url: form.url,
         discordChannelId: form.discordChannelId,
-        discordRoleId: form.discordRoleId || null,
-        customMessage: form.customMessage || null
+        discordRoleId: form.discordRoleId || null
       };
       if (editingId) {
         await apiFetch(`/lives/${editingId}`, { method: 'PUT', body: JSON.stringify(payload) });
@@ -317,18 +311,6 @@ function LiveModal({
             onChange={(value) => onChange({ ...form, url: value })}
             placeholder={placeholderFor(form.platform)}
           />
-          <label className="block">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Mensagem personalizada</span>
-            <textarea
-              value={form.customMessage}
-              onChange={(event) => onChange({ ...form, customMessage: event.target.value })}
-              className="mt-1 h-40 w-full resize-none rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm leading-6 text-white outline-none transition placeholder:text-slate-600 focus:border-sky-300/60"
-              placeholder={defaultMessage}
-            />
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Variaveis: {'{streamer}'}, {'{title}'}, {'{game}'}, {'{viewers}'}, {'{url}'}, {'{thumbnail}'}, {'{platform}'}
-            </p>
-          </label>
         </div>
 
         <footer className="flex flex-col-reverse gap-2 border-t border-white/10 px-5 py-4 sm:flex-row sm:justify-end">

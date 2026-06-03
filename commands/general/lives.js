@@ -12,7 +12,6 @@ const { hasVortexLevel } = require('../../utils/permissions');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
 const {
   createLiveAlert,
-  DEFAULT_MESSAGE,
   detectPlatform,
   getLiveSettings,
   listLiveAlerts,
@@ -94,15 +93,6 @@ function buildRegisterModal() {
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
       ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('message')
-          .setLabel('Mensagem personalizada')
-          .setPlaceholder(DEFAULT_MESSAGE)
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setMaxLength(1000)
-      )
     );
 }
 
@@ -197,14 +187,12 @@ module.exports = {
       const streamerName = interaction.fields.getTextInputValue('streamer').trim();
       const alertChannelId = interaction.fields.getTextInputValue('channel').trim() || null;
       const mentionRoleId = interaction.fields.getTextInputValue('role').trim() || null;
-      const customMessage = interaction.fields.getTextInputValue('message').trim() || null;
       const live = await createLiveAlert(interaction.guildId, {
         platform: detectPlatform(url),
         url,
         streamerName,
         alertChannelId,
         mentionRoleId,
-        customMessage,
       });
       return safeEdit(interaction, { content: `✅ Live cadastrada: **${live.streamerName}** (${live.platform}).` });
     }
