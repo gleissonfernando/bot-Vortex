@@ -12,7 +12,7 @@ export const ingestRouter = Router();
 
 ingestRouter.use(requireIngestSecret);
 
-const DEFAULT_LIVE_MESSAGE = '🔴 {streamer} está ao vivo!\n\n🎮 Plataforma: {platform}\n📺 Título da live: {title}\n👤 Streamer: {streamer}\n🔗 Assistir agora: {url}';
+const DEFAULT_LIVE_MESSAGE = '@{streamer} {title}';
 
 function detectLivePlatform(url: string) {
   try {
@@ -340,7 +340,7 @@ ingestRouter.post('/live-alerts', async (req, res) => {
     alertChannelId: z.string().optional().nullable(),
     mentionRoleId: z.string().optional().nullable(),
     enabled: z.boolean().optional(),
-    customMessage: z.string().max(1200).optional().nullable(),
+    customMessage: z.unknown().optional(),
     twitchLogin: z.string().optional().nullable(),
     twitchUserId: z.string().optional().nullable(),
     avatarUrl: z.string().optional().nullable(),
@@ -363,7 +363,7 @@ ingestRouter.post('/live-alerts', async (req, res) => {
       alert_channel_id: input.alertChannelId || null,
       mention_role_id: input.mentionRoleId || null,
       enabled: input.enabled !== false,
-      custom_message: input.customMessage || null,
+      custom_message: null,
       status: 'unknown',
       last_live_title: null,
       last_live_url: null,
@@ -413,7 +413,7 @@ ingestRouter.patch('/live-alert-settings/:guildId', async (req, res) => {
       enabled: parsed.data.enabled ?? current?.enabled ?? true,
       default_alert_channel_id: parsed.data.defaultAlertChannelId ?? current?.default_alert_channel_id ?? null,
       default_mention_role_id: parsed.data.defaultMentionRoleId ?? current?.default_mention_role_id ?? null,
-      default_message: parsed.data.defaultMessage ?? current?.default_message ?? DEFAULT_LIVE_MESSAGE,
+      default_message: DEFAULT_LIVE_MESSAGE,
       check_interval_seconds: parsed.data.checkIntervalSeconds ?? current?.check_interval_seconds ?? 30,
       updated_at: new Date()
     };

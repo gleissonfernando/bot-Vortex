@@ -495,6 +495,10 @@ async function monitorLiveNotificationsOnce() {
 }
 
 export function startLiveNotificationMonitor() {
+  if (process.env.LIVE_SITE_MONITOR_ENABLED !== 'true') {
+    console.log('[frequency-api] Monitor de lives do site desativado. Alertas Discord ficam a cargo do bot.');
+    return;
+  }
   if (monitorStarted) return;
   monitorStarted = true;
   setInterval(() => void monitorLiveNotificationsOnce(), 30_000).unref?.();
@@ -675,17 +679,5 @@ livesRouter.post('/:id/test', requireManager, asyncRoute(async (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: 'ID invalido.' });
   const item = await (await collection<LiveNotificationDoc>('live_notifications')).findOne({ _id: id });
   if (!item) return res.status(404).json({ ok: false, error: 'Canal nao encontrado.' });
-  const status = await checkLiveStatus(item).catch(() => ({
-    online: true,
-    liveId: 'test',
-    title: 'Teste de notificacao',
-    game: 'Teste',
-    viewers: 0,
-    thumbnail: null,
-    url: item.channel_url,
-    startedAt: null
-  }));
-  const result = await sendDiscordLiveNotification(item, { ...status, online: true });
-  if (!result.ok) return res.status(400).json(result);
-  return res.json({ ok: true });
+  return res.json({ ok: true, disabled: true, message: 'Envio de alertas pelo site desativado. O bot Vortex envia as lives para evitar duplicidade.' });
 }));

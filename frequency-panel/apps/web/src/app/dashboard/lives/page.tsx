@@ -143,8 +143,8 @@ export default function LivesPage() {
   async function testLive(id: string) {
     setMessage('');
     try {
-      await apiFetch(`/lives/${id}/test`, { method: 'POST' });
-      setMessage('✅ Notificacao de teste enviada no Discord.');
+      const data = await apiFetch<{ message?: string }>(`/lives/${id}/test`, { method: 'POST' });
+      setMessage(data.message || 'Envio de alertas pelo site desativado. O bot Vortex envia as lives.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao testar notificacao');
     }
@@ -362,7 +362,7 @@ function LiveRow({
         </div>
         <div className="flex shrink-0 gap-2">
           <IconButton label="Editar" onClick={onEdit}><Edit3 size={15} /></IconButton>
-          <IconButton label="Testar" onClick={onTest}><CheckCircle2 size={15} /></IconButton>
+          <IconButton label="Verificar envio" onClick={onTest}><CheckCircle2 size={15} /></IconButton>
           <IconButton label="Remover" onClick={onDelete}><Trash2 size={15} /></IconButton>
         </div>
       </div>
