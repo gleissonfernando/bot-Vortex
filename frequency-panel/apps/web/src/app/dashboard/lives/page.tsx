@@ -35,7 +35,7 @@ type Stats = {
   connectedPlatforms: number;
 };
 
-type PlatformId = 'twitch' | 'youtube' | 'tiktok' | 'kick' | 'facebook' | 'trovo';
+type PlatformId = 'twitch' | 'youtube' | 'tiktok' | 'kick' | 'facebook' | 'trovo' | 'custom';
 
 const platformCards: Array<{ id: PlatformId; name: string; description: string; color: string; accent: string }> = [
   { id: 'twitch', name: 'Twitch', description: 'Monitora lives pela Twitch Helix API.', color: 'bg-[#9146ff]', accent: 'text-violet-200' },
@@ -43,7 +43,8 @@ const platformCards: Array<{ id: PlatformId; name: string; description: string; 
   { id: 'tiktok', name: 'TikTok Live', description: 'Detecta lives públicas por URL de criador.', color: 'bg-[#00f2ea]', accent: 'text-cyan-100' },
   { id: 'kick', name: 'Kick', description: 'Consulta status público do canal Kick.', color: 'bg-[#53fc18]', accent: 'text-lime-200' },
   { id: 'facebook', name: 'Facebook Gaming', description: 'Preparado para páginas públicas de gaming.', color: 'bg-[#1877f2]', accent: 'text-blue-200' },
-  { id: 'trovo', name: 'Trovo', description: 'Preparado para canais Trovo Live.', color: 'bg-[#19d66b]', accent: 'text-emerald-200' }
+  { id: 'trovo', name: 'Trovo', description: 'Preparado para canais Trovo Live.', color: 'bg-[#19d66b]', accent: 'text-emerald-200' },
+  { id: 'custom', name: 'Outros', description: 'URLs personalizadas monitoradas pelo bot.', color: 'bg-slate-600', accent: 'text-slate-200' }
 ];
 
 const initialForm = {
@@ -479,7 +480,8 @@ function placeholderFor(platform: PlatformId) {
     youtube: 'https://youtube.com/@usuario',
     tiktok: 'https://www.tiktok.com/@usuario',
     facebook: 'https://facebook.com/gaming/usuario',
-    trovo: 'https://trovo.live/s/usuario'
+    trovo: 'https://trovo.live/s/usuario',
+    custom: 'https://site.com/canal'
   };
   return samples[platform];
 }

@@ -1,18 +1,19 @@
 import { ObjectId } from 'mongodb';
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { collection, serializeDoc, serializeDocs } from '../db.js';
+import { collection, serializeDoc } from '../db.js';
 import { env } from '../env.js';
 import { requireManager } from '../middleware.js';
 
-const PLATFORMS = ['twitch', 'kick', 'youtube', 'tiktok', 'facebook', 'trovo'] as const;
+const PLATFORMS = ['twitch', 'kick', 'youtube', 'tiktok', 'facebook', 'trovo', 'custom'] as const;
 const PLATFORM_LABELS: Record<string, string> = {
   twitch: 'Twitch',
   kick: 'Kick',
   youtube: 'YouTube Live',
   tiktok: 'TikTok Live',
   facebook: 'Facebook Gaming',
-  trovo: 'Trovo'
+  trovo: 'Trovo',
+  custom: 'URL personalizada'
 };
 const PLATFORM_INTERVAL_MS: Record<string, number> = {
   twitch: 60_000,
@@ -20,7 +21,8 @@ const PLATFORM_INTERVAL_MS: Record<string, number> = {
   youtube: 120_000,
   tiktok: 120_000,
   facebook: 120_000,
-  trovo: 120_000
+  trovo: 120_000,
+  custom: 120_000
 };
 const TWITCH_NEON_PURPLE = 0x9146ff;
 const TWITCH_FALLBACK_IMAGE = 'https://dummyimage.com/1280x720/5f6270/2f313b.png&text=%F0%9F%93%B9';
@@ -61,6 +63,32 @@ type LiveNotificationDoc = {
   avatar_url?: string | null;
   last_checked_at?: Date | null;
   last_notified_at?: Date | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type LiveAlertConfigDoc = {
+  _id?: ObjectId;
+  guild_id: string;
+  platform: string;
+  url: string;
+  streamer_name: string;
+  alert_channel_id: string | null;
+  mention_role_id: string | null;
+  enabled: boolean;
+  custom_message: string | null;
+  status: 'online' | 'offline' | 'unknown';
+  last_live_title?: string | null;
+  last_live_url?: string | null;
+  last_announced_live_id?: string | null;
+  last_alert_message_id?: string | null;
+  last_alert_updated_at?: Date | null;
+  last_live_started_at?: Date | null;
+  last_checked_at?: Date | null;
+  twitch_login?: string | null;
+  twitch_user_id?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -138,6 +166,7 @@ function canonicalUrl(input: string, platform: string) {
 }
 
 function validatePlatformUrl(url: string, platform: string) {
+  if (platform === 'custom') return true;
   const detected = detectPlatform(url);
   if (!detected) throw new Error('URL invalida ou plataforma nao reconhecida.');
   if (detected !== platform) throw new Error(`URL informada pertence a ${PLATFORM_LABELS[detected]}, nao a ${PLATFORM_LABELS[platform]}.`);
@@ -495,48 +524,45 @@ async function monitorLiveNotificationsOnce() {
 }
 
 export function startLiveNotificationMonitor() {
-  if (process.env.LIVE_SITE_MONITOR_ENABLED !== 'true') {
-    console.log('[frequency-api] Monitor de lives do site desativado. Alertas Discord ficam a cargo do bot.');
-    return;
-  }
-  if (monitorStarted) return;
-  monitorStarted = true;
-  setInterval(() => void monitorLiveNotificationsOnce(), 30_000).unref?.();
-  setTimeout(() => void monitorLiveNotificationsOnce(), 5_000).unref?.();
+  console.log('[frequency-api] Monitor de lives do site desativado. Alertas Discord ficam a cargo do bot.');
 }
 
-function normalizeLive(doc: LiveNotificationDoc) {
+function normalizeLive(doc: LiveAlertConfigDoc) {
   const item = serializeDoc(doc) as any;
   item.id = String(doc._id);
   item.guildId = doc.guild_id;
-  item.channelUrl = doc.channel_url;
+  item.channelUrl = doc.url;
   item.streamerName = doc.streamer_name;
-  item.discordChannelId = doc.discord_channel_id;
-  item.discordRoleId = doc.discord_role_id;
+  item.discordChannelId = doc.alert_channel_id || '';
+  item.discordRoleId = doc.mention_role_id || null;
   item.customMessage = null;
-  item.lastStatus = doc.last_status;
-  item.lastLiveId = doc.last_live_id;
-  item.lastTitle = doc.last_title || null;
-  item.lastGame = doc.last_game || null;
-  item.lastViewers = doc.last_viewers ?? null;
-  item.lastThumbnail = doc.last_thumbnail || null;
+  item.lastStatus = doc.status || 'unknown';
+  item.lastLiveId = doc.last_announced_live_id || null;
+  item.lastTitle = doc.last_live_title || null;
+  item.lastGame = null;
+  item.lastViewers = null;
+  item.lastThumbnail = null;
   item.lastCheckedAt = doc.last_checked_at || null;
-  item.lastNotifiedAt = doc.last_notified_at || null;
+  item.lastNotifiedAt = doc.last_alert_updated_at || null;
   delete item._id;
   delete item.guild_id;
-  delete item.channel_url;
+  delete item.url;
   delete item.streamer_name;
-  delete item.discord_channel_id;
-  delete item.discord_role_id;
+  delete item.alert_channel_id;
+  delete item.mention_role_id;
   delete item.custom_message;
-  delete item.last_status;
-  delete item.last_live_id;
-  delete item.last_title;
-  delete item.last_game;
-  delete item.last_viewers;
-  delete item.last_thumbnail;
+  delete item.status;
+  delete item.last_live_title;
+  delete item.last_live_url;
+  delete item.last_announced_live_id;
+  delete item.last_alert_message_id;
+  delete item.last_alert_updated_at;
+  delete item.last_live_started_at;
   delete item.last_checked_at;
-  delete item.last_notified_at;
+  delete item.twitch_login;
+  delete item.twitch_user_id;
+  delete item.avatar_url;
+  delete item.banner_url;
   delete item.created_at;
   delete item.updated_at;
   return item;
@@ -573,17 +599,17 @@ async function fetchDiscordGuildOptions(guildId: string) {
   };
 }
 
-async function liveStats(guildId: string, rows?: LiveNotificationDoc[]) {
-  const lives = await collection<LiveNotificationDoc>('live_notifications');
+async function liveStats(guildId: string, rows?: LiveAlertConfigDoc[]) {
+  const lives = await collection<LiveAlertConfigDoc>('live_alert_configs');
   const items = rows || await lives.find({ guild_id: guildId }).toArray();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return {
     totalMonitored: items.length,
-    detectedToday: await lives.countDocuments({ guild_id: guildId, last_notified_at: { $gte: today } }),
+    detectedToday: await lives.countDocuments({ guild_id: guildId, last_alert_updated_at: { $gte: today } }),
     lastLiveSent: items
-      .filter((item) => item.last_notified_at)
-      .sort((a, b) => Number(new Date(b.last_notified_at || 0)) - Number(new Date(a.last_notified_at || 0)))[0]?.last_notified_at || null,
+      .filter((item) => item.last_alert_updated_at)
+      .sort((a, b) => Number(new Date(b.last_alert_updated_at || 0)) - Number(new Date(a.last_alert_updated_at || 0)))[0]?.last_alert_updated_at || null,
     connectedPlatforms: new Set(items.map((item) => item.platform)).size
   };
 }
@@ -593,7 +619,7 @@ export const livesRouter = Router();
 livesRouter.get('/', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   try {
-    const rows = await (await collection<LiveNotificationDoc>('live_notifications')).find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
+    const rows = await (await collection<LiveAlertConfigDoc>('live_alert_configs')).find({ guild_id: guildId }).sort({ created_at: -1 }).toArray();
     return res.json({ ok: true, lives: rows.map(normalizeLive), stats: await liveStats(guildId, rows), platforms: PLATFORMS.map((id) => ({ id, name: PLATFORM_LABELS[id] })) });
   } catch (error) {
     console.warn('[frequency-api] Social Notifications sem MongoDB:', error);
@@ -614,25 +640,37 @@ livesRouter.post('/', requireManager, asyncRoute(async (req, res) => {
   const channelUrl = canonicalUrl(input.url, platform);
   validatePlatformUrl(channelUrl, platform);
   const resolved = await resolveChannel(channelUrl, platform);
+  const twitchLogin = platform === 'twitch' ? extractSlug(resolved.channelUrl, 'twitch').toLowerCase() : null;
   const now = new Date();
-  const doc: LiveNotificationDoc = {
+  const doc: LiveAlertConfigDoc = {
     guild_id: guildId,
     platform,
-    channel_url: resolved.channelUrl,
+    url: resolved.channelUrl,
     streamer_name: resolved.streamerName,
-    discord_channel_id: input.discordChannelId,
-    discord_role_id: input.discordRoleId || guildId,
+    alert_channel_id: input.discordChannelId,
+    mention_role_id: input.discordRoleId || guildId,
+    enabled: true,
     custom_message: null,
-    avatar_url: resolvedAvatarUrl(resolved),
-    last_status: 'unknown',
-    last_live_id: null,
+    status: 'unknown',
+    last_live_title: null,
+    last_live_url: null,
+    last_announced_live_id: null,
+    last_alert_message_id: null,
+    last_alert_updated_at: null,
+    last_live_started_at: null,
     last_checked_at: null,
-    last_notified_at: null,
+    twitch_login: twitchLogin,
+    twitch_user_id: null,
+    avatar_url: resolvedAvatarUrl(resolved),
+    banner_url: null,
     created_at: now,
     updated_at: now
   };
-  const lives = await collection<LiveNotificationDoc>('live_notifications');
-  const existing = await lives.findOne({ guild_id: guildId, platform, channel_url: doc.channel_url });
+  const lives = await collection<LiveAlertConfigDoc>('live_alert_configs');
+  const duplicateQuery = twitchLogin
+    ? { guild_id: guildId, platform, twitch_login: twitchLogin }
+    : { guild_id: guildId, platform, url: doc.url };
+  const existing = await lives.findOne(duplicateQuery);
   if (existing) return res.status(409).json({ ok: false, error: 'Este canal ja esta cadastrado.', live: normalizeLive(existing) });
   const result = await lives.insertOne(doc);
   return res.status(201).json({ ok: true, live: normalizeLive({ ...doc, _id: result.insertedId }) });
@@ -643,24 +681,39 @@ livesRouter.put('/:id', requireManager, asyncRoute(async (req, res) => {
   const id = ObjectId.isValid(paramId) ? new ObjectId(paramId) : null;
   if (!id) return res.status(400).json({ ok: false, error: 'ID invalido.' });
   const input = liveSchema.partial().parse(req.body);
-  const update: any = { updated_at: new Date() };
+  const guildId = input.guildId || defaultGuildId(req);
+  const lives = await collection<LiveAlertConfigDoc>('live_alert_configs');
+  const update: any = { custom_message: null, updated_at: new Date() };
   if (input.url) {
     const platform = input.platform || detectPlatform(input.url);
     if (!platform) return res.status(400).json({ ok: false, error: 'Nao foi possivel identificar a plataforma da URL.' });
     const channelUrl = canonicalUrl(input.url, platform);
     validatePlatformUrl(channelUrl, platform);
     const resolved = await resolveChannel(channelUrl, platform);
+    const twitchLogin = platform === 'twitch' ? extractSlug(resolved.channelUrl, 'twitch').toLowerCase() : null;
+    const duplicateQuery = twitchLogin
+      ? { guild_id: guildId, platform, twitch_login: twitchLogin, _id: { $ne: id } }
+      : { guild_id: guildId, platform, url: resolved.channelUrl, _id: { $ne: id } };
+    const existing = await lives.findOne(duplicateQuery);
+    if (existing) return res.status(409).json({ ok: false, error: 'Este canal ja esta cadastrado.', live: normalizeLive(existing) });
     update.platform = platform;
-    update.channel_url = resolved.channelUrl;
+    update.url = resolved.channelUrl;
     update.streamer_name = resolved.streamerName;
     update.avatar_url = resolvedAvatarUrl(resolved);
-    update.last_status = 'unknown';
-    update.last_live_id = null;
+    update.twitch_login = twitchLogin;
+    update.twitch_user_id = null;
+    update.status = 'unknown';
+    update.last_live_title = null;
+    update.last_live_url = null;
+    update.last_announced_live_id = null;
+    update.last_alert_message_id = null;
+    update.last_alert_updated_at = null;
+    update.last_live_started_at = null;
+    update.last_checked_at = null;
   }
-  if (input.discordChannelId !== undefined) update.discord_channel_id = input.discordChannelId;
-  if (input.discordRoleId !== undefined) update.discord_role_id = input.discordRoleId || null;
-  update.custom_message = null;
-  const row = await (await collection<LiveNotificationDoc>('live_notifications')).findOneAndUpdate({ _id: id }, { $set: update }, { returnDocument: 'after' });
+  if (input.discordChannelId !== undefined) update.alert_channel_id = input.discordChannelId;
+  if (input.discordRoleId !== undefined) update.mention_role_id = input.discordRoleId || guildId;
+  const row = await lives.findOneAndUpdate({ _id: id, guild_id: guildId }, { $set: update }, { returnDocument: 'after' });
   if (!row) return res.status(404).json({ ok: false, error: 'Canal nao encontrado.' });
   return res.json({ ok: true, live: normalizeLive(row) });
 }));
@@ -669,7 +722,7 @@ livesRouter.delete('/:id', requireManager, asyncRoute(async (req, res) => {
   const paramId = String(req.params.id || '');
   const id = ObjectId.isValid(paramId) ? new ObjectId(paramId) : null;
   if (!id) return res.status(400).json({ ok: false, error: 'ID invalido.' });
-  await (await collection('live_notifications')).deleteOne({ _id: id });
+  await (await collection('live_alert_configs')).deleteOne({ _id: id, guild_id: defaultGuildId(req) });
   return res.json({ ok: true });
 }));
 
@@ -677,7 +730,7 @@ livesRouter.post('/:id/test', requireManager, asyncRoute(async (req, res) => {
   const paramId = String(req.params.id || '');
   const id = ObjectId.isValid(paramId) ? new ObjectId(paramId) : null;
   if (!id) return res.status(400).json({ ok: false, error: 'ID invalido.' });
-  const item = await (await collection<LiveNotificationDoc>('live_notifications')).findOne({ _id: id });
+  const item = await (await collection<LiveAlertConfigDoc>('live_alert_configs')).findOne({ _id: id, guild_id: defaultGuildId(req) });
   if (!item) return res.status(404).json({ ok: false, error: 'Canal nao encontrado.' });
   return res.json({ ok: true, disabled: true, message: 'Envio de alertas pelo site desativado. O bot Vortex envia as lives para evitar duplicidade.' });
 }));

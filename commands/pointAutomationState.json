@@ -2,42 +2,65 @@
   "1201193356810780773:260830031289384960:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:05:35.984Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-01",
+    "lastAvailabilityReminderAt": "2026-06-01T22:47:53.274Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
   },
   "1201193356810780773:289227932432334869:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:05:46.706Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-05-31",
+    "lastAvailabilityReminderAt": "2026-05-31T22:47:46.240Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "idle"
   },
   "1201193356810780773:298885294495891456:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:05:57.417Z",
-    "lastSetReminderSent": false
-  },
-  "1201193356810780773:335417019866284032:availability": {
-    "lastSetReminderDate": "2026-05-14",
-    "lastSetReminderAt": "2026-05-14T22:06:08.144Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-05-31",
+    "lastAvailabilityReminderAt": "2026-05-31T22:47:46.372Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
   },
   "1201193356810780773:450357020038660096:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:06:18.879Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:01.056Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
   },
   "1201193356810780773:482819970317680640:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:06:29.594Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:01.403Z",
+    "lastAvailabilityReminderSent": false,
+    "lastKnownStatus": "dnd"
   },
   "1201193356810780773:727291476576567356:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:06:40.303Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:01.816Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
   },
   "1201193356810780773:730925532958425240:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:06:50.979Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:02.219Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
   },
   "1201193356810780773:761011766440230932:availability": {
     "lastSetReminderDate": "2026-05-14",
@@ -52,36 +75,49 @@
   "1201193356810780773:927302929063493673:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:07:23.105Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:03.322Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
   },
   "1201193356810780773:997907219096010874:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:07:33.806Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:03.445Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
   },
   "1201193356810780773:1031285453380391032:availability": {
-    "lastSetReminderDate": "2026-05-14",
-    "lastSetReminderAt": "2026-05-14T22:07:44.529Z",
-    "lastSetReminderSent": false
+    "lastSetReminderDate": "2026-06-01",
+    "lastSetReminderAt": "2026-06-01T22:47:55.226Z",
+    "lastSetReminderSent": true,
+    "lastMissingProfileSkippedAt": "2026-06-02T22:03:03.445Z",
+    "lastMissingProfileSkippedReason": "not_registered_no_message"
   },
   "1201193356810780773:1079116856822091932:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:07:55.242Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:04.218Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
   },
   "1201193356810780773:1154885912170332251:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:08:05.982Z",
-    "lastSetReminderSent": false
+    "lastSetReminderSent": false,
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:05.622Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
   },
   "1201193356810780773:1164349886850924705:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:08:16.732Z",
-    "lastSetReminderSent": false
-  },
-  "1201193356810780773:1223092340877430787:availability": {
-    "lastSetReminderDate": "2026-05-14",
-    "lastSetReminderAt": "2026-05-14T22:08:27.432Z",
     "lastSetReminderSent": false
   },
   "1201193356810780773:1363214073063538939:availability": {
@@ -92,14 +128,19 @@
   "1201193356810780773:1426287249020158018:availability": {
     "lastSetReminderDate": "2026-05-14",
     "lastSetReminderAt": "2026-05-14T22:33:26.285Z",
-    "lastSetReminderSent": true
+    "lastSetReminderSent": true,
+    "lastAvailabilityReminderDate": "2026-06-01",
+    "lastAvailabilityReminderAt": "2026-06-01T22:47:56.861Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "idle"
   },
   "1201193356810780773:730925532958425240": {
-    "pointStartedAt": "2026-05-27T00:29:12.291Z",
+    "pointStartedAt": "2026-06-03T00:55:51.958Z",
     "attempts": 0,
     "lastPromptAt": null,
     "confirmedPointStartedAt": null,
-    "lastConfirmedAt": null
+    "lastConfirmedAt": null,
+    "lastDmSent": true
   },
   "1201193356810780773:761011766440230932": {
     "pointStartedAt": "2026-05-18T14:41:47.136Z",
@@ -109,27 +150,32 @@
     "lastConfirmedAt": null
   },
   "1201193356810780773:289227932432334869": {
-    "pointStartedAt": "2026-05-27T03:02:55.438Z",
-    "attempts": 3,
-    "lastPromptAt": "2026-05-27T08:07:38.740Z",
+    "pointStartedAt": "2026-06-03T03:03:39.913Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null,
+    "lastDmSent": true,
+    "autoClosedAt": "2026-05-27T20:08:56.796Z",
+    "ticketChannelId": "1509287304403877969"
+  },
+  "1201193356810780773:1154885912170332251": {
+    "pointStartedAt": "2026-05-29T03:15:16.194Z",
+    "attempts": 0,
+    "lastPromptAt": null,
     "confirmedPointStartedAt": null,
     "lastConfirmedAt": null,
     "lastDmSent": true
   },
-  "1201193356810780773:1154885912170332251": {
-    "pointStartedAt": "2026-05-27T03:08:18.312Z",
-    "attempts": 0,
-    "lastPromptAt": null,
-    "confirmedPointStartedAt": "2026-05-27T03:08:18.312Z",
-    "lastConfirmedAt": "2026-05-27T07:25:58.137Z",
-    "lastDmSent": true
-  },
   "1201193356810780773:450357020038660096": {
-    "pointStartedAt": "2026-05-26T22:52:45.256Z",
+    "pointStartedAt": "2026-05-31T13:48:25.071Z",
     "attempts": 0,
     "lastPromptAt": null,
     "confirmedPointStartedAt": null,
-    "lastConfirmedAt": null
+    "lastConfirmedAt": null,
+    "lastDmSent": true,
+    "autoClosedAt": "2026-05-30T18:22:21.275Z",
+    "ticketChannelId": "1510347650447446187"
   },
   "1201193356810780773:1111816753815752744": {
     "pointStartedAt": "2026-05-27T00:45:14.674Z",
@@ -139,27 +185,283 @@
     "lastConfirmedAt": null
   },
   "1201193356810780773:892081865828233246": {
-    "pointStartedAt": "2026-05-27T03:08:18.303Z",
-    "attempts": 3,
-    "lastPromptAt": "2026-05-27T08:22:39.451Z",
+    "pointStartedAt": "2026-06-03T01:27:11.143Z",
+    "attempts": 0,
+    "lastPromptAt": null,
     "confirmedPointStartedAt": null,
     "lastConfirmedAt": null,
     "lastDmSent": false
   },
   "1201193356810780773:260830031289384960": {
-    "pointStartedAt": "2026-05-27T03:08:18.300Z",
+    "pointStartedAt": "2026-06-03T03:03:39.921Z",
     "attempts": 3,
-    "lastPromptAt": "2026-05-27T08:22:39.134Z",
+    "lastPromptAt": "2026-06-03T10:03:00.382Z",
     "confirmedPointStartedAt": null,
     "lastConfirmedAt": null,
     "lastDmSent": true
   },
   "1201193356810780773:997907219096010874": {
-    "pointStartedAt": "2026-05-27T04:09:33.864Z",
-    "attempts": 1,
-    "lastPromptAt": "2026-05-27T08:22:39.848Z",
+    "pointStartedAt": "2026-06-03T03:03:39.918Z",
+    "attempts": 3,
+    "lastPromptAt": "2026-06-03T10:03:00.166Z",
     "confirmedPointStartedAt": null,
     "lastConfirmedAt": null,
     "lastDmSent": true
+  },
+  "1201193356810780773:1426287249020158018": {
+    "pointStartedAt": "2026-05-27T21:42:44.144Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": "2026-05-27T21:42:44.144Z",
+    "lastConfirmedAt": "2026-05-28T02:14:46.297Z",
+    "lastDmSent": true
+  },
+  "1201193356810780773:727291476576567356:offline": {
+    "lastChargeAt": "2026-06-01T22:47:45.535Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:450357020038660096:offline": {
+    "lastChargeAt": "2026-06-01T22:47:45.728Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:482819970317680640:offline": {
+    "lastChargeAt": "2026-06-01T22:47:47.785Z",
+    "lastDmSent": false,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:927302929063493673:offline": {
+    "lastChargeAt": "2026-06-01T22:47:49.105Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:298885294495891456:offline": {
+    "lastChargeAt": "2026-05-27T22:50:27.212Z",
+    "lastDmSent": true
+  },
+  "1201193356810780773:1203308000358432799:offline": {
+    "lastChargeAt": "2026-06-01T22:47:49.593Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:704830179268231169:offline": {
+    "lastChargeAt": "2026-06-01T22:47:49.800Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1147296130351235132:offline": {
+    "lastChargeAt": "2026-06-01T22:47:51.011Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1225238527814668364:offline": {
+    "lastChargeAt": "2026-06-01T22:47:51.358Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1074752790930407425:offline": {
+    "lastChargeAt": "2026-06-01T22:47:51.624Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1205186730085580891:offline": {
+    "lastChargeAt": "2026-06-01T22:47:51.784Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1140084602128580750:offline": {
+    "lastChargeAt": "2026-06-01T22:47:52.470Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:249542120191295488:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:00.331Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:704830179268231169:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:01.591Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
+  },
+  "1201193356810780773:892081865828233246:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:03.031Z",
+    "lastAvailabilityReminderSent": false,
+    "lastKnownStatus": "idle"
+  },
+  "1201193356810780773:1074752790930407425:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:04.015Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:1111816753815752744:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:04.786Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:1140084602128580750:availability": {
+    "lastAvailabilityReminderDate": "2026-06-01",
+    "lastAvailabilityReminderAt": "2026-06-01T22:47:55.861Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
+  },
+  "1201193356810780773:1147296130351235132:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:05.368Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:1203308000358432799:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:07.069Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:1205186730085580891:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:09.416Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:1225238527814668364:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:09.664Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:availability-scan:2026-05-27": {
+    "completed": true,
+    "completedAt": "2026-05-27T22:50:42.114Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:1225238527814668364": {
+    "pointStartedAt": "2026-06-03T02:02:39.456Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:1140084602128580750": {
+    "pointStartedAt": "2026-05-28T01:51:47.460Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:298885294495891456": {
+    "pointStartedAt": "2026-05-28T02:03:29.600Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:704830179268231169": {
+    "pointStartedAt": "2026-05-28T18:35:51.284Z",
+    "attempts": 0,
+    "lastPromptAt": null,
+    "confirmedPointStartedAt": null,
+    "lastConfirmedAt": null
+  },
+  "1201193356810780773:303319965526654976:offline": {
+    "lastChargeAt": "2026-06-01T22:47:52.322Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:249542120191295488:offline": {
+    "lastChargeAt": "2026-06-01T22:47:52.692Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:1426287249020158018:offline": {
+    "lastChargeAt": "2026-06-01T22:47:52.993Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:303319965526654976:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:00.535Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "dnd"
+  },
+  "1201193356810780773:availability-scan:2026-05-28": {
+    "completed": true,
+    "completedAt": "2026-05-28T22:14:49.527Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:1111816753815752744:offline": {
+    "lastChargeAt": "2026-06-01T22:47:45.254Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:730925532958425240:offline": {
+    "lastChargeAt": "2026-06-01T22:47:46.255Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:997907219096010874:offline": {
+    "lastChargeAt": "2026-06-01T22:47:46.507Z",
+    "lastDmSent": true,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:289227932432334869:offline": {
+    "lastChargeAt": "2026-05-29T22:22:20.803Z",
+    "lastDmSent": true
+  },
+  "1201193356810780773:892081865828233246:offline": {
+    "lastChargeAt": "2026-06-01T22:47:51.474Z",
+    "lastDmSent": false,
+    "lastChargeDateKey": "2026-06-01"
+  },
+  "1201193356810780773:availability-scan:2026-05-29": {
+    "completed": true,
+    "completedAt": "2026-05-29T22:22:30.661Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:availability-scan:2026-05-30": {
+    "completed": true,
+    "completedAt": "2026-05-30T22:47:57.672Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:availability-scan:2026-05-31": {
+    "completed": true,
+    "completedAt": "2026-05-31T22:47:52.030Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:1154885912170332251:offline": {
+    "lastChargeAt": "2026-06-01T22:47:46.728Z",
+    "lastChargeDateKey": "2026-06-01",
+    "lastDmSent": true
+  },
+  "1201193356810780773:260830031289384960:offline": {
+    "lastChargeAt": "2026-06-01T22:47:48.222Z",
+    "lastChargeDateKey": "2026-06-01",
+    "lastDmSent": true
+  },
+  "1201193356810780773:1079116856822091932:offline": {
+    "lastChargeAt": "2026-06-01T22:47:49.467Z",
+    "lastChargeDateKey": "2026-06-01",
+    "lastDmSent": true
+  },
+  "1201193356810780773:availability-scan:2026-06-01": {
+    "completed": true,
+    "completedAt": "2026-06-01T22:47:56.861Z",
+    "fetchedPresences": false
+  },
+  "1201193356810780773:832103599583789058:availability": {
+    "lastAvailabilityReminderDate": "2026-06-02",
+    "lastAvailabilityReminderAt": "2026-06-02T22:03:02.452Z",
+    "lastAvailabilityReminderSent": true,
+    "lastKnownStatus": "offline"
+  },
+  "1201193356810780773:availability-scan:2026-06-02": {
+    "completed": true,
+    "completedAt": "2026-06-02T22:03:09.664Z",
+    "fetchedPresences": false
   }
 }

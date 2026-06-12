@@ -1,7 +1,11 @@
 {
   "billingDmEnabled": true,
   "profileUpdateNotificationsEnabled": true,
-  "billingExemptUserIds": [],
+  "billingExemptUserIds": [
+    "260830031289384960"
+  ],
   "missingProfileAlertSentByGuild": {},
-  "missingProfileAlertLastRunAt": "2026-05-27T02:07:38.549Z"
+  "missingProfileAlertLastRunAt": "2026-06-02T02:47:45.235Z",
+  "billingExemptUpdatedAt": "2026-06-02T06:22:26.767Z",
+  "billingExemptUpdatedBy": "1426287249020158018"
 }

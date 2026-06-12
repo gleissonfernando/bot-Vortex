@@ -78,6 +78,11 @@ async function ensureIndexes(db: Db) {
     db.collection('live_notifications').createIndex({ guild_id: 1, platform: 1, channel_url: 1 }, { unique: true }),
     db.collection('live_notifications').createIndex({ guild_id: 1, last_notified_at: -1 }),
     db.collection('live_notifications').createIndex({ last_checked_at: 1 }),
+    db.collection('live_alert_configs').createIndex({ guild_id: 1, platform: 1, url: 1 }),
+    db.collection('live_alert_configs').createIndex({ guild_id: 1, platform: 1, twitch_login: 1 }),
+    db.collection('live_alert_configs').createIndex({ guild_id: 1, last_alert_updated_at: -1 }),
+    db.collection('live_alert_configs').createIndex({ last_checked_at: 1 }),
+    db.collection('live_alert_settings').createIndex({ guild_id: 1 }),
     db.collection('jsondocuments').createIndex({ key: 1 }, { unique: true })
   ]);
 }
