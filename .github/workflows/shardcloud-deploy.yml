@@ -70,7 +70,7 @@ jobs:
           curl --fail-with-body --show-error --request PUT \
             --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/file" \
             --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
-            --form "project=@shardcloud-project.zip"
+            --form "project=@shardcloud-project.zip;type=application/zip"
 
       - name: Restart Shard Cloud app
         run: |
