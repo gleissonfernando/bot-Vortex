@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { handleVoiceStateUpdate } = require('../config/callManager');
+const { handleVoiceStateUpdate: handleAntiAbuseVoiceStateUpdate } = require('../utils/antiAbuseManager');
 const { allowVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 const { isPrimaryGuild } = require('../utils/guildScope');
 const { logger } = require('../utils/logger');
@@ -11,7 +12,13 @@ module.exports = {
     if (isMaintenanceMode()) return;
 
     const guild = newState.guild || oldState.guild;
-    if (!guild || !isPrimaryGuild(guild.id)) return;
+    if (!guild) return;
+
+    await handleAntiAbuseVoiceStateUpdate(oldState, newState).catch((error) => {
+      logger.error('Erro ao processar Anti-Abuso em voiceStateUpdate:', error);
+    });
+
+    if (!isPrimaryGuild(guild.id)) return;
 
     const channel = newState.channel || oldState.channel;
     if (channel) {

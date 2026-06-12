@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
 import {
   AlertTriangle,
+  Ban,
   Bot,
   CheckCircle2,
   Clock3,
@@ -23,11 +24,14 @@ import {
   Search,
   Settings2,
   Shield,
+  ShieldAlert,
   SlidersHorizontal,
   Sparkles,
   Timer,
   ToggleLeft,
+  UserX,
   Users,
+  Webhook,
   Wifi,
   Wrench,
   type LucideIcon
@@ -95,6 +99,28 @@ const ratioOptions = [
   { id: '21:9', name: '21:9' }
 ];
 
+const punishmentOptions = [
+  { id: 'log', name: 'Apenas Log' },
+  { id: 'warn', name: 'Advertencia' },
+  { id: 'remove_admin_roles', name: 'Remover Cargos Administrativos' },
+  { id: 'kick', name: 'Kick' },
+  { id: 'ban', name: 'Ban' }
+];
+
+const antiAbuseProtections = [
+  { key: 'antiDisconnect', label: 'Anti Disconnect de Call', description: 'Reconecta o usuario removido da call e pune quem desconectou.', icon: UserX },
+  { key: 'antiChannelDelete', label: 'Anti Exclusao de Canais', description: 'Recria canais apagados com nome, categoria, tipo, permissoes e posicao.', icon: AlertTriangle },
+  { key: 'antiRoleDelete', label: 'Anti Exclusao de Cargos', description: 'Restaura cargos deletados e registra a acao no log.', icon: Shield },
+  { key: 'antiCategoryDelete', label: 'Anti Exclusao de Categorias', description: 'Recria categorias removidas com permissoes e posicao.', icon: PackageOpen },
+  { key: 'antiChannelCreateSpam', label: 'Anti Criacao Excessiva de Canais', description: 'Bloqueia rajadas de canais criados em poucos segundos.', icon: Gauge },
+  { key: 'antiRoleCreateSpam', label: 'Anti Criacao Excessiva de Cargos', description: 'Bloqueia rajadas de cargos criados em poucos segundos.', icon: Users },
+  { key: 'antiPermissionChange', label: 'Anti Alteracao de Permissoes', description: 'Reverte mudancas em overwrites/permissoes de canais.', icon: Lock },
+  { key: 'antiRoleChange', label: 'Anti Alteracao de Cargos', description: 'Reverte alteracoes em cargos e em cargos de membros.', icon: ShieldAlert },
+  { key: 'antiChannelUpdate', label: 'Anti Alteracao de Canais', description: 'Reverte nome, topico, categoria, slowmode e ajustes de canal.', icon: Settings2 },
+  { key: 'antiWebhookAbuse', label: 'Anti Webhook Abuse', description: 'Detecta criacao, edicao e exclusao indevida de webhooks.', icon: Webhook },
+  { key: 'antiWebhookSpam', label: 'Anti Spam de Webhooks', description: 'Remove webhook que disparar mensagens em excesso.', icon: Ban }
+];
+
 const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
   stats: { icon: Gauge, keys: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE'] },
   roles: { icon: Shield, keys: ['VORTEX_ROLE_LEVELS', 'VORTEX_AUTO_ROLES'] },
@@ -105,6 +131,7 @@ const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
   messages: { icon: MessageSquare, keys: ['MIRROR_MESSAGE_CHANNEL_IDS', 'DISABLE_NOTICE_DMS', 'NOTICE_MENTION_ROLE_ID'] },
   adjust: { icon: Wrench, keys: ['ADJUST_CALL_CHANNEL_IDS'] },
   bau: { icon: PackageOpen, keys: ['COMMAND_ROLE_PERMISSIONS'] },
+  security: { icon: ShieldAlert, keys: ['ANTI_ABUSE'] },
   visual: { icon: Palette, keys: ['PANEL_VISUALS', 'PANEL_THEME'] },
   hierarchy: { icon: Eye, keys: ['FACTION_HIERARCHY'] },
   maintenance: { icon: ToggleLeft, keys: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE', 'DISABLE_', 'LOG_CHANNEL', 'DISABLED_LOG_CHANNEL_IDS'] }
@@ -117,6 +144,7 @@ const keyLabels: Record<string, string> = {
   COMMAND_DISABLED_COMMANDS: 'comandos desativados',
   VORTEX_ROLE_LEVELS: 'cargos vortex',
   VORTEX_AUTO_ROLES: 'cargos automaticos',
+  ANTI_ABUSE: 'anti-abuso',
   PANEL_VISUALS: 'visual',
   FACTION_HIERARCHY: 'hierarquia',
   MIRROR_MESSAGE_CHANNEL_IDS: 'mensagens em painel'
@@ -364,6 +392,52 @@ export default function BotVortexPage() {
         roles: {
           ...(current.roles || {}),
           [roleKey]: value
+        }
+      }
+    });
+  }
+
+  function updateAntiAbuse(value: Record<string, any>) {
+    applyPatch({ ANTI_ABUSE: { ...getAntiAbuse(configRef.current), ...value } });
+  }
+
+  function updateAntiProtection(protectionKey: string, value: Record<string, any>) {
+    const current = getAntiAbuse(configRef.current);
+    applyPatch({
+      ANTI_ABUSE: {
+        ...current,
+        protections: {
+          ...current.protections,
+          [protectionKey]: {
+            ...(current.protections?.[protectionKey] || { enabled: false, punishment: 'log' }),
+            ...value
+          }
+        }
+      }
+    });
+  }
+
+  function updateAntiWhitelist(key: 'users' | 'roles', value: string[]) {
+    const current = getAntiAbuse(configRef.current);
+    applyPatch({
+      ANTI_ABUSE: {
+        ...current,
+        whitelist: {
+          ...current.whitelist,
+          [key]: value
+        }
+      }
+    });
+  }
+
+  function updateAntiThreshold(key: string, value: number) {
+    const current = getAntiAbuse(configRef.current);
+    applyPatch({
+      ANTI_ABUSE: {
+        ...current,
+        thresholds: {
+          ...current.thresholds,
+          [key]: value
         }
       }
     });
@@ -669,6 +743,81 @@ export default function BotVortexPage() {
                     <MultiSelect label="Cargos liberados" value={config.COMMAND_ROLE_PERMISSIONS?.['bau-membros'] || []} options={roles} onChange={(value) => updateCommand('bau-membros', value)} />
                   </ControlGroup>
                 </div>
+              </ToolPanel>
+            ) : null}
+
+            {config && selected === 'security' ? (
+              <ToolPanel title="Seguranca Anti-Abuso" description="Protecao automatica contra acoes administrativas abusivas via Audit Logs do Discord." icon={ShieldAlert}>
+                <ControlGroup title="Estado geral" description="Liga a central Anti-Abuso sem apagar as configuracoes de cada protecao.">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <ConfigToggleCard
+                      icon={ShieldAlert}
+                      label="Central Anti-Abuso"
+                      description="Quando desligada, nenhuma protecao pune ou reverte acoes."
+                      value={getAntiAbuse(config).enabled}
+                      onChange={(value) => updateAntiAbuse({ enabled: value })}
+                    />
+                    <SystemSummaryCard
+                      label="Protecoes ativas"
+                      value={String(activeAntiAbuseCount(config))}
+                      detail="Toggles ligados nesta central"
+                      icon={Shield}
+                      active={activeAntiAbuseCount(config) > 0}
+                    />
+                    <SystemSummaryCard
+                      label="Whitelist"
+                      value={String((getAntiAbuse(config).whitelist.users || []).length + (getAntiAbuse(config).whitelist.roles || []).length)}
+                      detail="Usuarios e cargos liberados"
+                      icon={Users}
+                      active={(getAntiAbuse(config).whitelist.users || []).length + (getAntiAbuse(config).whitelist.roles || []).length > 0}
+                    />
+                  </div>
+                </ControlGroup>
+
+                <ControlGroup title="Protecoes e punicoes" description="Cada regra possui ativacao e punicao propria.">
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {antiAbuseProtections.map((protection) => {
+                      const item = getAntiAbuse(config).protections?.[protection.key] || { enabled: false, punishment: 'log' };
+                      return (
+                        <AntiAbuseProtectionCard
+                          key={protection.key}
+                          protection={protection}
+                          enabled={Boolean(item.enabled)}
+                          punishment={String(item.punishment || 'log')}
+                          onEnabledChange={(value) => updateAntiProtection(protection.key, { enabled: value })}
+                          onPunishmentChange={(value) => updateAntiProtection(protection.key, { punishment: value })}
+                        />
+                      );
+                    })}
+                  </div>
+                </ControlGroup>
+
+                <ControlGroup title="Whitelist" description="Quem estiver liberado pode executar acoes protegidas sem punicao.">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <StringListInput
+                      label="Usuarios liberados por ID"
+                      value={getAntiAbuse(config).whitelist.users || []}
+                      onChange={(value) => updateAntiWhitelist('users', value)}
+                      placeholder="123456789012345678, 987654321098765432"
+                    />
+                    <MultiSelect
+                      label="Cargos liberados"
+                      value={getAntiAbuse(config).whitelist.roles || []}
+                      options={roles}
+                      onChange={(value) => updateAntiWhitelist('roles', value)}
+                    />
+                  </div>
+                </ControlGroup>
+
+                <ControlGroup title="Limites de abuso" description="Usados nas protecoes de criacao excessiva e spam de webhooks.">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <NumberInput label="Canais por janela" value={getAntiAbuse(config).thresholds.channelCreate || 3} onChange={(value) => updateAntiThreshold('channelCreate', value)} />
+                    <NumberInput label="Cargos por janela" value={getAntiAbuse(config).thresholds.roleCreate || 3} onChange={(value) => updateAntiThreshold('roleCreate', value)} />
+                    <NumberInput label="Janela de criacao (ms)" value={getAntiAbuse(config).thresholds.bulkWindowMs || 60000} onChange={(value) => updateAntiThreshold('bulkWindowMs', value)} />
+                    <NumberInput label="Mensagens por webhook" value={getAntiAbuse(config).thresholds.webhookSpam || 5} onChange={(value) => updateAntiThreshold('webhookSpam', value)} />
+                    <NumberInput label="Janela de webhook (ms)" value={getAntiAbuse(config).thresholds.webhookWindowMs || 10000} onChange={(value) => updateAntiThreshold('webhookWindowMs', value)} />
+                  </div>
+                </ControlGroup>
               </ToolPanel>
             ) : null}
 
@@ -1055,6 +1204,55 @@ function CommandPermissionCard({
   );
 }
 
+function AntiAbuseProtectionCard({
+  protection,
+  enabled,
+  punishment,
+  onEnabledChange,
+  onPunishmentChange
+}: {
+  protection: { key: string; label: string; description: string; icon: LucideIcon };
+  enabled: boolean;
+  punishment: string;
+  onEnabledChange: (value: boolean) => void;
+  onPunishmentChange: (value: string) => void;
+}) {
+  const Icon = protection.icon;
+  return (
+    <article className={`group overflow-hidden rounded-2xl border bg-vortex-surface/85 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-sky-500/10 ${
+      enabled ? 'border-rose-300/30' : 'border-white/10'
+    }`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${enabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-sky-300/20 bg-sky-400/10 text-sky-100'}`}>
+            <Icon size={20} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold tracking-tight text-white">{protection.label}</h3>
+            <p className="mt-1 text-sm leading-5 text-slate-400">{protection.description}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => onEnabledChange(!enabled)}
+          className="shrink-0"
+          aria-label={enabled ? 'Desativar protecao' : 'Ativar protecao'}
+        >
+          <ToggleSwitch value={enabled} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <Select label="Punicao" value={punishment || 'log'} options={punishmentOptions} onChange={onPunishmentChange} />
+        <span className={`inline-flex h-10 items-center justify-center rounded-xl border px-3 text-xs font-semibold ${
+          enabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-white/10 bg-white/[0.035] text-slate-400'
+        }`}>
+          {enabled ? 'Protegendo' : 'Desativado'}
+        </span>
+      </div>
+    </article>
+  );
+}
+
 function commandIcon(key: string): LucideIcon {
   if (key.includes('bau')) return PackageOpen;
   if (key === 'painel') return Settings2;
@@ -1156,6 +1354,36 @@ function SwitchRow({ label, value, onChange, description }: { label: string; val
 
 function toolOwnsKey(toolId: string, key: string) {
   return (toolMeta[toolId]?.keys || []).some((item) => key === item || key.startsWith(item));
+}
+
+function getAntiAbuse(config: BotConfig | null) {
+  const raw = config?.ANTI_ABUSE && typeof config.ANTI_ABUSE === 'object' ? config.ANTI_ABUSE : {};
+  const protections = Object.fromEntries(antiAbuseProtections.map((protection) => {
+    const item = raw.protections?.[protection.key] || {};
+    return [protection.key, {
+      enabled: item.enabled === true,
+      punishment: punishmentOptions.some((option) => option.id === item.punishment) ? item.punishment : 'log'
+    }];
+  }));
+  return {
+    enabled: raw.enabled !== false,
+    protections,
+    whitelist: {
+      users: Array.isArray(raw.whitelist?.users) ? raw.whitelist.users.map(String) : [],
+      roles: Array.isArray(raw.whitelist?.roles) ? raw.whitelist.roles.map(String) : []
+    },
+    thresholds: {
+      channelCreate: Number(raw.thresholds?.channelCreate || 3),
+      roleCreate: Number(raw.thresholds?.roleCreate || 3),
+      bulkWindowMs: Number(raw.thresholds?.bulkWindowMs || 60000),
+      webhookSpam: Number(raw.thresholds?.webhookSpam || 5),
+      webhookWindowMs: Number(raw.thresholds?.webhookWindowMs || 10000)
+    }
+  };
+}
+
+function activeAntiAbuseCount(config: BotConfig | null) {
+  return Object.values(getAntiAbuse(config).protections).filter((item: any) => item.enabled).length;
 }
 
 function getPanelVisuals(config: BotConfig | null) {

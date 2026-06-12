@@ -1,0 +1,198 @@
+{
+  "1201193356810780773": {
+    "1515044135470497912": {
+      "1111816753815752744": {
+        "channelId": "1515045405216473210",
+        "userId": "1111816753815752744",
+        "nomeGame": "SILVA",
+        "nivelGame": "1",
+        "foundAt": "2026-06-12T17:34:52.197Z",
+        "source": "existing"
+      },
+      "727291476576567356": {
+        "channelId": "1515045415425150996",
+        "userId": "727291476576567356",
+        "nomeGame": "Anahi | 2353",
+        "nivelGame": "22",
+        "foundAt": "2026-06-12T17:34:52.197Z",
+        "source": "existing"
+      },
+      "450357020038660096": {
+        "channelId": "1515045422857715752",
+        "userId": "450357020038660096",
+        "nomeGame": "Jefão Tubarão | 1988",
+        "nivelGame": "25",
+        "foundAt": "2026-06-12T17:34:52.197Z",
+        "source": "existing"
+      },
+      "730925532958425240": {
+        "channelId": "1515045429870461000",
+        "userId": "730925532958425240",
+        "nomeGame": "KARLINHA | 2397",
+        "nivelGame": null,
+        "foundAt": "2026-06-12T17:34:52.197Z",
+        "source": "existing"
+      },
+      "997907219096010874": {
+        "channelId": "1515045437512355870",
+        "userId": "997907219096010874",
+        "nomeGame": "cleiton rasta | 1653",
+        "nivelGame": "21",
+        "foundAt": "2026-06-12T17:34:52.198Z",
+        "source": "existing"
+      },
+      "820329655155294259": {
+        "channelId": "1515045453698306291",
+        "userId": "820329655155294259",
+        "nomeGame": "Felipe Dibura | 1805",
+        "nivelGame": "17",
+        "foundAt": "2026-06-12T17:34:52.198Z",
+        "source": "existing"
+      },
+      "482819970317680640": {
+        "channelId": "1515045481066139874",
+        "userId": "482819970317680640",
+        "nomeGame": "Afrodite | 2727",
+        "nivelGame": "13",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "260830031289384960": {
+        "channelId": "1515045489576251413",
+        "userId": "260830031289384960",
+        "nomeGame": "Fenty Silva | 2447",
+        "nivelGame": "13",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "927302929063493673": {
+        "channelId": "1515045498342609048",
+        "userId": "927302929063493673",
+        "nomeGame": "curioso | 1592",
+        "nivelGame": "17",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "298885294495891456": {
+        "channelId": "1515045505544097942",
+        "userId": "298885294495891456",
+        "nomeGame": "Araujo | 3145",
+        "nivelGame": null,
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1079116856822091932": {
+        "channelId": "1515045514444406784",
+        "userId": "1079116856822091932",
+        "nomeGame": "Perigo | 1350",
+        "nivelGame": "9",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "289227932432334869": {
+        "channelId": "1515045521872388201",
+        "userId": "289227932432334869",
+        "nomeGame": "Duke | 2017",
+        "nivelGame": null,
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1203308000358432799": {
+        "channelId": "1515045530663911434",
+        "userId": "1203308000358432799",
+        "nomeGame": "Félix fujiwara",
+        "nivelGame": "11",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "704830179268231169": {
+        "channelId": "1515045540847419575",
+        "userId": "704830179268231169",
+        "nomeGame": "Antonio carlos",
+        "nivelGame": "3",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1147296130351235132": {
+        "channelId": "1515045550636925019",
+        "userId": "1147296130351235132",
+        "nomeGame": "ryan shaorin",
+        "nivelGame": "3",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1225238527814668364": {
+        "channelId": "1515045558472015964",
+        "userId": "1225238527814668364",
+        "nomeGame": "ryan",
+        "nivelGame": "3",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "892081865828233246": {
+        "channelId": "1515045566948573205",
+        "userId": "892081865828233246",
+        "nomeGame": "Frances Pedro Nurmagomedov",
+        "nivelGame": "3",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1074752790930407425": {
+        "channelId": "1515045575840632893",
+        "userId": "1074752790930407425",
+        "nomeGame": "Noah Leclerck ferraz",
+        "nivelGame": "2",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1205186730085580891": {
+        "channelId": "1515045583449231541",
+        "userId": "1205186730085580891",
+        "nomeGame": "Gurtavo",
+        "nivelGame": "0",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "303319965526654976": {
+        "channelId": "1515045591049044150",
+        "userId": "303319965526654976",
+        "nomeGame": "Lucho Dybas Twelve",
+        "nivelGame": "4",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1140084602128580750": {
+        "channelId": "1515045599240785962",
+        "userId": "1140084602128580750",
+        "nomeGame": "Rian Kovac",
+        "nivelGame": "2",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "249542120191295488": {
+        "channelId": "1515045608925302919",
+        "userId": "249542120191295488",
+        "nomeGame": "Kvaratskhelia",
+        "nivelGame": "1",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "1426287249020158018": {
+        "channelId": "1515045617666232431",
+        "userId": "1426287249020158018",
+        "nomeGame": "teste",
+        "nivelGame": "teste",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      },
+      "832103599583789058": {
+        "channelId": "1515045625287147551",
+        "userId": "832103599583789058",
+        "nomeGame": "Azulejo Xisl",
+        "nivelGame": "13",
+        "foundAt": "2026-06-12T17:34:52.433Z",
+        "source": "existing"
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const { handleMirrorMessage } = require('../utils/mirrorMessageManager');
 const { handleCadastroMessage } = require('../utils/chatCadastroManager');
+const { handleWebhookMessage } = require('../utils/antiAbuseManager');
 const { logger } = require('../utils/logger');
 const { buildMaintenanceEmbed, isMaintenanceMode, readMaintenanceConfig } = require('../utils/maintenanceMode');
 
@@ -31,6 +32,12 @@ module.exports = {
       }
       return;
     }
+
+    const handledWebhook = await handleWebhookMessage(message).catch((error) => {
+      logger.error('Erro ao processar Anti-Abuso de webhook:', error);
+      return false;
+    });
+    if (handledWebhook) return;
 
     const handledCadastro = await handleCadastroMessage(message).catch((error) => {
       logger.error('Erro ao processar modo cadastro:', error);

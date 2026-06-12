@@ -15,6 +15,7 @@ const toolSections = [
   { id: 'messages', label: 'Mensagens', description: 'Canais de mensagens em painel.' },
   { id: 'adjust', label: 'Ajuste', description: 'Calls de ajuste.' },
   { id: 'bau', label: 'Bau', description: 'Permissao do painel de bau.' },
+  { id: 'security', label: 'Seguranca', description: 'Anti-Abuso, whitelist e punicoes.' },
   { id: 'visual', label: 'Visual', description: 'Tema visual dos paineis.' },
   { id: 'hierarchy', label: 'Hierarquia FAC', description: 'Painel automatico da hierarquia.' },
   { id: 'maintenance', label: 'Manutencao', description: 'Modo manutencao e logs.' }
@@ -88,9 +89,56 @@ function pickBotConfig(config: Record<string, any>) {
     ABSENCE_END_MESSAGE_ENABLED: config.ABSENCE_END_MESSAGE_ENABLED !== false,
     PROFILE_BILLING_ENABLED: config.PROFILE_BILLING_ENABLED !== false,
     PROFILE_UPDATE_NOTIFICATIONS_ENABLED: config.PROFILE_UPDATE_NOTIFICATIONS_ENABLED !== false,
+    ANTI_ABUSE: normalizeAntiAbuseConfig(config.ANTI_ABUSE),
     PANEL_VISUALS: config.PANEL_VISUALS || {},
     PANEL_THEME: config.PANEL_THEME || {},
     FACTION_HIERARCHY: config.FACTION_HIERARCHY || { channelId: '', messageId: '', roles: {} }
+  };
+}
+
+function normalizeIdList(value: unknown) {
+  return Array.from(new Set((Array.isArray(value) ? value : [])
+    .map((item) => String(item || '').trim())
+    .filter((item) => /^\d{15,25}$/.test(item))));
+}
+
+function normalizeProtection(value: any) {
+  return {
+    enabled: value?.enabled === true,
+    punishment: ['log', 'warn', 'remove_admin_roles', 'kick', 'ban'].includes(String(value?.punishment || ''))
+      ? String(value.punishment)
+      : 'log'
+  };
+}
+
+function normalizeAntiAbuseConfig(value: any = {}) {
+  const protectionKeys = [
+    'antiDisconnect',
+    'antiChannelDelete',
+    'antiRoleDelete',
+    'antiCategoryDelete',
+    'antiChannelCreateSpam',
+    'antiRoleCreateSpam',
+    'antiPermissionChange',
+    'antiRoleChange',
+    'antiChannelUpdate',
+    'antiWebhookAbuse',
+    'antiWebhookSpam'
+  ];
+  return {
+    enabled: value?.enabled !== false,
+    protections: Object.fromEntries(protectionKeys.map((key) => [key, normalizeProtection(value?.protections?.[key])])),
+    whitelist: {
+      users: normalizeIdList(value?.whitelist?.users),
+      roles: normalizeIdList(value?.whitelist?.roles)
+    },
+    thresholds: {
+      channelCreate: Math.max(1, Number(value?.thresholds?.channelCreate || 3)),
+      roleCreate: Math.max(1, Number(value?.thresholds?.roleCreate || 3)),
+      webhookSpam: Math.max(2, Number(value?.thresholds?.webhookSpam || 5)),
+      bulkWindowMs: Math.max(10000, Number(value?.thresholds?.bulkWindowMs || 60000)),
+      webhookWindowMs: Math.max(5000, Number(value?.thresholds?.webhookWindowMs || 10000))
+    }
   };
 }
 
@@ -129,6 +177,7 @@ function sanitizePatch(patch: Record<string, any>) {
     'ABSENCE_END_MESSAGE_ENABLED',
     'PROFILE_BILLING_ENABLED',
     'PROFILE_UPDATE_NOTIFICATIONS_ENABLED',
+    'ANTI_ABUSE',
     'PANEL_VISUALS',
     'PANEL_THEME',
     'FACTION_HIERARCHY'

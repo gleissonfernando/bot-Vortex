@@ -4,7 +4,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder,
 const { logger } = require('./logger');
 const { safeReply, safeUpdate } = require('./safeReply');
 
-const APPROVED_SET_CATEGORY_ID = '1460410814744887531';
+const APPROVED_SET_CATEGORY_ID = process.env.APPROVED_SET_CATEGORY_ID || '1515044135470497912';
 const APPROVED_SET_CHANNELS_PATH = path.join(__dirname, '..', 'commands', 'approvedSetChannels.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const STAFF_ROLE_ID = '1497703127074345040';

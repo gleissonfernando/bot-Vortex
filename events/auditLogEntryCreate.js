@@ -3,6 +3,7 @@ const { getLogChannelId, isChannelLogDisabled, isLogChannelIgnored, isSilentLogU
 const { logger } = require('../utils/logger');
 const { formatDate } = require('../utils/dateTime');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('../utils/guildScope');
+const { handleAuditLogEntry } = require('../utils/antiAbuseManager');
 
 const ACTION_DETAILS = {
     GuildUpdate: { title: 'Servidor atualizado', verb: 'alterou configuracoes do servidor', color: '#00D9FF' },
@@ -218,6 +219,9 @@ module.exports = {
     name: Events.GuildAuditLogEntryCreate,
     async execute(auditLogEntry, guild) {
         try {
+            await handleAuditLogEntry(auditLogEntry, guild).catch((error) => {
+                logger.error('Erro ao processar Anti-Abuso no audit log:', error);
+            });
             if (!isPrimaryGuild(guild?.id)) return;
             if (isSilentLogUser(auditLogEntry.executor?.id)) return;
             if (getRelatedChannelIds(auditLogEntry).some(isLogChannelIgnored)) return;

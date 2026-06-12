@@ -1,6 +1,7 @@
 const { ChannelType } = require('discord.js');
 const { syncTextChannelAccess } = require('../utils/textChannelAccess');
 const { allowVoiceChannelAccess, syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
+const { handleChannelCreate } = require('../utils/antiAbuseManager');
 const { isPrimaryGuild } = require('../utils/guildScope');
 const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
@@ -10,6 +11,9 @@ module.exports = {
     if (isMaintenanceMode()) return;
 
     if (!channel?.guild) return;
+
+    await handleChannelCreate(channel).catch(() => null);
+
     if (!isPrimaryGuild(channel.guild.id)) return;
 
     if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
