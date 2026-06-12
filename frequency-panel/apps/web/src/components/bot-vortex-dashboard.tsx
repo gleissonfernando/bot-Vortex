@@ -175,6 +175,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
   const [commandQuery, setCommandQuery] = useState('');
   const [commandFilter, setCommandFilter] = useState<'all' | 'active' | 'disabled'>('all');
   const [toast, setToast] = useState('');
+  const [canManageAntiAbuse, setCanManageAntiAbuse] = useState(false);
 
   const configRef = useRef<BotConfig | null>(null);
   const pendingPatchRef = useRef<BotConfig>({});
@@ -282,11 +283,17 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
     setLoading(true);
     setMessage('');
     try {
-      const data = await apiFetch<{ tools: Tool[]; config: BotConfig; options: { channels: Option[]; roles: Option[]; error?: string | null } }>('/bot-vortex');
+      const data = await apiFetch<{
+        tools: Tool[];
+        config: BotConfig;
+        permissions?: { canManageAntiAbuse?: boolean };
+        options: { channels: Option[]; roles: Option[]; error?: string | null };
+      }>('/bot-vortex');
       setTools(data.tools);
       setConfig(data.config);
       setOriginalConfig(data.config);
       configRef.current = data.config;
+      setCanManageAntiAbuse(data.permissions?.canManageAntiAbuse === true);
       setChannels(data.options.channels || []);
       setRoles(data.options.roles || []);
       setLastSavedAt(new Date());
@@ -420,7 +427,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
     });
   }
 
-  function updateAntiWhitelist(key: 'users' | 'roles', value: string[]) {
+  function updateAntiWhitelist(key: 'roles', value: string[]) {
     const current = getAntiAbuse(configRef.current);
     applyPatch({
       ANTI_ABUSE: {
@@ -749,78 +756,78 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
 
             {config && selected === 'security' ? (
               <ToolPanel title="Seguranca Anti-Abuso" description="Protecao automatica contra acoes administrativas abusivas via Audit Logs do Discord." icon={ShieldAlert}>
-                <ControlGroup title="Estado geral" description="Liga a central Anti-Abuso sem apagar as configuracoes de cada protecao.">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <ConfigToggleCard
-                      icon={ShieldAlert}
-                      label="Central Anti-Abuso"
-                      description="Quando desligada, nenhuma protecao pune ou reverte acoes."
-                      value={getAntiAbuse(config).enabled}
-                      onChange={(value) => updateAntiAbuse({ enabled: value })}
-                    />
-                    <SystemSummaryCard
-                      label="Protecoes ativas"
-                      value={String(activeAntiAbuseCount(config))}
-                      detail="Toggles ligados nesta central"
-                      icon={Shield}
-                      active={activeAntiAbuseCount(config) > 0}
-                    />
-                    <SystemSummaryCard
-                      label="Whitelist"
-                      value={String((getAntiAbuse(config).whitelist.users || []).length + (getAntiAbuse(config).whitelist.roles || []).length)}
-                      detail="Usuarios e cargos liberados"
-                      icon={Users}
-                      active={(getAntiAbuse(config).whitelist.users || []).length + (getAntiAbuse(config).whitelist.roles || []).length > 0}
-                    />
+                {!canManageAntiAbuse ? (
+                  <div className="flex items-start gap-3 rounded-lg bg-amber-400/10 p-4 text-sm text-amber-100">
+                    <Lock size={18} className="mt-0.5 shrink-0" />
+                    <p>Esta central esta bloqueada para sua conta.</p>
                   </div>
-                </ControlGroup>
+                ) : null}
 
-                <ControlGroup title="Protecoes e punicoes" description="Cada regra possui ativacao e punicao propria.">
-                  <div className="grid gap-5 xl:grid-cols-2">
-                    {antiAbuseProtections.map((protection) => {
-                      const antiAbuse = getAntiAbuse(config);
-                      const item = antiAbuse.protections?.[protection.key] || { enabled: false, punishment: 'log' };
-                      return (
-                        <AntiAbuseProtectionCard
-                          key={protection.key}
-                          protection={protection}
-                          centralEnabled={antiAbuse.enabled}
-                          enabled={Boolean(item.enabled)}
-                          punishment={String(item.punishment || 'log')}
-                          onEnabledChange={(value) => updateAntiProtection(protection.key, { enabled: value })}
-                          onPunishmentChange={(value) => updateAntiProtection(protection.key, { punishment: value })}
-                        />
-                      );
-                    })}
-                  </div>
-                </ControlGroup>
+                <fieldset disabled={!canManageAntiAbuse} className={`m-0 min-w-0 space-y-6 border-0 p-0 ${canManageAntiAbuse ? '' : 'pointer-events-none opacity-60'}`}>
+                  <ControlGroup title="Estado geral" description="Liga a central Anti-Abuso sem apagar as configuracoes de cada protecao.">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <ConfigToggleCard
+                        icon={ShieldAlert}
+                        label="Central Anti-Abuso"
+                        description="Quando desligada, nenhuma protecao pune ou reverte acoes."
+                        value={getAntiAbuse(config).enabled}
+                        onChange={(value) => updateAntiAbuse({ enabled: value })}
+                      />
+                      <SystemSummaryCard
+                        label="Protecoes ativas"
+                        value={String(activeAntiAbuseCount(config))}
+                        detail="Toggles ligados nesta central"
+                        icon={Shield}
+                        active={activeAntiAbuseCount(config) > 0}
+                      />
+                      <SystemSummaryCard
+                        label="Bypass"
+                        value={String((getAntiAbuse(config).whitelist.roles || []).length)}
+                        detail="Cargos liberados"
+                        icon={Users}
+                        active={(getAntiAbuse(config).whitelist.roles || []).length > 0}
+                      />
+                    </div>
+                  </ControlGroup>
 
-                <ControlGroup title="Whitelist" description="Quem estiver liberado pode executar acoes protegidas sem punicao.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <StringListInput
-                      label="Usuarios liberados por ID"
-                      value={getAntiAbuse(config).whitelist.users || []}
-                      onChange={(value) => updateAntiWhitelist('users', value)}
-                      placeholder="123456789012345678, 987654321098765432"
-                    />
-                    <MultiSelect
-                      label="Cargos liberados"
+                  <ControlGroup title="Cargos com bypass" description="Membros destes cargos podem executar acoes administrativas sem acionar o Anti-Abuso.">
+                    <AntiAbuseRolePicker
                       value={getAntiAbuse(config).whitelist.roles || []}
-                      options={roles}
+                      options={roles.filter((role) => role.name !== '@everyone')}
                       onChange={(value) => updateAntiWhitelist('roles', value)}
                     />
-                  </div>
-                </ControlGroup>
+                  </ControlGroup>
 
-                <ControlGroup title="Limites de abuso" description="Usados nas protecoes de criacao excessiva e spam de webhooks.">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <NumberInput label="Canais por janela" value={getAntiAbuse(config).thresholds.channelCreate || 3} onChange={(value) => updateAntiThreshold('channelCreate', value)} />
-                    <NumberInput label="Cargos por janela" value={getAntiAbuse(config).thresholds.roleCreate || 3} onChange={(value) => updateAntiThreshold('roleCreate', value)} />
-                    <NumberInput label="Janela de criacao (ms)" value={getAntiAbuse(config).thresholds.bulkWindowMs || 60000} onChange={(value) => updateAntiThreshold('bulkWindowMs', value)} />
-                    <NumberInput label="Mensagens por webhook" value={getAntiAbuse(config).thresholds.webhookSpam || 5} onChange={(value) => updateAntiThreshold('webhookSpam', value)} />
-                    <NumberInput label="Janela de webhook (ms)" value={getAntiAbuse(config).thresholds.webhookWindowMs || 10000} onChange={(value) => updateAntiThreshold('webhookWindowMs', value)} />
-                  </div>
-                </ControlGroup>
+                  <ControlGroup title="Protecoes e punicoes" description="Cada regra possui ativacao e punicao propria.">
+                    <div className="grid gap-5 xl:grid-cols-2">
+                      {antiAbuseProtections.map((protection) => {
+                        const antiAbuse = getAntiAbuse(config);
+                        const item = antiAbuse.protections?.[protection.key] || { enabled: false, punishment: 'log' };
+                        return (
+                          <AntiAbuseProtectionCard
+                            key={protection.key}
+                            protection={protection}
+                            centralEnabled={antiAbuse.enabled}
+                            enabled={Boolean(item.enabled)}
+                            punishment={String(item.punishment || 'log')}
+                            onEnabledChange={(value) => updateAntiProtection(protection.key, { enabled: value })}
+                            onPunishmentChange={(value) => updateAntiProtection(protection.key, { punishment: value })}
+                          />
+                        );
+                      })}
+                    </div>
+                  </ControlGroup>
+
+                  <ControlGroup title="Limites de abuso" description="Usados nas protecoes de criacao excessiva e spam de webhooks.">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <NumberInput label="Canais por janela" value={getAntiAbuse(config).thresholds.channelCreate || 3} onChange={(value) => updateAntiThreshold('channelCreate', value)} />
+                      <NumberInput label="Cargos por janela" value={getAntiAbuse(config).thresholds.roleCreate || 3} onChange={(value) => updateAntiThreshold('roleCreate', value)} />
+                      <NumberInput label="Janela de criacao (ms)" value={getAntiAbuse(config).thresholds.bulkWindowMs || 60000} onChange={(value) => updateAntiThreshold('bulkWindowMs', value)} />
+                      <NumberInput label="Mensagens por webhook" value={getAntiAbuse(config).thresholds.webhookSpam || 5} onChange={(value) => updateAntiThreshold('webhookSpam', value)} />
+                      <NumberInput label="Janela de webhook (ms)" value={getAntiAbuse(config).thresholds.webhookWindowMs || 10000} onChange={(value) => updateAntiThreshold('webhookWindowMs', value)} />
+                    </div>
+                  </ControlGroup>
+                </fieldset>
               </ToolPanel>
             ) : null}
 
@@ -1336,6 +1343,59 @@ function MultiSelect({ label, value, options, onChange }: { label: string; value
   );
 }
 
+function AntiAbuseRolePicker({ value, options, onChange }: { value: string[]; options: Option[]; onChange: (value: string[]) => void }) {
+  const [query, setQuery] = useState('');
+  const selected = new Set(value.map(String));
+  const filtered = options.filter((option) => option.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  function toggle(roleId: string) {
+    const next = new Set(selected);
+    if (next.has(roleId)) next.delete(roleId);
+    else next.add(roleId);
+    onChange(Array.from(next));
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 rounded-lg bg-slate-950/55 px-3 py-2.5 text-slate-400">
+        <Search size={16} />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar cargo"
+          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0"
+        />
+        <span className="text-xs font-semibold text-blue-200">{value.length} selecionado{value.length === 1 ? '' : 's'}</span>
+      </label>
+
+      <div className="grid max-h-80 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+        {filtered.map((role) => {
+          const checked = selected.has(role.id);
+          return (
+            <button
+              key={role.id}
+              type="button"
+              onClick={() => toggle(role.id)}
+              aria-pressed={checked}
+              className={`flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-left transition ${
+                checked
+                  ? 'bg-blue-500/15 text-white shadow-[0_0_18px_rgba(59,130,246,.1)]'
+                  : 'bg-white/[0.025] text-slate-400 hover:bg-white/[0.05] hover:text-white'
+              }`}
+            >
+              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? 'border-blue-300/50 bg-blue-500 text-white' : 'border-white/15 bg-slate-950'}`}>
+                {checked ? <CheckCircle2 size={14} /> : null}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{role.name}</span>
+            </button>
+          );
+        })}
+        {!filtered.length ? <p className="p-3 text-sm text-slate-500">Nenhum cargo encontrado.</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="block">
@@ -1362,20 +1422,6 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
         <input type="color" value={normalizeColor(value)} onChange={(event) => onChange(event.target.value.toUpperCase())} className="h-9 w-12 shrink-0 rounded border-0 bg-transparent p-0" />
         <input value={value || '#00BFFF'} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent px-3 text-sm text-white outline-none" />
       </div>
-    </label>
-  );
-}
-
-function StringListInput({ label, value, onChange, placeholder }: { label: string; value: string[]; onChange: (value: string[]) => void; placeholder?: string }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
-      <textarea
-        value={value.join(', ')}
-        onChange={(event) => onChange(event.target.value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean))}
-        placeholder={placeholder}
-        className="mt-1 h-36 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-sky-300/40"
-      />
     </label>
   );
 }
@@ -1412,7 +1458,6 @@ function getAntiAbuse(config: BotConfig | null) {
     enabled: raw.enabled !== false,
     protections,
     whitelist: {
-      users: Array.isArray(raw.whitelist?.users) ? raw.whitelist.users.map(String) : [],
       roles: Array.isArray(raw.whitelist?.roles) ? raw.whitelist.roles.map(String) : []
     },
     thresholds: {

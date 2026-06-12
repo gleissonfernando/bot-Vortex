@@ -23,6 +23,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, clearToken } from '@/lib/api';
 
+const ANTI_ABUSE_MANAGER_IDS = new Set([
+  '289227932432334869',
+  '1426287249020158018'
+]);
+
 const navGroups = [
   {
     label: 'Principal',
@@ -44,7 +49,7 @@ const navGroups = [
   {
     label: 'Seguranca',
     items: [
-      { href: '/dashboard/anti-abuse', label: 'Anti-Abuso', icon: ShieldAlert, roles: ['admin', 'manager'] }
+      { href: '/dashboard/anti-abuse', label: 'Anti-Abuso', icon: ShieldAlert, access: 'anti-abuse' }
     ]
   }
 ];
@@ -52,7 +57,7 @@ const navGroups = [
 const nav = navGroups.flatMap((group) => group.items);
 const IDLE_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_SESSION_IDLE_TIMEOUT_MS || 30 * 60 * 1000);
 
-type ShellUser = { id: string; role: 'admin' | 'manager' | 'viewer' };
+type ShellUser = { id: string; role: 'admin' | 'manager' | 'viewer'; discordId?: string };
 type NavItem = typeof nav[number];
 
 const routeMeta = [
@@ -66,8 +71,11 @@ const routeMeta = [
   { match: '/dashboard', title: 'Dashboard', description: 'Visao geral da operacao Vortex.' }
 ];
 
-function canSeeNavItem(item: NavItem, role: ShellUser['role']) {
-  return !item.roles || item.roles.includes(role);
+function canSeeNavItem(item: NavItem, user: ShellUser | null) {
+  if ('access' in item && item.access === 'anti-abuse') {
+    return Boolean(user?.discordId && ANTI_ABUSE_MANAGER_IDS.has(user.discordId));
+  }
+  return !('roles' in item) || !item.roles || item.roles.includes(user?.role || 'viewer');
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -84,12 +92,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => (
-          canSeeNavItem(item, user?.role || 'viewer')
+          canSeeNavItem(item, user)
           && (!query || `${group.label} ${item.label}`.toLowerCase().includes(query))
         ))
       }))
       .filter((group) => group.items.length);
-  }, [navQuery, user?.role]);
+  }, [navQuery, user]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -228,7 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="mx-auto mt-3 flex max-w-[1480px] gap-2 overflow-x-auto pb-1 lg:hidden">
-            {nav.filter((item) => canSeeNavItem(item, user?.role || 'viewer')).map((item) => {
+            {nav.filter((item) => canSeeNavItem(item, user)).map((item) => {
               const Icon = item.icon;
               const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
               return (

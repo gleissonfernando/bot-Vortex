@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
+import { canManageAntiAbuse, configPatchAccess } from '../anti-abuse-access.js';
 import { collection } from '../db.js';
-import { requireManager } from '../middleware.js';
 
 const toolSections = [
   { id: 'stats', label: 'Dashboard', description: 'Visao geral do bot, banco e operacao.' },
@@ -129,7 +129,7 @@ function normalizeAntiAbuseConfig(value: any = {}) {
     enabled: value?.enabled !== false,
     protections: Object.fromEntries(protectionKeys.map((key) => [key, normalizeProtection(value?.protections?.[key])])),
     whitelist: {
-      users: normalizeIdList(value?.whitelist?.users),
+      users: [],
       roles: normalizeIdList(value?.whitelist?.roles)
     },
     thresholds: {
@@ -232,7 +232,7 @@ async function discordOptions(guildId: string) {
 
 export const botVortexRouter = Router();
 
-botVortexRouter.get('/', async (_req, res) => {
+botVortexRouter.get('/', async (req, res) => {
   const config = readConfig();
   const guildId = process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || config.GUILD_ID || '';
   const options = await discordOptions(String(guildId));
@@ -242,15 +242,28 @@ botVortexRouter.get('/', async (_req, res) => {
     tools: toolSections,
     config: pickBotConfig(config),
     maintenance: getMaintenanceStatus(config),
+    permissions: {
+      canManageAntiAbuse: canManageAntiAbuse(req.user)
+    },
     options
   });
 });
 
-botVortexRouter.put('/config', requireManager, async (req, res) => {
+botVortexRouter.put('/config', async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'Payload invalido.' });
   const current = readConfig();
   const patch = sanitizePatch(parsed.data.patch || {});
+  const access = configPatchAccess(req.user, Object.keys(patch));
+  if (access === 'empty') {
+    return res.status(400).json({ ok: false, error: 'Nenhuma configuracao valida foi informada.' });
+  }
+  if (access === 'anti-abuse-forbidden') {
+    return res.status(403).json({ ok: false, error: 'Somente os administradores autorizados podem alterar o Anti-Abuso.' });
+  }
+  if (access === 'manager-forbidden') {
+    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  }
   if (Object.prototype.hasOwnProperty.call(patch, 'ANTI_ABUSE')) {
     patch.ANTI_ABUSE = mergeAntiAbuseConfig(current.ANTI_ABUSE, patch.ANTI_ABUSE);
   }

@@ -75,7 +75,7 @@ function getAntiAbuseConfig() {
     enabled: raw.enabled !== false,
     protections,
     whitelist: {
-      users: normalizeIds(raw.whitelist?.users),
+      users: [],
       roles: normalizeIds(raw.whitelist?.roles),
     },
     thresholds: {
@@ -186,7 +186,6 @@ async function isWhitelisted(guild, executorId, settings) {
   const id = String(executorId);
   if (id === String(guild.ownerId || '')) return true;
   if (id === String(guild.client.user?.id || '')) return true;
-  if (settings.whitelist.users.includes(id)) return true;
 
   const member = await guild.members.fetch(id).catch(() => null);
   if (!member?.roles?.cache) return false;
