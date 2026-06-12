@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import type { CSSProperties } from 'react';
 
 export function StatCard({
   label,
@@ -14,38 +15,35 @@ export function StatCard({
   tone?: 'blue' | 'emerald' | 'rose' | 'violet';
 }) {
   const toneClass = {
-    blue: 'border-sky-300/20 bg-sky-400/10 text-sky-100',
-    emerald: 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100',
-    rose: 'border-rose-300/20 bg-rose-400/10 text-rose-100',
-    violet: 'border-violet-300/20 bg-violet-400/10 text-violet-100'
+    blue: 'bg-blue-400/10 text-blue-100',
+    emerald: 'bg-emerald-400/10 text-emerald-100',
+    rose: 'bg-rose-400/10 text-rose-100',
+    violet: 'bg-violet-400/10 text-violet-100'
   }[tone];
-  const glowClass = {
-    blue: 'from-sky-400/18',
-    emerald: 'from-emerald-400/18',
-    rose: 'from-rose-400/18',
-    violet: 'from-violet-400/18'
+  const accent = {
+    blue: 'linear-gradient(90deg, #3b82f6, #22d3ee)',
+    emerald: 'linear-gradient(90deg, #10b981, #34d399)',
+    rose: 'linear-gradient(90deg, #f43f5e, #fb7185)',
+    violet: 'linear-gradient(90deg, #8b5cf6, #c084fc)'
   }[tone];
 
   return (
-    <div className="premium-card hover-glow group relative overflow-hidden rounded-2xl p-5">
-      <div className={`pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b ${glowClass} to-transparent opacity-70 transition duration-300 group-hover:opacity-100`} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="relative">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-          <strong className="mt-2 block text-3xl font-semibold tracking-tight text-white">{value}</strong>
+    <article
+      className="metric-card hover-glow group p-5"
+      style={{ '--metric-accent': accent } as CSSProperties}
+    >
+      <div className="flex h-full flex-col justify-between gap-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-300">{label}</p>
+            <strong className="mt-2 block truncate text-4xl font-semibold text-white">{value}</strong>
+          </div>
+          <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${toneClass} shadow-lg shadow-black/10`}>
+            <Icon size={23} />
+          </div>
         </div>
-        <div className={`relative rounded-2xl border p-2.5 shadow-lg shadow-black/10 ${toneClass}`}>
-          <Icon size={18} />
-        </div>
+        {helper ? <p className="text-sm text-slate-500">{helper}</p> : null}
       </div>
-      {helper ? (
-        <div className="relative mt-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-slate-400">{helper}</p>
-          <span className="rounded-full border border-emerald-300/15 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
-            + ativo
-          </span>
-        </div>
-      ) : null}
-    </div>
+    </article>
   );
 }

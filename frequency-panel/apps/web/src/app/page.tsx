@@ -1,4 +1,5 @@
 'use client';
+import { LogIn, ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import { API_URL, setToken } from '@/lib/api';
@@ -53,16 +54,21 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-surface-950 px-4">
-      <div className="absolute inset-0 bg-[linear-gradient(var(--vx-border)_1px,transparent_1px),linear-gradient(90deg,var(--vx-border)_1px,transparent_1px)] bg-[size:36px_36px] opacity-40" />
-      <section className="panel relative w-full max-w-md rounded-lg p-6">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="h-11 w-11 overflow-hidden rounded-lg border border-blue-400/20 bg-black">
+    <main className="relative grid min-h-screen place-items-center overflow-hidden px-4 py-10">
+      <img src="/vortex-logo.png" alt="" className="pointer-events-none absolute right-[-8%] top-1/2 hidden h-[110vh] -translate-y-1/2 object-cover opacity-[0.08] lg:block" />
+      <section className="panel relative w-full min-w-0 max-w-[calc(100vw-2rem)] overflow-hidden p-7 sm:max-w-md sm:p-8">
+        <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-blue-500 via-cyan-300 to-emerald-300" />
+        <div className="mb-8">
+          <div className="h-16 w-16 overflow-hidden rounded-lg bg-black shadow-[0_0_28px_rgba(59,130,246,.18)]">
             <img src="/vortex-logo.png" alt="Vortex" className="h-full w-full object-cover" />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-white">Vortex</h1>
-            <p className="text-sm text-slate-400">Acesso administrativo</p>
+          <div className="mt-5">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">
+              <ShieldCheck size={15} />
+              Ambiente protegido
+            </div>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Vortex</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-400">Acesse a central de gerenciamento do seu servidor.</p>
           </div>
         </div>
 
@@ -70,15 +76,16 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={loginWithDiscord}
-            className="w-full rounded-lg bg-vortex-primary px-4 py-2.5 text-sm font-semibold text-vortex-bg shadow-lg shadow-blue-950/40 transition hover:bg-vortex-secondary hover:shadow-[var(--vx-glow)]"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(59,130,246,.24)] hover:bg-blue-400"
           >
+            <LogIn size={17} />
             Entrar com Discord
           </button>
 
-          {error ? <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+          {error ? <div className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
         </div>
 
-        {process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true' ? <form onSubmit={submit} className="mt-6 space-y-4 border-t border-white/10 pt-6">
+        {process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true' ? <form onSubmit={submit} className="mt-6 space-y-4 pt-6">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-300">Email</span>
             <input
@@ -108,8 +115,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/40 transition hover:bg-brand-400 disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-400 disabled:opacity-60"
           >
+            <LogIn size={16} />
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form> : null}

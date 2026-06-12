@@ -518,20 +518,18 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
 
   return (
     <AppShell>
-      <div className="space-y-5">
-        <section className="group overflow-hidden rounded-2xl border border-sky-300/15 bg-slate-950/70 shadow-2xl shadow-sky-950/30 backdrop-blur-xl transition duration-300 hover:border-sky-300/25 hover:shadow-sky-500/10">
-          <div className="relative overflow-hidden border-b border-white/10 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--vx-primary)_18%,transparent),color-mix(in_srgb,var(--vx-surface)_96%,var(--vx-bg))_42%,var(--vx-bg)_100%)] p-6 sm:p-7">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/80 to-transparent" />
-            <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl transition duration-500 group-hover:bg-sky-400/15" />
-            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="space-y-6">
+        <section className="panel overflow-hidden">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-lg shadow-sky-950/30">
+                <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">
                   <Sparkles size={14} />
                   Controle em tempo real
                 </div>
-                <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Bot Vortex</h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                  Configure os mesmos modulos do /painel do Discord. Cada alteracao salva automaticamente no arquivo que o bot usa.
+                <h1 className="mt-2 text-2xl font-semibold text-white">Estado operacional</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                  Modulos, sincronizacao e configuracoes aplicadas diretamente no Bot Vortex.
                 </p>
               </div>
 
@@ -539,7 +537,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                 <button
                   onClick={load}
                   disabled={loading || saving}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-slate-100 shadow-lg shadow-black/15 transition duration-200 hover:border-sky-300/25 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-white/[0.06] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                   Recarregar
@@ -547,7 +545,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                 <button
                   onClick={saveNow}
                   disabled={!config || (!hasChanges && !Object.keys(pendingPatchRef.current).length) || saving}
-                  className="inline-flex items-center gap-2 rounded-xl border border-sky-300/30 bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition duration-200 hover:bg-sky-400 hover:shadow-sky-400/30 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(59,130,246,.22)] hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
                 >
                   <Save size={16} />
                   {saving ? 'Sincronizando...' : hasChanges ? 'Salvar agora' : 'Sincronizado'}
@@ -555,16 +553,16 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
               </div>
             </div>
 
-            <div className="relative mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <StatusTile label="Bot Online" value={config?.MAINTENANCE_MODE ? 'Manutencao' : 'Online'} description={config?.MAINTENANCE_MODE ? 'Modo seguro ativo' : 'Sistema responsivo'} icon={Bot} ok={!config?.MAINTENANCE_MODE} />
-              <StatusTile label="Discord" value={channels.length ? `${channels.length}` : '0'} description="Canais sincronizados" icon={Wifi} ok={channels.length > 0} />
-              <StatusTile label="Cargos" value={roles.length ? `${roles.length}` : '0'} description="Cargos disponiveis" icon={Shield} ok={roles.length > 0} />
-              <StatusTile label="Autosave" value={saveStateLabel(saveStatus, hasChanges, lastSavedAt)} description={hasChanges ? 'Alteracoes pendentes' : 'Configuracao salva'} icon={Database} ok={saveStatus !== 'error' && !hasChanges} busy={saveStatus === 'saving'} />
+            <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+              <StatusTile label="Bot Online" value={config?.MAINTENANCE_MODE ? 'Pausado' : 'Online'} description={config?.MAINTENANCE_MODE ? 'Modo manutencao ativo' : `${uptimeLabel} nesta sessao`} icon={Bot} ok={!config?.MAINTENANCE_MODE} tone="emerald" />
+              <StatusTile label="Discord" value={`${channels.length}`} description={`${channels.length} canais sincronizados`} icon={Wifi} ok={channels.length > 0} tone="blue" />
+              <StatusTile label="Protecoes" value={`${activeAntiAbuseCount(config)}`} description={`${activeAntiAbuseCount(config)} regras ativas`} icon={ShieldAlert} ok={activeAntiAbuseCount(config) > 0} tone="violet" />
+              <StatusTile label="Autosave" value={lastSavedAt ? lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Agora'} description={saveStateLabel(saveStatus, hasChanges, lastSavedAt)} icon={Database} ok={saveStatus !== 'error' && !hasChanges} busy={saveStatus === 'saving'} tone="amber" />
             </div>
           </div>
 
           {(message || hasChanges || saving) ? (
-            <div className={`border-b px-5 py-3 text-sm ${saveStatus === 'error' ? 'border-rose-300/15 bg-rose-400/10 text-rose-100' : hasChanges || saving ? 'border-amber-300/15 bg-amber-400/10 text-amber-100' : 'border-emerald-300/15 bg-emerald-400/10 text-emerald-100'}`}>
+            <div className={`px-5 py-3 text-sm ${saveStatus === 'error' ? 'bg-rose-400/10 text-rose-100' : hasChanges || saving ? 'bg-amber-400/10 text-amber-100' : 'bg-emerald-400/10 text-emerald-100'}`}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   {saveStatus === 'saving' ? <Loader2 size={16} className="animate-spin" /> : saveStatus === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
@@ -580,9 +578,9 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
           ) : null}
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[320px_1fr]">
+        <section className="grid gap-6 xl:grid-cols-[300px_1fr]">
           <aside className="space-y-3">
-            <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+            <label className="flex items-center gap-2 rounded-lg bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
               <Search size={16} />
               <input
                 value={query}
@@ -602,13 +600,13 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                   onClick={() => setSelected(tool.id)}
                 />
               ))}
-              {!filteredTools.length ? <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-500">Nenhum modulo encontrado.</div> : null}
+              {!filteredTools.length ? <div className="rounded-lg bg-white/[0.03] p-4 text-sm text-slate-500">Nenhum modulo encontrado.</div> : null}
             </div>
           </aside>
 
           <main className="min-w-0">
             {loading || !config ? (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-400">Carregando configuracoes...</div>
+              <div className="rounded-lg bg-white/[0.03] p-6 text-sm text-slate-400">Carregando configuracoes...</div>
             ) : null}
 
             {config && selected === 'stats' ? (
@@ -779,7 +777,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                 </ControlGroup>
 
                 <ControlGroup title="Protecoes e punicoes" description="Cada regra possui ativacao e punicao propria.">
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid gap-5 xl:grid-cols-2">
                     {antiAbuseProtections.map((protection) => {
                       const item = getAntiAbuse(config).protections?.[protection.key] || { enabled: false, punishment: 'log' };
                       return (
@@ -965,14 +963,14 @@ function ToolButton({ tool, active, changed, onClick }: { tool: Tool; active: bo
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-2xl border px-3 py-3 text-left shadow-lg shadow-black/5 backdrop-blur transition duration-200 ${
+      className={`w-full rounded-lg px-3 py-3 text-left ${
         active
-          ? 'border-sky-300/30 bg-sky-400/10 text-white shadow-sky-950/20'
-          : 'border-white/10 bg-white/[0.025] text-slate-400 hover:border-sky-300/20 hover:bg-white/[0.055] hover:text-white'
+          ? 'bg-blue-500/15 text-white shadow-[0_0_22px_rgba(59,130,246,.12)]'
+          : 'bg-white/[0.025] text-slate-400 hover:bg-white/[0.055] hover:text-white'
       }`}
     >
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border ${active ? 'border-sky-300/25 bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-500/10' : 'border-white/10 bg-white/[0.035] text-slate-400'}`}>
+        <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg ${active ? 'bg-blue-400/15 text-blue-100' : 'bg-white/[0.035] text-slate-400'}`}>
           <Icon size={17} />
         </span>
         <span className="min-w-0 flex-1">
@@ -989,15 +987,15 @@ function ToolButton({ tool, active, changed, onClick }: { tool: Tool; active: bo
 
 function ToolPanel({ title, description, icon: Icon, children }: { title: string; description: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-xl">
+    <div className="space-y-6">
+      <div className="px-1 py-1">
         <div className="flex items-start gap-3">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100 shadow-lg shadow-sky-950/25">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-blue-400/10 text-blue-100">
             <Icon size={20} />
           </div>
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight text-white">{title}</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-300">{description}</p>
+            <h2 className="text-xl font-semibold text-white">{title}</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>
           </div>
         </div>
       </div>
@@ -1008,8 +1006,8 @@ function ToolPanel({ title, description, icon: Icon, children }: { title: string
 
 function ControlGroup({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/15">
-      <div className="mb-4">
+    <section className="panel p-5">
+      <div className="mb-5">
         <h3 className="text-base font-semibold text-white">{title}</h3>
         {description ? <p className="mt-1 text-sm leading-5 text-slate-400">{description}</p> : null}
       </div>
@@ -1018,30 +1016,58 @@ function ControlGroup({ title, description, children }: { title: string; descrip
   );
 }
 
-function StatusTile({ label, value, description, icon: Icon, ok, busy = false }: { label: string; value: string; description: string; icon: LucideIcon; ok: boolean; busy?: boolean }) {
+function StatusTile({
+  label,
+  value,
+  description,
+  icon: Icon,
+  ok,
+  busy = false,
+  tone
+}: {
+  label: string;
+  value: string;
+  description: string;
+  icon: LucideIcon;
+  ok: boolean;
+  busy?: boolean;
+  tone: 'blue' | 'emerald' | 'violet' | 'amber';
+}) {
+  const accentClass = {
+    blue: 'from-blue-500 to-cyan-300',
+    emerald: 'from-emerald-500 to-emerald-300',
+    violet: 'from-violet-500 to-fuchsia-300',
+    amber: 'from-amber-500 to-yellow-300'
+  }[tone];
+  const iconClass = {
+    blue: 'bg-blue-400/10 text-blue-100',
+    emerald: 'bg-emerald-400/10 text-emerald-100',
+    violet: 'bg-violet-400/10 text-violet-100',
+    amber: 'bg-amber-400/10 text-amber-100'
+  }[tone];
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-sky-300/30 hover:bg-white/[0.075] hover:shadow-sky-500/15">
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent opacity-0 transition group-hover:opacity-100" />
-      <div className="flex items-center justify-between gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100 shadow-lg shadow-sky-950/20">
-          <Icon size={18} />
+    <div className="metric-card hover-glow group p-5">
+      <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${accentClass}`} />
+      <div className="flex items-start justify-between gap-3">
+        <span className={`grid h-12 w-12 place-items-center rounded-lg ${iconClass}`}>
+          <Icon size={22} />
         </span>
-        <span className={`grid h-8 w-8 place-items-center rounded-xl border ${busy ? 'border-sky-300/20 bg-sky-400/10 text-sky-200' : ok ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/15 bg-amber-400/10 text-amber-200'}`}>
+        <span className={`grid h-8 w-8 place-items-center rounded-lg ${busy ? 'bg-sky-400/10 text-sky-200' : ok ? 'bg-emerald-400/10 text-emerald-200' : 'bg-amber-400/10 text-amber-200'}`}>
           {busy ? <Loader2 size={15} className="animate-spin" /> : ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
         </span>
       </div>
-      <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-2xl font-semibold text-white">{value}</div>
-      <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
+      <div className="mt-5 text-sm font-semibold text-slate-300">{label}</div>
+      <div className="mt-1 truncate text-3xl font-semibold text-white">{value}</div>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{description}</p>
     </div>
   );
 }
 
 function SystemSummaryCard({ label, value, detail, icon: Icon, active }: { label: string; value: string; detail: string; icon: LucideIcon; active: boolean }) {
   return (
-    <article className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-200 hover:border-sky-300/20 hover:bg-white/[0.055] sm:flex-row sm:items-center sm:justify-between">
+    <article className="flex flex-col gap-3 rounded-lg bg-white/[0.03] p-4 transition hover:bg-white/[0.05] sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-100">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-sky-400/10 text-sky-100">
           <Icon size={19} />
         </div>
         <div className="min-w-0">
@@ -1059,14 +1085,13 @@ function SystemSummaryCard({ label, value, detail, icon: Icon, active }: { label
 
 function ConfigToggleCard({ icon: Icon, label, description, value, onChange }: { icon: LucideIcon; label: string; description: string; value: boolean; onChange: (value: boolean) => void }) {
   return (
-    <label className={`group relative flex cursor-pointer flex-col justify-between gap-5 overflow-hidden rounded-2xl border p-4 shadow-xl backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 ${
+    <label className={`module-card group flex cursor-pointer flex-col justify-between gap-5 p-5 transition duration-300 hover:-translate-y-0.5 ${
       value
-        ? 'border-sky-300/30 bg-sky-400/[0.08] shadow-sky-500/10'
-        : 'border-white/10 bg-slate-950/55 shadow-black/10 hover:border-sky-300/20 hover:bg-white/[0.045]'
-    }`}>
-      <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/70 to-transparent opacity-0 transition group-hover:opacity-100" />
+        ? 'bg-sky-400/[0.07]'
+        : 'bg-slate-950/45 hover:bg-white/[0.045]'
+    }`} data-active={value}>
       <div className="flex items-start justify-between gap-4">
-        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition ${value ? 'border-sky-300/30 bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-500/15' : 'border-white/10 bg-white/[0.04] text-slate-300'}`}>
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg transition ${value ? 'bg-sky-400/15 text-sky-100 shadow-lg shadow-sky-500/10' : 'bg-white/[0.04] text-slate-300'}`}>
           <Icon size={19} />
         </span>
         <ToggleSwitch value={Boolean(value)} />
@@ -1223,18 +1248,10 @@ function AntiAbuseProtectionCard({
 }) {
   const Icon = protection.icon;
   return (
-    <article className={`group overflow-hidden rounded-2xl border bg-vortex-surface/85 p-4 shadow-xl shadow-black/10 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:shadow-sky-500/10 ${
-      enabled ? 'border-rose-300/30' : 'border-white/10'
-    }`}>
+    <article className="module-card group flex min-h-64 flex-col p-5 transition duration-300 hover:-translate-y-0.5" data-active={enabled}>
       <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${enabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-sky-300/20 bg-sky-400/10 text-sky-100'}`}>
-            <Icon size={20} />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold tracking-tight text-white">{protection.label}</h3>
-            <p className="mt-1 text-sm leading-5 text-slate-400">{protection.description}</p>
-          </div>
+        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${enabled ? 'bg-blue-400/15 text-blue-100 shadow-[0_0_22px_rgba(59,130,246,.14)]' : 'bg-white/[0.04] text-slate-400'}`}>
+          <Icon size={23} />
         </div>
         <button
           onClick={() => onEnabledChange(!enabled)}
@@ -1245,13 +1262,20 @@ function AntiAbuseProtectionCard({
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+      <div className="mt-5 flex-1">
+        <h3 className="text-lg font-semibold text-white">{protection.label}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-400">{protection.description}</p>
+      </div>
+
+      <div className="mt-5 rounded-lg bg-black/15 p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status</span>
+          <span className={`inline-flex items-center gap-2 text-xs font-semibold ${enabled ? 'text-emerald-200' : 'text-slate-500'}`}>
+            <span className={`h-2 w-2 rounded-full ${enabled ? 'bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,.75)]' : 'bg-slate-600'}`} />
+            {enabled ? 'Ativado' : 'Desativado'}
+          </span>
+        </div>
         <Select label="Punicao" value={punishment || 'log'} options={punishmentOptions} onChange={onPunishmentChange} />
-        <span className={`inline-flex h-10 items-center justify-center rounded-xl border px-3 text-xs font-semibold ${
-          enabled ? 'border-rose-300/25 bg-rose-400/10 text-rose-100' : 'border-white/10 bg-white/[0.035] text-slate-400'
-        }`}>
-          {enabled ? 'Protegendo' : 'Desativado'}
-        </span>
       </div>
     </article>
   );

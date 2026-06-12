@@ -4,58 +4,85 @@
 
 :root {
   color-scheme: dark;
-  --vx-bg: #020817;
-  --vx-surface: #071226;
-  --vx-hover: #0B1730;
-  --vx-primary: #00BFFF;
-  --vx-secondary: #0099FF;
-  --vx-success: #00FFB3;
-  --vx-warning: #FFC857;
-  --vx-danger: #FF5D73;
-  --vx-text: #FFFFFF;
-  --vx-muted: #94A3B8;
-  --vx-border: rgba(255, 255, 255, 0.08);
-  --vx-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
-  --vx-glow: 0 0 28px rgba(0, 191, 255, 0.22);
+  --vx-bg: #020617;
+  --vx-surface: #0b1425;
+  --vx-hover: #111d31;
+  --vx-primary: #3b82f6;
+  --vx-secondary: #22d3ee;
+  --vx-success: #34d399;
+  --vx-warning: #fbbf24;
+  --vx-danger: #fb7185;
+  --vx-text: #f8fafc;
+  --vx-muted: #94a3b8;
+  --vx-border: rgba(148, 163, 184, 0.07);
+  --vx-shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
+  --vx-glow: 0 0 24px rgba(59, 130, 246, 0.24);
 }
 
 body {
   margin: 0;
+  min-height: 100vh;
   background:
-    radial-gradient(circle at 18% -10%, color-mix(in srgb, var(--vx-primary) 14%, transparent), transparent 34rem),
-    radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--vx-secondary) 8%, transparent), transparent 32rem),
-    linear-gradient(180deg, var(--vx-bg) 0%, var(--vx-bg) 52%, color-mix(in srgb, var(--vx-surface) 70%, var(--vx-bg)) 100%);
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 40%),
+    radial-gradient(circle at 8% 32%, rgba(34, 211, 238, 0.055), transparent 28%),
+    #020617;
   color: var(--vx-text);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.022) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
 }
 
 * {
   box-sizing: border-box;
 }
 
-.panel {
-  border: 1px solid var(--vx-border);
-  background: color-mix(in srgb, var(--vx-surface) 78%, transparent);
-  box-shadow: var(--vx-shadow);
-  backdrop-filter: blur(18px);
+.panel,
+.soft-panel,
+.premium-card {
+  border: 1px solid rgba(148, 163, 184, 0.06);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(20px);
 }
 
-.soft-panel {
-  border: 1px solid var(--vx-border);
-  background: color-mix(in srgb, var(--vx-surface) 66%, transparent);
-  backdrop-filter: blur(16px);
+.panel,
+.premium-card {
+  box-shadow: var(--vx-shadow);
 }
 
 .premium-card {
-  border: 1px solid var(--vx-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--vx-surface) 92%, transparent), color-mix(in srgb, var(--vx-bg) 88%, var(--vx-surface)));
-  box-shadow: var(--vx-shadow);
-  backdrop-filter: blur(18px);
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.58), rgba(9, 16, 30, 0.76)),
+    rgba(15, 23, 42, 0.7);
+}
+
+.premium-card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.72), rgba(52, 211, 153, 0.34), transparent);
+  opacity: 0.72;
 }
 
 .premium-card:hover {
-  border-color: color-mix(in srgb, var(--vx-primary) 24%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--vx-hover) 96%, transparent), color-mix(in srgb, var(--vx-surface) 90%, var(--vx-bg)));
+  border-color: rgba(96, 165, 250, 0.16);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.66), rgba(10, 18, 33, 0.82)),
+    rgba(15, 23, 42, 0.76);
 }
 
 .hover-glow {
@@ -64,14 +91,15 @@ body {
 
 .hover-glow:hover {
   transform: translateY(-2px);
-  box-shadow: 0 26px 80px color-mix(in srgb, var(--vx-primary) 9%, transparent), 0 18px 60px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 20px 60px rgba(59, 130, 246, 0.1), 0 18px 50px rgba(0, 0, 0, 0.22);
 }
 
 input,
 select,
 textarea {
-  border-color: var(--vx-border) !important;
-  background: color-mix(in srgb, var(--vx-bg) 55%, transparent) !important;
+  border-color: rgba(148, 163, 184, 0.07) !important;
+  border-radius: 8px !important;
+  background: rgba(2, 6, 23, 0.52) !important;
   color: var(--vx-text) !important;
   transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
 }
@@ -84,13 +112,14 @@ textarea::placeholder {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: color-mix(in srgb, var(--vx-primary) 55%, transparent) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vx-primary) 16%, transparent) !important;
+  border-color: rgba(96, 165, 250, 0.38) !important;
+  background: rgba(2, 6, 23, 0.74) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.11) !important;
 }
 
 button,
 a {
-  transition-duration: 300ms;
+  transition-duration: 220ms;
 }
 
 button:active,
@@ -102,9 +131,9 @@ a:active {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  border-radius: 1rem;
-  border: 1px solid var(--vx-border);
-  background: color-mix(in srgb, var(--vx-text) 4%, transparent);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.07);
+  background: rgba(255, 255, 255, 0.035);
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 700;
@@ -112,9 +141,143 @@ a:active {
 }
 
 .icon-action:hover {
-  border-color: color-mix(in srgb, var(--vx-primary) 26%, transparent);
-  background: color-mix(in srgb, var(--vx-primary) 8%, transparent);
+  border-color: rgba(96, 165, 250, 0.2);
+  background: rgba(59, 130, 246, 0.1);
   box-shadow: var(--vx-glow);
+}
+
+.rounded-2xl,
+.rounded-xl {
+  border-radius: 8px !important;
+}
+
+[class*="border-white/10"] {
+  border-color: rgba(148, 163, 184, 0.06) !important;
+}
+
+[class*="divide-white/10"] > :not([hidden]) ~ :not([hidden]),
+[class*="border-t"][class*="border-white/10"],
+[class*="border-b"][class*="border-white/10"] {
+  border-color: rgba(148, 163, 184, 0.055) !important;
+}
+
+.app-content {
+  display: grid;
+  gap: 24px;
+  padding-block: 24px 40px;
+}
+
+.app-sidebar {
+  background: rgba(3, 9, 23, 0.82);
+  box-shadow: 18px 0 60px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px);
+}
+
+.product-banner {
+  position: relative;
+  min-height: 196px;
+  overflow: hidden;
+  border-radius: 8px;
+  background-image:
+    linear-gradient(90deg, rgba(4, 10, 24, 0.98) 0%, rgba(7, 18, 39, 0.92) 48%, rgba(8, 25, 55, 0.38) 100%),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(34, 211, 238, 0.07)),
+    url("/vortex-logo.png");
+  background-position: center, center, right 32% center;
+  background-repeat: no-repeat;
+  background-size: cover, cover, 58% auto;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28), 0 0 40px rgba(59, 130, 246, 0.1);
+}
+
+.product-banner::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.9), rgba(52, 211, 153, 0.45), transparent 75%);
+}
+
+.metric-card {
+  position: relative;
+  min-height: 152px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.055);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px);
+}
+
+.metric-card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  content: "";
+  background: var(--metric-accent, linear-gradient(90deg, #3b82f6, #22d3ee));
+  opacity: 0.86;
+}
+
+.module-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.06);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.68);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(20px);
+}
+
+.module-card[data-active="true"] {
+  border-color: rgba(96, 165, 250, 0.2);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24), 0 0 26px rgba(59, 130, 246, 0.12);
+}
+
+.module-card[data-active="true"]::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  content: "";
+  background: linear-gradient(90deg, #3b82f6, #22d3ee);
+}
+
+table thead {
+  background: rgba(30, 41, 59, 0.34) !important;
+}
+
+table tbody tr {
+  border-color: rgba(148, 163, 184, 0.05) !important;
+}
+
+table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.045) !important;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.34);
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.24);
+  background-clip: padding-box;
+}
+
+@media (max-width: 640px) {
+  .product-banner {
+    min-height: 220px;
+    background-position: center, center, 74% center;
+    background-size: cover, cover, auto 100%;
+  }
 }
 
 @keyframes fade-up {

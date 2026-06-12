@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { Bell, CheckCircle2, Edit3, ExternalLink, Plus, Radio, Save, Trash2, X } from 'lucide-react';
+import { Activity, Bell, CheckCircle2, Edit3, ExternalLink, Layers3, Plus, Radio, Save, Timer, Trash2, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type LiveItem = {
@@ -182,11 +182,11 @@ export default function LivesPage() {
         {message ? <pre className="whitespace-pre-wrap rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-100">{message}</pre> : null}
         {discordOptions.error ? <div className="rounded-lg border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{discordOptions.error}</div> : null}
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Canais monitorados" value={stats.totalMonitored} />
-          <StatCard label="Lives hoje" value={stats.detectedToday} />
-          <StatCard label="Ultima live" value={stats.lastLiveSent ? formatDate(stats.lastLiveSent) : 'Nenhuma'} />
-          <StatCard label="Plataformas" value={stats.connectedPlatforms} />
+        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Canais monitorados" value={stats.totalMonitored} icon={Radio} tone="blue" />
+          <StatCard label="Lives hoje" value={stats.detectedToday} icon={Activity} tone="emerald" />
+          <StatCard label="Ultima live" value={stats.lastLiveSent ? formatDate(stats.lastLiveSent) : 'Nenhuma'} icon={Timer} tone="rose" />
+          <StatCard label="Plataformas" value={stats.connectedPlatforms} icon={Layers3} tone="violet" />
         </section>
 
         <section className="grid gap-4 xl:grid-cols-2">
@@ -371,11 +371,24 @@ function LiveRow({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function StatCard({ label, value, icon: Icon, tone }: { label: string; value: string | number; icon: LucideIcon; tone: 'blue' | 'emerald' | 'rose' | 'violet' }) {
+  const toneClass = {
+    blue: 'bg-blue-400/10 text-blue-100',
+    emerald: 'bg-emerald-400/10 text-emerald-100',
+    rose: 'bg-rose-400/10 text-rose-100',
+    violet: 'bg-violet-400/10 text-violet-100'
+  }[tone];
   return (
-    <article className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel backdrop-blur">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <strong className="mt-2 block truncate text-2xl font-semibold text-white">{value}</strong>
+    <article className="metric-card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-300">{label}</p>
+          <strong className="mt-2 block truncate text-3xl font-semibold text-white">{value}</strong>
+        </div>
+        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${toneClass}`}>
+          <Icon size={22} />
+        </div>
+      </div>
     </article>
   );
 }

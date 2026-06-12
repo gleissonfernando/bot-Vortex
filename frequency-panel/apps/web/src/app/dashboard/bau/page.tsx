@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { apiFetch } from '@/lib/api';
-import { Archive, PackageOpen, RefreshCw, Shield } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowUpFromLine, Boxes, PackageOpen, RefreshCw, Shield, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type BauItem = {
@@ -119,11 +119,11 @@ export default function BauPage() {
 
         {error ? <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Metric label="Tipos de itens" value={formatNumber(totals.itemTypes)} tone="sky" />
-          <Metric label="Quantidade total" value={formatNumber(totals.quantity)} tone="emerald" />
-          <Metric label="Retirado" value={formatNumber(totals.withdrawn)} tone="rose" />
-          <Metric label="Colocado" value={formatNumber(totals.deposited)} tone="amber" />
+        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Tipos de itens" value={formatNumber(totals.itemTypes)} tone="sky" icon={Boxes} />
+          <Metric label="Quantidade total" value={formatNumber(totals.quantity)} tone="emerald" icon={PackageOpen} />
+          <Metric label="Retirado" value={formatNumber(totals.withdrawn)} tone="rose" icon={ArrowUpFromLine} />
+          <Metric label="Colocado" value={formatNumber(totals.deposited)} tone="amber" icon={ArrowDownToLine} />
         </section>
 
         <section className="panel rounded-lg p-3">
@@ -159,20 +159,22 @@ export default function BauPage() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone: 'sky' | 'emerald' | 'rose' | 'amber' }) {
+function Metric({ label, value, tone, icon: Icon }: { label: string; value: string; tone: 'sky' | 'emerald' | 'rose' | 'amber'; icon: LucideIcon }) {
   const tones = {
-    sky: 'border-sky-300/15 bg-sky-400/10 text-sky-200',
-    emerald: 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200',
-    rose: 'border-rose-300/15 bg-rose-400/10 text-rose-200',
-    amber: 'border-amber-300/15 bg-amber-400/10 text-amber-200'
+    sky: 'bg-sky-400/10 text-sky-200',
+    emerald: 'bg-emerald-400/10 text-emerald-200',
+    rose: 'bg-rose-400/10 text-rose-200',
+    amber: 'bg-amber-400/10 text-amber-200'
   };
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+    <div className="metric-card p-5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-        <span className={`h-2.5 w-2.5 rounded-full border ${tones[tone]}`} />
+        <span className="text-sm font-semibold text-slate-300">{label}</span>
+        <span className={`grid h-12 w-12 place-items-center rounded-lg ${tones[tone]}`}>
+          <Icon size={22} />
+        </span>
       </div>
-      <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
+      <div className="mt-4 text-3xl font-semibold text-white">{value}</div>
     </div>
   );
 }

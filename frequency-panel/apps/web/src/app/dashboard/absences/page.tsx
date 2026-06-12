@@ -88,7 +88,7 @@ export default function AbsencesPage() {
         </div>
       </header>
 
-      <section className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-6 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Em ausencia" value={payload.metrics.active} helper="Ativas agora" icon={CalendarOff} />
         <StatCard label="Agendadas" value={payload.metrics.scheduled} helper="Aguardando inicio" icon={Clock3} />
         <StatCard label="Pendentes" value={payload.metrics.pending} helper="Aguardando decisao" icon={UserCheck} />
