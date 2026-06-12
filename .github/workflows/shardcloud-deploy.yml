@@ -67,14 +67,14 @@ jobs:
 
       - name: Upload code to Shard Cloud
         run: |
-          curl --fail --show-error --request PUT \
+          curl --fail-with-body --show-error --request PUT \
             --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/file" \
             --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
             --form "project=@shardcloud-project.zip"
 
       - name: Restart Shard Cloud app
         run: |
-          curl --fail --show-error --request POST \
+          curl --fail-with-body --show-error --request POST \
             --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/status" \
             --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
             --header "Content-Type: application/json" \
