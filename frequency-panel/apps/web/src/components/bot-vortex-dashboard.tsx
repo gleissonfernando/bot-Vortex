@@ -310,11 +310,9 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
   }
 
   function applyPatch(patch: BotConfig) {
-    setConfig((current) => {
-      const next = { ...(current || {}), ...patch };
-      configRef.current = next;
-      return next;
-    });
+    const next = mergeBotConfigPatch(configRef.current || {}, patch);
+    configRef.current = next;
+    setConfig(next);
     queueSave(patch);
   }
 
@@ -410,6 +408,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
     applyPatch({
       ANTI_ABUSE: {
         ...current,
+        enabled: value.enabled === true ? true : current.enabled,
         protections: {
           ...current.protections,
           [protectionKey]: {
@@ -448,7 +447,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
   }
 
   function queueSave(patch: BotConfig) {
-    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+    pendingPatchRef.current = mergeBotConfigPatch(pendingPatchRef.current, patch);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       void flushPending();
@@ -779,11 +778,13 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                 <ControlGroup title="Protecoes e punicoes" description="Cada regra possui ativacao e punicao propria.">
                   <div className="grid gap-5 xl:grid-cols-2">
                     {antiAbuseProtections.map((protection) => {
-                      const item = getAntiAbuse(config).protections?.[protection.key] || { enabled: false, punishment: 'log' };
+                      const antiAbuse = getAntiAbuse(config);
+                      const item = antiAbuse.protections?.[protection.key] || { enabled: false, punishment: 'log' };
                       return (
                         <AntiAbuseProtectionCard
                           key={protection.key}
                           protection={protection}
+                          centralEnabled={antiAbuse.enabled}
                           enabled={Boolean(item.enabled)}
                           punishment={String(item.punishment || 'log')}
                           onEnabledChange={(value) => updateAntiProtection(protection.key, { enabled: value })}
@@ -1107,8 +1108,15 @@ function ConfigToggleCard({ icon: Icon, label, description, value, onChange }: {
 
 function ToggleSwitch({ value }: { value: boolean }) {
   return (
-    <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${value ? 'border-sky-300/50 bg-sky-500 shadow-[0_0_22px_var(--vx-primary)]' : 'border-white/15 bg-slate-800'}`}>
-      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-lg transition ${value ? 'left-5' : 'left-0.5'}`} />
+    <span
+      aria-hidden="true"
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border p-0.5 transition ${
+        value
+          ? 'border-sky-300/50 bg-sky-500 shadow-[0_0_22px_rgba(59,130,246,.36)]'
+          : 'border-white/15 bg-slate-800'
+      }`}
+    >
+      <span className={`h-6 w-6 rounded-full bg-white shadow-lg transition-transform ${value ? 'translate-x-5' : 'translate-x-0'}`} />
     </span>
   );
 }
@@ -1235,28 +1243,35 @@ function CommandPermissionCard({
 
 function AntiAbuseProtectionCard({
   protection,
+  centralEnabled,
   enabled,
   punishment,
   onEnabledChange,
   onPunishmentChange
 }: {
   protection: { key: string; label: string; description: string; icon: LucideIcon };
+  centralEnabled: boolean;
   enabled: boolean;
   punishment: string;
   onEnabledChange: (value: boolean) => void;
   onPunishmentChange: (value: string) => void;
 }) {
   const Icon = protection.icon;
+  const effectivelyEnabled = centralEnabled && enabled;
+  const statusLabel = effectivelyEnabled ? 'Ativado' : enabled ? 'Central desligada' : 'Desativado';
   return (
-    <article className="module-card group flex min-h-64 flex-col p-5 transition duration-300 hover:-translate-y-0.5" data-active={enabled}>
+    <article className="module-card group flex min-h-64 flex-col p-5 transition duration-300 hover:-translate-y-0.5" data-active={effectivelyEnabled}>
       <div className="flex items-start justify-between gap-4">
-        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${enabled ? 'bg-blue-400/15 text-blue-100 shadow-[0_0_22px_rgba(59,130,246,.14)]' : 'bg-white/[0.04] text-slate-400'}`}>
+        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${effectivelyEnabled ? 'bg-blue-400/15 text-blue-100 shadow-[0_0_22px_rgba(59,130,246,.14)]' : 'bg-white/[0.04] text-slate-400'}`}>
           <Icon size={23} />
         </div>
         <button
+          type="button"
           onClick={() => onEnabledChange(!enabled)}
-          className="shrink-0"
+          className="inline-flex h-10 w-14 shrink-0 items-center justify-center rounded-lg hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
           aria-label={enabled ? 'Desativar protecao' : 'Ativar protecao'}
+          aria-pressed={enabled}
+          title={enabled ? 'Desativar protecao' : 'Ativar protecao'}
         >
           <ToggleSwitch value={enabled} />
         </button>
@@ -1270,9 +1285,9 @@ function AntiAbuseProtectionCard({
       <div className="mt-5 rounded-lg bg-black/15 p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status</span>
-          <span className={`inline-flex items-center gap-2 text-xs font-semibold ${enabled ? 'text-emerald-200' : 'text-slate-500'}`}>
-            <span className={`h-2 w-2 rounded-full ${enabled ? 'bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,.75)]' : 'bg-slate-600'}`} />
-            {enabled ? 'Ativado' : 'Desativado'}
+          <span className={`inline-flex items-center gap-2 text-xs font-semibold ${effectivelyEnabled ? 'text-emerald-200' : enabled ? 'text-amber-200' : 'text-slate-500'}`}>
+            <span className={`h-2 w-2 rounded-full ${effectivelyEnabled ? 'bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,.75)]' : enabled ? 'bg-amber-300' : 'bg-slate-600'}`} />
+            {statusLabel}
           </span>
         </div>
         <Select label="Punicao" value={punishment || 'log'} options={punishmentOptions} onChange={onPunishmentChange} />
@@ -1411,7 +1426,34 @@ function getAntiAbuse(config: BotConfig | null) {
 }
 
 function activeAntiAbuseCount(config: BotConfig | null) {
-  return Object.values(getAntiAbuse(config).protections).filter((item: any) => item.enabled).length;
+  const antiAbuse = getAntiAbuse(config);
+  if (!antiAbuse.enabled) return 0;
+  return Object.values(antiAbuse.protections).filter((item: any) => item.enabled).length;
+}
+
+export function mergeBotConfigPatch(current: BotConfig, patch: BotConfig): BotConfig {
+  const next = { ...current, ...patch };
+  if (patch.ANTI_ABUSE && typeof patch.ANTI_ABUSE === 'object') {
+    const currentAntiAbuse = current.ANTI_ABUSE && typeof current.ANTI_ABUSE === 'object' ? current.ANTI_ABUSE : {};
+    const patchAntiAbuse = patch.ANTI_ABUSE;
+    next.ANTI_ABUSE = {
+      ...currentAntiAbuse,
+      ...patchAntiAbuse,
+      protections: {
+        ...(currentAntiAbuse.protections || {}),
+        ...(patchAntiAbuse.protections || {})
+      },
+      whitelist: {
+        ...(currentAntiAbuse.whitelist || {}),
+        ...(patchAntiAbuse.whitelist || {})
+      },
+      thresholds: {
+        ...(currentAntiAbuse.thresholds || {}),
+        ...(patchAntiAbuse.thresholds || {})
+      }
+    };
+  }
+  return next;
 }
 
 function getPanelVisuals(config: BotConfig | null) {

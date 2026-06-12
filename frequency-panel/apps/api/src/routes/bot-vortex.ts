@@ -142,6 +142,25 @@ function normalizeAntiAbuseConfig(value: any = {}) {
   };
 }
 
+function mergeAntiAbuseConfig(current: any = {}, patch: any = {}) {
+  return normalizeAntiAbuseConfig({
+    ...current,
+    ...patch,
+    protections: {
+      ...(current?.protections || {}),
+      ...(patch?.protections || {})
+    },
+    whitelist: {
+      ...(current?.whitelist || {}),
+      ...(patch?.whitelist || {})
+    },
+    thresholds: {
+      ...(current?.thresholds || {}),
+      ...(patch?.thresholds || {})
+    }
+  });
+}
+
 export function getMaintenanceStatus(config: Record<string, any> = readConfig()) {
   const enabled = config.MAINTENANCE_MODE === true;
   const sinceMs = Number(config.MAINTENANCE_SINCE || 0);
@@ -232,6 +251,9 @@ botVortexRouter.put('/config', requireManager, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'Payload invalido.' });
   const current = readConfig();
   const patch = sanitizePatch(parsed.data.patch || {});
+  if (Object.prototype.hasOwnProperty.call(patch, 'ANTI_ABUSE')) {
+    patch.ANTI_ABUSE = mergeAntiAbuseConfig(current.ANTI_ABUSE, patch.ANTI_ABUSE);
+  }
   const next = { ...current, ...patch };
   if (
     Object.prototype.hasOwnProperty.call(patch, 'COMMAND_ROLE_PERMISSIONS')
