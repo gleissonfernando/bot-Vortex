@@ -15,6 +15,7 @@ const WEBHOOK_SPAM_WINDOW_MS = 10_000;
 const WEBHOOK_SPAM_LIMIT = 5;
 const CHANNEL_CREATE_LIMIT = 3;
 const ROLE_CREATE_LIMIT = 3;
+const VOICE_LOCK_REASON = 'Anti-Abuso Vortex: bloquear desconexao/movimento de usuarios em call';
 
 const PUNISHMENT_LABELS = {
   log: 'Apenas Log',
@@ -65,9 +66,10 @@ function getAntiAbuseConfig() {
   const protections = {};
   for (const key of Object.keys(PROTECTION_LABELS)) {
     const item = raw.protections?.[key] || {};
+    const hardLockedDisconnect = key === 'antiDisconnect';
     protections[key] = {
-      enabled: item.enabled === true,
-      punishment: PUNISHMENT_LABELS[item.punishment] ? item.punishment : 'log',
+      enabled: hardLockedDisconnect ? item.enabled !== false : item.enabled === true,
+      punishment: PUNISHMENT_LABELS[item.punishment] ? item.punishment : (hardLockedDisconnect ? 'remove_admin_roles' : 'log'),
     };
   }
 
@@ -89,6 +91,9 @@ function getAntiAbuseConfig() {
 }
 
 function isEnabled(settings, protectionKey) {
+  if (protectionKey === 'antiDisconnect') {
+    return settings.protections?.[protectionKey]?.enabled !== false;
+  }
   return Boolean(settings.enabled && settings.protections?.[protectionKey]?.enabled);
 }
 
@@ -309,6 +314,96 @@ async function applyPunishment(guild, executorId, protectionKey, targetId, setti
   return { punishment, applied: 'unknown_punishment' };
 }
 
+async function removeVoiceControlRoles(guild, executorId) {
+  if (!executorId) return { applied: 'executor_not_found', removed: 0 };
+  const member = await guild.members.fetch(executorId).catch(() => null);
+  if (!member?.roles?.cache) return { applied: 'member_not_found', removed: 0 };
+
+  const removable = member.roles.cache.filter((role) => {
+    if (role.id === guild.id || role.managed || !role.editable) return false;
+    return role.permissions.has(PermissionFlagsBits.Administrator)
+      || role.permissions.has(PermissionFlagsBits.MoveMembers);
+  });
+
+  if (!removable.size) return { applied: 'no_voice_control_roles', removed: 0 };
+
+  await member.roles.remove(removable, 'Anti-Abuso Vortex: usuario sem whitelist desconectou/moveu membro de call');
+  return { applied: `removed_voice_control_roles:${removable.size}`, removed: removable.size };
+}
+
+function isVoiceLockTarget(channel) {
+  return channel?.type === ChannelType.GuildVoice
+    || channel?.type === ChannelType.GuildStageVoice
+    || channel?.type === ChannelType.GuildCategory;
+}
+
+async function lockAntiDisconnectChannel(channel) {
+  if (!isVoiceLockTarget(channel) || !channel.guild || !channel.permissionOverwrites?.edit) {
+    return { ok: false, updated: false, reason: 'not_voice_lock_target' };
+  }
+
+  await channel.permissionOverwrites.edit(channel.guild.id, {
+    MoveMembers: false,
+  }, { reason: VOICE_LOCK_REASON });
+
+  return { ok: true, updated: true, channelId: channel.id };
+}
+
+async function removeMoveMembersFromRoles(guild) {
+  const roles = await guild.roles.fetch().catch(() => guild.roles.cache);
+  const summary = { checked: 0, updated: 0, skippedAdmin: 0, failed: 0 };
+
+  for (const role of roles.values()) {
+    if (!role || role.id === guild.id || role.managed || !role.editable) continue;
+    summary.checked += 1;
+
+    if (!role.permissions.has(PermissionFlagsBits.MoveMembers, false)) continue;
+    if (role.permissions.has(PermissionFlagsBits.Administrator, false)) {
+      summary.skippedAdmin += 1;
+      continue;
+    }
+
+    const permissions = role.permissions.remove(PermissionFlagsBits.MoveMembers);
+    await role.edit({ permissions }, VOICE_LOCK_REASON).then(() => {
+      summary.updated += 1;
+    }).catch((error) => {
+      summary.failed += 1;
+      logger.warn(`Anti-Abuso: nao foi possivel remover MoveMembers do cargo ${role.name} (${role.id}): ${error.message}`);
+    });
+  }
+
+  return summary;
+}
+
+async function syncAntiDisconnectLockdown(guild) {
+  if (!guild) return false;
+  const settings = getAntiAbuseConfig();
+  if (!isEnabled(settings, 'antiDisconnect')) return false;
+
+  const summary = {
+    channels: 0,
+    channelUpdated: 0,
+    channelFailed: 0,
+    roles: await removeMoveMembersFromRoles(guild),
+  };
+
+  const fetched = await guild.channels.fetch().catch(() => null);
+  const channels = fetched || guild.channels.cache;
+  for (const channel of channels.values()) {
+    if (!isVoiceLockTarget(channel)) continue;
+    summary.channels += 1;
+    await lockAntiDisconnectChannel(channel).then(() => {
+      summary.channelUpdated += 1;
+    }).catch((error) => {
+      summary.channelFailed += 1;
+      logger.warn(`Anti-Abuso: nao foi possivel travar MoveMembers em ${channel.name} (${channel.id}): ${error.message}`);
+    });
+  }
+
+  logger.info(`Anti-Abuso: trava de disconnect sincronizada em ${guild.name} (${guild.id}) - ${summary.channelUpdated}/${summary.channels} canais, ${summary.roles.updated} cargo(s).`);
+  return summary;
+}
+
 function overwriteSnapshot(channel) {
   return channel.permissionOverwrites?.cache?.map((overwrite) => ({
     id: overwrite.id,
@@ -457,26 +552,34 @@ async function handleProtectedAction(guild, {
 }
 
 async function handleVoiceStateUpdate(oldState, newState) {
-  if (!oldState?.guild || !oldState.channelId || newState.channelId) return false;
+  if (!oldState?.guild || !oldState.channelId || oldState.channelId === newState.channelId) return false;
   const guild = oldState.guild;
   const settings = getAntiAbuseConfig();
   if (!isEnabled(settings, 'antiDisconnect')) return false;
+  const disconnected = !newState.channelId;
+  const auditAction = disconnected ? AuditLogEvent.MemberDisconnect : AuditLogEvent.MemberMove;
 
-  const entry = await findRecentAuditEntry(guild, AuditLogEvent.MemberDisconnect, {
+  const entry = await findRecentAuditEntry(guild, auditAction, {
+    channelId: disconnected ? oldState.channelId : newState.channelId,
+    maxAgeMs: AUDIT_LOOKBACK_MS,
+  }) || (!disconnected ? await findRecentAuditEntry(guild, auditAction, {
     channelId: oldState.channelId,
     maxAgeMs: AUDIT_LOOKBACK_MS,
-  });
+  }) : null);
   const executor = entry?.executor || null;
-  if (!executor?.id || executor.id === oldState.id) return false;
-  if (await isWhitelisted(guild, executor.id, settings)) return false;
+  if (!executor?.id || executor.id === oldState.id || executor.id === guild.client.user?.id) return false;
 
   let restored = false;
-  if (!oldState.member?.voice?.channelId && oldState.channel) {
+  if (oldState.channel && oldState.member?.voice?.channelId !== oldState.channelId) {
     await oldState.member.voice.setChannel(oldState.channel, 'Anti-Abuso Vortex: reconectar usuario desconectado').then(() => {
       restored = true;
     }).catch(() => null);
   }
 
+  const voiceRoleResult = await removeVoiceControlRoles(guild, executor.id).catch((error) => {
+    logger.error('Anti-Abuso: erro ao remover cargos de controle de call:', error);
+    return { applied: 'remove_voice_control_roles_failed', removed: 0 };
+  });
   const punishmentResult = await applyPunishment(guild, executor.id, 'antiDisconnect', oldState.id, settings);
   await sendAntiAbuseLog(guild, {
     color: '#FF0055',
@@ -484,11 +587,13 @@ async function handleVoiceStateUpdate(oldState, newState) {
     protectionKey: 'antiDisconnect',
     executor,
     target: { id: oldState.id, name: oldState.member?.displayName || oldState.id },
-    action: `Desconectou usuario da call ${oldState.channel?.name || oldState.channelId}`,
+    action: `${disconnected ? 'Desconectou' : 'Moveu'} usuario da call ${oldState.channel?.name || oldState.channelId}`,
     punishment: punishmentResult.punishment,
     details: [
       `Canal anterior: ${oldState.channel ? `${oldState.channel.name} (${oldState.channel.id})` : oldState.channelId}`,
+      `Canal atual: ${newState.channel ? `${newState.channel.name} (${newState.channel.id})` : 'desconectado'}`,
       `Reconectado automaticamente: ${restored ? 'sim' : 'nao'}`,
+      `Cargos de mover/desconectar removidos: ${voiceRoleResult.removed ? 'sim' : 'nao'} (${voiceRoleResult.applied})`,
       `Resultado da punicao: ${punishmentResult.applied}`,
     ],
   });
@@ -816,4 +921,6 @@ module.exports = {
   handleRoleUpdate,
   handleVoiceStateUpdate,
   handleWebhookMessage,
+  lockAntiDisconnectChannel,
+  syncAntiDisconnectLockdown,
 };

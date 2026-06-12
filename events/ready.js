@@ -5,6 +5,7 @@ const { syncVoiceChannelAccess } = require('../utils/voiceChannelAccess');
 const { isPrimaryGuild } = require('../utils/guildScope');
 const { initFrequencyDashboardSync } = require('../utils/frequencyDashboardSync');
 const { initFactionHierarchyAutoRefresh } = require('../utils/factionHierarchy');
+const { syncAntiDisconnectLockdown } = require('../utils/antiAbuseManager');
 
 const SYNC_CHANNEL_ACCESS_ON_READY = process.env.SYNC_CHANNEL_ACCESS_ON_READY !== 'false';
 
@@ -48,6 +49,16 @@ module.exports = {
             }
         } else {
             console.log('[VORTEX] Sync inicial de canais desativado para reduzir uso no startup.');
+        }
+
+        try {
+            await Promise.allSettled(
+                client.guilds.cache
+                    .filter((guild) => isPrimaryGuild(guild.id))
+                    .map((guild) => syncAntiDisconnectLockdown(guild))
+            );
+        } catch (error) {
+            console.error('Erro ao sincronizar trava Anti-Abuso de disconnect:', error);
         }
 
         initFrequencyDashboardSync(client);
