@@ -279,8 +279,8 @@ function newestMtimeMs(target) {
 }
 
 function shouldBuildWeb() {
-  if (process.env.BUILD_WEB_ON_STARTUP === 'false') return false;
   if (process.env.FORCE_WEB_BUILD === 'true') return true;
+  if (!envFlag('BUILD_WEB_ON_STARTUP', false)) return false;
   if (!fs.existsSync(standaloneServer)) return true;
 
   const standaloneMtime = fs.statSync(standaloneServer).mtimeMs;
@@ -295,9 +295,8 @@ function shouldBuildWeb() {
 }
 
 function shouldBuildApi() {
-  if (process.env.BUILD_API_ON_STARTUP === 'false') return false;
-  if (process.env.NODE_ENV === 'production' || process.env.SHARDCLOUD || process.env.PORT === '80') return true;
   if (process.env.FORCE_API_BUILD === 'true') return true;
+  if (!envFlag('BUILD_API_ON_STARTUP', false)) return false;
   if (!fs.existsSync(apiDist)) return true;
 
   const distMtime = fs.statSync(apiDist).mtimeMs;
