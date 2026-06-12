@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, CalendarOff, Clock3, Command, LayoutDashboard, LogOut, PackageOpen, Radio, Search, Server, ShieldCheck, UserCog, Users } from 'lucide-react';
+import { Bot, CalendarOff, Clock3, Command, LayoutDashboard, LogOut, PackageOpen, Radio, Search, Server, ShieldAlert, ShieldCheck, UserCog, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -22,6 +22,12 @@ const navGroups = [
       { href: '/dashboard/bau', label: 'Bau', icon: PackageOpen },
       { href: '/dashboard/lives', label: 'Lives', icon: Radio },
       { href: '/dashboard/bot-vortex', label: 'Bot Vortex', icon: Bot }
+    ]
+  },
+  {
+    label: 'Seguranca',
+    items: [
+      { href: '/dashboard/anti-abuse', label: 'Anti-Abuso', icon: ShieldAlert, roles: ['admin', 'manager'] }
     ]
   }
 ];
