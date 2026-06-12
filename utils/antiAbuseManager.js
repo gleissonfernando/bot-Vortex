@@ -184,11 +184,11 @@ function isLoop(guildId, action, targetId) {
 async function isWhitelisted(guild, executorId, settings) {
   if (!executorId || !guild) return true;
   const id = String(executorId);
-  if (id === String(guild.ownerId || '')) return true;
   if (id === String(guild.client.user?.id || '')) return true;
 
   const member = await guild.members.fetch(id).catch(() => null);
   if (!member?.roles?.cache) return false;
+  // Humanos so passam pelo Anti-Abuso quando possuem um cargo liberado na whitelist.
   return settings.whitelist.roles.some((roleId) => member.roles.cache.has(roleId));
 }
 
@@ -511,7 +511,6 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
 async function handleChannelDelete(channel) {
   if (!channel?.guild) return false;
-  if (isLoop(channel.guild.id, 'channelRestore', channel.id)) return false;
   const protectionKey = channel.type === ChannelType.GuildCategory ? 'antiCategoryDelete' : 'antiChannelDelete';
   const settings = getAntiAbuseConfig();
   if (!isEnabled(settings, protectionKey)) return false;
@@ -545,6 +544,7 @@ async function handleChannelDelete(channel) {
 
 async function handleChannelCreate(channel) {
   if (!channel?.guild) return false;
+  // A restauracao automatica cria um canal novo; isso nao pode silenciar deletes futuros.
   if (isLoop(channel.guild.id, 'channelRestore', channel.id)) return false;
   const settings = getAntiAbuseConfig();
   if (!isEnabled(settings, 'antiChannelCreateSpam')) return false;
@@ -612,7 +612,6 @@ async function handleChannelUpdate(oldChannel, newChannel) {
 
 async function handleRoleDelete(role) {
   if (!role?.guild) return false;
-  if (isLoop(role.guild.id, 'roleRestore', role.id)) return false;
   const settings = getAntiAbuseConfig();
   if (!isEnabled(settings, 'antiRoleDelete')) return false;
 
@@ -641,6 +640,7 @@ async function handleRoleDelete(role) {
 
 async function handleRoleCreate(role) {
   if (!role?.guild) return false;
+  // A restauracao automatica cria um cargo novo; deletes desse cargo ainda devem ser protegidos.
   if (isLoop(role.guild.id, 'roleRestore', role.id)) return false;
   const settings = getAntiAbuseConfig();
   if (!isEnabled(settings, 'antiRoleCreateSpam')) return false;
