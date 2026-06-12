@@ -38,10 +38,12 @@ jobs:
 
       - name: Build deployment archive
         run: |
-          zip -r shardcloud-project.zip . \
+          zip -qr shardcloud-project.zip . \
             -x ".git/*" \
             -x ".github/*" \
             -x "node_modules/*" \
+            -x "frequency-panel/node_modules/*" \
+            -x "frequency-panel/apps/*/node_modules/*" \
             -x "frequency-panel/apps/web/.next/cache/*" \
             -x ".env" \
             -x ".env.*" \
