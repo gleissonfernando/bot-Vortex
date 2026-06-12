@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 const { AuditLogEvent, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { formatDate } = require('./dateTime');
 const { logger } = require('./logger');
@@ -7,7 +8,7 @@ const { getLogChannelId } = require('./notifications');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const AUDIT_LOOKBACK_MS = 12_000;
-const AUDIT_RETRY_DELAYS_MS = [700, 1300, 2200];
+const AUDIT_RETRY_DELAYS_MS = [0, 250, 500, 900];
 const DUPLICATE_PUNISH_MS = 45_000;
 const LOOP_IGNORE_MS = 12_000;
 const BULK_WINDOW_MS = 60_000;
@@ -66,15 +67,17 @@ function getAntiAbuseConfig() {
   const protections = {};
   for (const key of Object.keys(PROTECTION_LABELS)) {
     const item = raw.protections?.[key] || {};
-    const hardLockedDisconnect = key === 'antiDisconnect';
     protections[key] = {
-      enabled: hardLockedDisconnect ? item.enabled !== false : item.enabled === true,
-      punishment: PUNISHMENT_LABELS[item.punishment] ? item.punishment : (hardLockedDisconnect ? 'remove_admin_roles' : 'log'),
+      enabled: item.enabled === true,
+      punishment: PUNISHMENT_LABELS[item.punishment] ? item.punishment : 'log',
     };
   }
 
   return {
     enabled: raw.enabled !== false,
+    shieldedDisconnect: raw.shieldedDisconnect === undefined
+      ? protections.antiDisconnect?.enabled === true
+      : raw.shieldedDisconnect === true,
     protections,
     whitelist: {
       users: [],
@@ -91,10 +94,11 @@ function getAntiAbuseConfig() {
 }
 
 function isEnabled(settings, protectionKey) {
-  if (protectionKey === 'antiDisconnect') {
-    return settings.protections?.[protectionKey]?.enabled !== false;
-  }
   return Boolean(settings.enabled && settings.protections?.[protectionKey]?.enabled);
+}
+
+function isShieldedDisconnectEnabled(settings) {
+  return Boolean(isEnabled(settings, 'antiDisconnect') && settings.shieldedDisconnect);
 }
 
 function getPunishment(settings, protectionKey) {
@@ -327,7 +331,7 @@ async function removeVoiceControlRoles(guild, executorId) {
 
   if (!removable.size) return { applied: 'no_voice_control_roles', removed: 0 };
 
-  await member.roles.remove(removable, 'Anti-Abuso Vortex: usuario sem whitelist desconectou/moveu membro de call');
+  await member.roles.remove(removable, 'Anti-Abuso Vortex: desconectar/mover usuarios em call e proibido para humanos');
   return { applied: `removed_voice_control_roles:${removable.size}`, removed: removable.size };
 }
 
@@ -341,6 +345,10 @@ async function lockAntiDisconnectChannel(channel) {
   if (!isVoiceLockTarget(channel) || !channel.guild || !channel.permissionOverwrites?.edit) {
     return { ok: false, updated: false, reason: 'not_voice_lock_target' };
   }
+  const settings = getAntiAbuseConfig();
+  if (!isShieldedDisconnectEnabled(settings)) {
+    return { ok: false, updated: false, reason: 'shielded_disconnect_disabled' };
+  }
 
   await channel.permissionOverwrites.edit(channel.guild.id, {
     MoveMembers: false,
@@ -351,24 +359,24 @@ async function lockAntiDisconnectChannel(channel) {
 
 async function removeMoveMembersFromRoles(guild) {
   const roles = await guild.roles.fetch().catch(() => guild.roles.cache);
-  const summary = { checked: 0, updated: 0, skippedAdmin: 0, failed: 0 };
+  const summary = { checked: 0, updated: 0, removedAdministrator: 0, removedMoveMembers: 0, failed: 0 };
 
   for (const role of roles.values()) {
     if (!role || role.id === guild.id || role.managed || !role.editable) continue;
     summary.checked += 1;
 
-    if (!role.permissions.has(PermissionFlagsBits.MoveMembers, false)) continue;
-    if (role.permissions.has(PermissionFlagsBits.Administrator, false)) {
-      summary.skippedAdmin += 1;
-      continue;
-    }
+    const hasAdministrator = role.permissions.has(PermissionFlagsBits.Administrator, false);
+    const hasMoveMembers = role.permissions.has(PermissionFlagsBits.MoveMembers, false);
+    if (!hasAdministrator && !hasMoveMembers) continue;
 
-    const permissions = role.permissions.remove(PermissionFlagsBits.MoveMembers);
+    const permissions = role.permissions.remove(PermissionFlagsBits.Administrator, PermissionFlagsBits.MoveMembers);
     await role.edit({ permissions }, VOICE_LOCK_REASON).then(() => {
       summary.updated += 1;
+      if (hasAdministrator) summary.removedAdministrator += 1;
+      if (hasMoveMembers) summary.removedMoveMembers += 1;
     }).catch((error) => {
       summary.failed += 1;
-      logger.warn(`Anti-Abuso: nao foi possivel remover MoveMembers do cargo ${role.name} (${role.id}): ${error.message}`);
+      logger.warn(`Anti-Abuso: nao foi possivel remover Administrator/MoveMembers do cargo ${role.name} (${role.id}): ${error.message}`);
     });
   }
 
@@ -378,7 +386,7 @@ async function removeMoveMembersFromRoles(guild) {
 async function syncAntiDisconnectLockdown(guild) {
   if (!guild) return false;
   const settings = getAntiAbuseConfig();
-  if (!isEnabled(settings, 'antiDisconnect')) return false;
+  if (!isShieldedDisconnectEnabled(settings)) return false;
 
   const summary = {
     channels: 0,
@@ -402,6 +410,53 @@ async function syncAntiDisconnectLockdown(guild) {
 
   logger.info(`Anti-Abuso: trava de disconnect sincronizada em ${guild.name} (${guild.id}) - ${summary.channelUpdated}/${summary.channels} canais, ${summary.roles.updated} cargo(s).`);
   return summary;
+}
+
+async function recordAntiAbuseHistory(guild, {
+  executor,
+  target,
+  oldChannel,
+  newChannel,
+  action,
+  restored,
+  voiceRoleResult,
+  punishmentResult,
+}) {
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) return false;
+
+  const doc = {
+    guild_id: String(guild.id),
+    actor_id: executor?.id ? String(executor.id) : null,
+    target_id: target?.id ? String(target.id) : null,
+    action: 'anti_abuse.voice_disconnect_blocked',
+    payload: {
+      author: executor?.id ? {
+        id: String(executor.id),
+        tag: executor.tag || executor.username || null,
+      } : null,
+      victim: target?.id ? {
+        id: String(target.id),
+        name: target.name || null,
+      } : null,
+      voice_action: action,
+      channel: oldChannel ? {
+        id: String(oldChannel.id),
+        name: oldChannel.name || String(oldChannel.id),
+      } : null,
+      destination_channel: newChannel ? {
+        id: String(newChannel.id),
+        name: newChannel.name || String(newChannel.id),
+      } : null,
+      status: 'blocked_by_anti_abuse',
+      restored: Boolean(restored),
+      voice_roles: voiceRoleResult || null,
+      punishment: punishmentResult || null,
+    },
+    created_at: new Date(),
+  };
+
+  await mongoose.connection.db.collection('audit_events').insertOne(doc);
+  return true;
 }
 
 function overwriteSnapshot(channel) {
@@ -555,7 +610,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   if (!oldState?.guild || !oldState.channelId || oldState.channelId === newState.channelId) return false;
   const guild = oldState.guild;
   const settings = getAntiAbuseConfig();
-  if (!isEnabled(settings, 'antiDisconnect')) return false;
+  if (!isShieldedDisconnectEnabled(settings)) return false;
   const disconnected = !newState.channelId;
   const auditAction = disconnected ? AuditLogEvent.MemberDisconnect : AuditLogEvent.MemberMove;
 
@@ -583,7 +638,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   const punishmentResult = await applyPunishment(guild, executor.id, 'antiDisconnect', oldState.id, settings);
   await sendAntiAbuseLog(guild, {
     color: '#FF0055',
-    title: 'Disconnect de call bloqueado',
+    title: 'Tentativa de desconectar usuario bloqueada',
     protectionKey: 'antiDisconnect',
     executor,
     target: { id: oldState.id, name: oldState.member?.displayName || oldState.id },
@@ -596,6 +651,19 @@ async function handleVoiceStateUpdate(oldState, newState) {
       `Cargos de mover/desconectar removidos: ${voiceRoleResult.removed ? 'sim' : 'nao'} (${voiceRoleResult.applied})`,
       `Resultado da punicao: ${punishmentResult.applied}`,
     ],
+  });
+
+  await recordAntiAbuseHistory(guild, {
+    executor,
+    target: { id: oldState.id, name: oldState.member?.displayName || oldState.id },
+    oldChannel: oldState.channel,
+    newChannel: newState.channel,
+    action: disconnected ? 'disconnect' : 'move',
+    restored,
+    voiceRoleResult,
+    punishmentResult,
+  }).catch((error) => {
+    logger.warn(`Anti-Abuso: nao foi possivel gravar historico da tentativa de disconnect: ${error.message}`);
   });
 
   if (restored) {

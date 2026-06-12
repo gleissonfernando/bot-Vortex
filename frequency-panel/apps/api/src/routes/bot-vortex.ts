@@ -96,6 +96,28 @@ function pickBotConfig(config: Record<string, any>) {
   };
 }
 
+async function loadAntiAbuseHistory(guildId: string) {
+  if (!guildId) return [];
+  try {
+    const rows = await (await collection('audit_events'))
+      .find({ guild_id: guildId, action: /^anti_abuse\./ } as any)
+      .sort({ created_at: -1 })
+      .limit(20)
+      .toArray();
+    return rows.map((row: any) => ({
+      id: String(row._id || ''),
+      guild_id: row.guild_id || guildId,
+      actor_id: row.actor_id || null,
+      target_id: row.target_id || null,
+      action: row.action || '',
+      payload: row.payload || {},
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at || null
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function normalizeIdList(value: unknown) {
   return Array.from(new Set((Array.isArray(value) ? value : [])
     .map((item) => String(item || '').trim())
@@ -125,9 +147,13 @@ function normalizeAntiAbuseConfig(value: any = {}) {
     'antiWebhookAbuse',
     'antiWebhookSpam'
   ];
+  const protections = Object.fromEntries(protectionKeys.map((key) => [key, normalizeProtection(value?.protections?.[key])]));
   return {
     enabled: value?.enabled !== false,
-    protections: Object.fromEntries(protectionKeys.map((key) => [key, normalizeProtection(value?.protections?.[key])])),
+    shieldedDisconnect: value?.shieldedDisconnect === undefined
+      ? protections.antiDisconnect?.enabled === true
+      : value.shieldedDisconnect === true,
+    protections,
     whitelist: {
       users: [],
       roles: normalizeIdList(value?.whitelist?.roles)
@@ -235,12 +261,16 @@ export const botVortexRouter = Router();
 botVortexRouter.get('/', async (req, res) => {
   const config = readConfig();
   const guildId = process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || config.GUILD_ID || '';
-  const options = await discordOptions(String(guildId));
+  const [options, antiAbuseHistory] = await Promise.all([
+    discordOptions(String(guildId)),
+    loadAntiAbuseHistory(String(guildId))
+  ]);
   res.json({
     ok: true,
     guildId,
     tools: toolSections,
     config: pickBotConfig(config),
+    antiAbuseHistory,
     maintenance: getMaintenanceStatus(config),
     permissions: {
       canManageAntiAbuse: canManageAntiAbuse(req.user)

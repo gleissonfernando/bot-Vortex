@@ -70,6 +70,7 @@ async function ensureIndexes(db: Db) {
     db.collection('attendance_sessions').createIndex({ member_id: 1, opened_at: -1 }),
     db.collection('absence_records').createIndex({ member_id: 1, date_key: -1 }),
     db.collection('audit_events').createIndex({ created_at: -1 }),
+    db.collection('audit_events').createIndex({ guild_id: 1, action: 1, created_at: -1 }),
     db.collection('security_audit_logs').createIndex({ created_at: -1 }),
     db.collection('security_audit_logs').createIndex({ action: 1, created_at: -1 }),
     db.collection('site_users').createIndex({ guild_id: 1, discord_id: 1 }, { unique: true }),

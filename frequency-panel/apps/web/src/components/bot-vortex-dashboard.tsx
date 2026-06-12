@@ -50,6 +50,14 @@ type DashboardMetrics = {
     month_seconds: number;
   };
 };
+type AntiAbuseHistoryItem = {
+  id?: string;
+  actor_id?: string | null;
+  target_id?: string | null;
+  action: string;
+  payload?: Record<string, any>;
+  created_at?: string | null;
+};
 
 type CommandOption = {
   key: string;
@@ -108,7 +116,7 @@ const punishmentOptions = [
 ];
 
 const antiAbuseProtections = [
-  { key: 'antiDisconnect', label: 'Anti Disconnect de Call', description: 'Reconecta o usuario removido da call e pune quem desconectou.', icon: UserX },
+  { key: 'antiDisconnect', label: 'Protecao contra desconexao de usuarios', description: 'Detecta desconexao ou movimento manual em calls, reconecta a vitima e aplica a punicao configurada.', icon: UserX },
   { key: 'antiChannelDelete', label: 'Anti Exclusao de Canais', description: 'Recria canais apagados com nome, categoria, tipo, permissoes e posicao.', icon: AlertTriangle },
   { key: 'antiRoleDelete', label: 'Anti Exclusao de Cargos', description: 'Restaura cargos deletados e registra a acao no log.', icon: Shield },
   { key: 'antiCategoryDelete', label: 'Anti Exclusao de Categorias', description: 'Recria categorias removidas com permissoes e posicao.', icon: PackageOpen },
@@ -176,6 +184,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
   const [commandFilter, setCommandFilter] = useState<'all' | 'active' | 'disabled'>('all');
   const [toast, setToast] = useState('');
   const [canManageAntiAbuse, setCanManageAntiAbuse] = useState(false);
+  const [antiAbuseHistory, setAntiAbuseHistory] = useState<AntiAbuseHistoryItem[]>([]);
 
   const configRef = useRef<BotConfig | null>(null);
   const pendingPatchRef = useRef<BotConfig>({});
@@ -286,6 +295,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
       const data = await apiFetch<{
         tools: Tool[];
         config: BotConfig;
+        antiAbuseHistory?: AntiAbuseHistoryItem[];
         permissions?: { canManageAntiAbuse?: boolean };
         options: { channels: Option[]; roles: Option[]; error?: string | null };
       }>('/bot-vortex');
@@ -293,6 +303,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
       setConfig(data.config);
       setOriginalConfig(data.config);
       configRef.current = data.config;
+      setAntiAbuseHistory(data.antiAbuseHistory || []);
       setCanManageAntiAbuse(data.permissions?.canManageAntiAbuse === true);
       setChannels(data.options.channels || []);
       setRoles(data.options.roles || []);
@@ -421,6 +432,25 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
           [protectionKey]: {
             ...(current.protections?.[protectionKey] || { enabled: false, punishment: 'log' }),
             ...value
+          }
+        }
+      }
+    });
+  }
+
+  function updateShieldedDisconnect(value: boolean) {
+    const current = getAntiAbuse(configRef.current);
+    const antiDisconnect = current.protections?.antiDisconnect || { enabled: false, punishment: 'log' };
+    applyPatch({
+      ANTI_ABUSE: {
+        ...current,
+        enabled: value ? true : current.enabled,
+        shieldedDisconnect: value,
+        protections: {
+          ...current.protections,
+          antiDisconnect: {
+            ...antiDisconnect,
+            enabled: value ? true : antiDisconnect.enabled
           }
         }
       }
@@ -765,13 +795,20 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
 
                 <fieldset disabled={!canManageAntiAbuse} className={`m-0 min-w-0 space-y-6 border-0 p-0 ${canManageAntiAbuse ? '' : 'pointer-events-none opacity-60'}`}>
                   <ControlGroup title="Estado geral" description="Liga a central Anti-Abuso sem apagar as configuracoes de cada protecao.">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 md:grid-cols-4">
                       <ConfigToggleCard
                         icon={ShieldAlert}
                         label="Central Anti-Abuso"
-                        description="Quando desligada, nenhuma protecao pune ou reverte acoes."
+                        description="Quando ligada, as protecoes ativas punem e revertem acoes abusivas."
                         value={getAntiAbuse(config).enabled}
                         onChange={(value) => updateAntiAbuse({ enabled: value })}
+                      />
+                      <ConfigToggleCard
+                        icon={UserX}
+                        label="Anti-Desconexao Blindado"
+                        description="Ativa a trava que ignora Administrator, Move Members, hierarquia, moderacao e bypass humano."
+                        value={getAntiAbuse(config).shieldedDisconnect}
+                        onChange={updateShieldedDisconnect}
                       />
                       <SystemSummaryCard
                         label="Protecoes ativas"
@@ -790,7 +827,7 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                     </div>
                   </ControlGroup>
 
-                  <ControlGroup title="Cargos com bypass" description="Membros destes cargos podem executar acoes administrativas sem acionar o Anti-Abuso.">
+                  <ControlGroup title="Cargos com bypass" description="Membros destes cargos podem executar acoes administrativas sem acionar o Anti-Abuso. A protecao contra desconexao de usuarios ignora qualquer bypass humano.">
                     <AntiAbuseRolePicker
                       value={getAntiAbuse(config).whitelist.roles || []}
                       options={roles.filter((role) => role.name !== '@everyone')}
@@ -815,6 +852,36 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
                           />
                         );
                       })}
+                    </div>
+                  </ControlGroup>
+
+                  <ControlGroup title="Historico de tentativas de disconnect" description="Ultimas acoes bloqueadas pela protecao contra desconexao de usuarios.">
+                    <div className="space-y-3">
+                      {antiAbuseHistory.length ? antiAbuseHistory.map((item) => {
+                        const payload = item.payload || {};
+                        const actorId = payload.author?.id || item.actor_id;
+                        const victimId = payload.victim?.id || item.target_id;
+                        const channelName = payload.channel?.name || payload.channel?.id || 'Canal desconhecido';
+                        const status = payload.status === 'blocked_by_anti_abuse' ? 'Bloqueado pela protecao Anti-Abuso' : 'Registrado';
+                        return (
+                          <article key={item.id || `${item.created_at}-${actorId}-${victimId}`} className="rounded-lg border border-white/10 bg-slate-950/55 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <strong className="text-sm text-white">Tentativa de desconectar usuario</strong>
+                              <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-100">{status}</span>
+                            </div>
+                            <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-2">
+                              <span>Autor: {actorId ? <code>{`<@${actorId}>`}</code> : 'Desconhecido'}</span>
+                              <span>Vitima: {victimId ? <code>{`<@${victimId}>`}</code> : 'Desconhecida'}</span>
+                              <span>Canal: {channelName}</span>
+                              <span>Quando: {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
+                            </div>
+                          </article>
+                        );
+                      }) : (
+                        <p className="rounded-lg border border-white/10 bg-slate-950/55 p-4 text-sm text-slate-400">
+                          Nenhuma tentativa de desconexao foi registrada ainda.
+                        </p>
+                      )}
                     </div>
                   </ControlGroup>
 
@@ -1456,6 +1523,9 @@ function getAntiAbuse(config: BotConfig | null) {
   }));
   return {
     enabled: raw.enabled !== false,
+    shieldedDisconnect: raw.shieldedDisconnect === undefined
+      ? protections.antiDisconnect?.enabled === true
+      : raw.shieldedDisconnect === true,
     protections,
     whitelist: {
       roles: Array.isArray(raw.whitelist?.roles) ? raw.whitelist.roles.map(String) : []
