@@ -59,6 +59,11 @@ function envFlag(name, fallback = true) {
   return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
 }
 
+function envValue(name, fallback) {
+  const value = process.env[name];
+  return value === undefined || value === '' ? fallback : value;
+}
+
 function canConnect(port, host) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ port: Number(port), host });
@@ -354,7 +359,7 @@ async function main() {
           API_PORT: botApiPort,
           API_HOST: '0.0.0.0',
           ENABLE_PRESENCE_FEATURES: fivemSystemEnabled ? 'true' : (botLightMode ? 'false' : (process.env.ENABLE_PRESENCE_FEATURES || 'true')),
-          REGISTER_COMMANDS_ON_STARTUP: process.env.REGISTER_COMMANDS_ON_STARTUP || 'false',
+          REGISTER_COMMANDS_ON_STARTUP: envValue('REGISTER_COMMANDS_ON_STARTUP', 'true'),
           FIVEM_STARTUP_SCAN_ENABLED: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true') : 'false',
           FIVEM_STARTUP_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
           POINT_AUTOMATION_SCAN_FIVEM: fivemSystemEnabled ? (process.env.POINT_AUTOMATION_SCAN_FIVEM || 'true') : 'false',

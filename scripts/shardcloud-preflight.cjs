@@ -116,6 +116,58 @@ function checkSyntax() {
   ok(`${files.length} arquivos JS verificados com node --check`);
 }
 
+function checkDiscordCommands() {
+  const commandsRoot = path.join(rootDir, 'commands');
+  const commands = [];
+  const names = new Set();
+  const requiredCommands = ['encomenda', 'exibir', 'painel'];
+
+  if (!fs.existsSync(commandsRoot)) {
+    fail('pasta commands nao encontrada');
+    return;
+  }
+
+  for (const folder of fs.readdirSync(commandsRoot)) {
+    const folderPath = path.join(commandsRoot, folder);
+    if (!fs.statSync(folderPath).isDirectory()) continue;
+
+    for (const file of fs.readdirSync(folderPath).filter((entry) => entry.endsWith('.js'))) {
+      const relativePath = path.join('commands', folder, file);
+      const absolutePath = path.join(rootDir, relativePath);
+      try {
+        const command = require(absolutePath);
+        if (!command?.data || !command?.execute) continue;
+
+        const payload = command.data.toJSON();
+        if (!payload?.name) {
+          fail(`${relativePath} nao serializa nome de comando Discord`);
+          continue;
+        }
+
+        if (names.has(payload.name)) {
+          fail(`comando Discord duplicado: /${payload.name}`);
+          continue;
+        }
+
+        names.add(payload.name);
+        commands.push(payload.name);
+      } catch (error) {
+        fail(`${relativePath} nao carrega para registro Discord: ${error.message}`);
+      }
+    }
+  }
+
+  for (const commandName of requiredCommands) {
+    if (names.has(commandName)) {
+      ok(`comando /${commandName} pronto para registro no Discord`);
+    } else {
+      fail(`comando /${commandName} ausente do pacote de deploy`);
+    }
+  }
+
+  ok(`${commands.length} comandos Discord serializados: ${commands.sort().join(', ')}`);
+}
+
 function checkPackageScripts() {
   const packageJson = readJson('package.json');
   const scripts = packageJson.scripts || {};
@@ -263,6 +315,7 @@ function main() {
   checkEnvExamples();
   checkStrictEnv();
   checkSyntax();
+  checkDiscordCommands();
 
   if (!skipBuild) {
     run('npm', ['--prefix', 'frequency-panel', 'run', 'build'], {
