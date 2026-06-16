@@ -148,20 +148,34 @@ function checkShardCloudFile() {
   }
 
   const customCommand = shard.CUSTOM_COMMAND || '';
+  const gitDeployMode = /SHARDCLOUD_DEPLOY_MODE=git/.test(customCommand);
   if (customCommand.includes('npm start')) {
     ok('.shardcloud CUSTOM_COMMAND chama npm start');
   } else {
     fail('.shardcloud CUSTOM_COMMAND precisa chamar npm start');
   }
 
+  if (gitDeployMode) {
+    ok('.shardcloud usa modo Git da ShardCloud');
+    if (/BUILD_API_ON_STARTUP=true/.test(customCommand) && /BUILD_WEB_ON_STARTUP=true/.test(customCommand)) {
+      ok('.shardcloud compila API e web no start para deploy Git');
+    } else {
+      fail('modo Git precisa de BUILD_API_ON_STARTUP=true e BUILD_WEB_ON_STARTUP=true');
+    }
+    if (/REQUIRE_BUILT_ASSETS=true/.test(customCommand)) {
+      fail('modo Git nao pode exigir artefatos prontos, pois .next/dist nao vem do Git');
+    }
+    return;
+  }
+
   if (/REQUIRE_BUILT_ASSETS=true/.test(customCommand)) {
-    ok('.shardcloud exige artefatos prontos');
+    ok('.shardcloud exige artefatos prontos para upload por API');
   } else {
-    fail('.shardcloud precisa de REQUIRE_BUILT_ASSETS=true');
+    fail('.shardcloud precisa de REQUIRE_BUILT_ASSETS=true ou SHARDCLOUD_DEPLOY_MODE=git');
   }
 
   if (/BUILD_API_ON_STARTUP=true|BUILD_WEB_ON_STARTUP=true/.test(customCommand)) {
-    fail('nao compile no boot da ShardCloud; use npm run deploy:check antes de enviar');
+    fail('upload por API nao deve compilar no boot; use npm run deploy:check antes de enviar');
   } else {
     ok('.shardcloud nao compila no boot');
   }

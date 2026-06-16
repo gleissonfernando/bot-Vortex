@@ -18,17 +18,18 @@ Esse comando faz o preflight completo:
 
 ## Regra da ShardCloud
 
-O deploy deve compilar antes de enviar o zip. A ShardCloud deve apenas iniciar artefatos prontos.
+O app esta configurado para deploy Git da propria ShardCloud. Nesse modo, a hospedagem puxa o codigo-fonte do GitHub e precisa compilar no start, porque `.next` e `dist` nao ficam versionados no Git.
 
 Por isso o `.shardcloud` usa:
 
 ```env
-REQUIRE_BUILT_ASSETS=true
-BUILD_API_ON_STARTUP=false
-BUILD_WEB_ON_STARTUP=false
+SHARDCLOUD_DEPLOY_MODE=git
+BUILD_API_ON_STARTUP=true
+BUILD_WEB_ON_STARTUP=true
+REQUIRE_BUILT_ASSETS=false
 ```
 
-Nao volte `BUILD_API_ON_STARTUP` ou `BUILD_WEB_ON_STARTUP` para `true` sem aumentar memoria e testar na hospedagem. Build no boot consome memoria, deixa o restart lento e costuma causar erro intermitente.
+O GitHub Actions continua rodando `npm run deploy:check` antes, para garantir que a build passa antes da ShardCloud tentar compilar.
 
 ## Variaveis obrigatorias na hospedagem
 
@@ -69,5 +70,5 @@ Ele significa que a API key usada no GitHub nao tem permissao para atualizar o a
 2. Rode `npm run deploy:check`.
 3. Se passar, faça commit e push para `main`.
 4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida o pacote, mas nao faz upload por API automaticamente.
-5. O deploy automatico deve ficar com a integracao Git da ShardCloud. O upload por API do GitHub Actions deve ser usado apenas manualmente (`workflow_dispatch`) depois de confirmar que `SHARD_CLOUD_API_KEY` tem permissao.
+5. O deploy automatico fica com a integracao Git da ShardCloud. O upload por API do GitHub Actions deve ser usado apenas manualmente (`workflow_dispatch`) depois de confirmar que `SHARD_CLOUD_API_KEY` tem permissao.
 6. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
