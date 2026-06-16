@@ -15,6 +15,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  ShoppingCart,
   UserCog,
   Users
 } from 'lucide-react';
@@ -42,6 +43,7 @@ const navGroups = [
     items: [
       { href: '/dashboard/absences', label: 'Ausencias', icon: CalendarOff },
       { href: '/dashboard/bau', label: 'Bau', icon: PackageOpen },
+      { href: '/dashboard/orders', label: 'Encomendas', icon: ShoppingCart, roles: ['admin', 'manager'] },
       { href: '/dashboard/lives', label: 'Lives', icon: Radio },
       { href: '/dashboard/bot-vortex', label: 'Bot Vortex', icon: Bot }
     ]
@@ -67,6 +69,7 @@ const routeMeta = [
   { match: '/dashboard/members', title: 'Membros', description: 'Frequencia, perfis e atividade da comunidade.' },
   { match: '/dashboard/absences', title: 'Ausencias', description: 'Afastamentos ativos, agendados e historico.' },
   { match: '/dashboard/lives', title: 'Lives', description: 'Canais monitorados e alertas para o Discord.' },
+  { match: '/dashboard/orders', title: 'Encomendas', description: 'Pedidos, familias e canais automaticos.' },
   { match: '/dashboard/bau', title: 'Bau', description: 'Estoque e movimentacoes sincronizadas.' },
   { match: '/dashboard', title: 'Dashboard', description: 'Visao geral da operacao Vortex.' }
 ];

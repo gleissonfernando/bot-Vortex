@@ -15,6 +15,7 @@ import { eventsRouter } from './events.js';
 import { ingestRouter } from './routes/ingest.js';
 import { livesRouter, startLiveNotificationMonitor } from './routes/lives.js';
 import { memberAvatarHandler, membersRouter } from './routes/members.js';
+import { ordersRouter } from './routes/orders.js';
 import { siteUsersRouter } from './routes/site-users.js';
 import { auditLog, rateLimit, requireTrustedOrigin } from './security.js';
 import { scheduleDailyBackup } from './services/backup.js';
@@ -62,6 +63,7 @@ app.use('/dashboard', requireAuth, dashboardRouter);
 app.use('/lives', requireAuth, auditSuccessfulMutation, livesRouter);
 app.get('/members/:id/avatar', memberAvatarHandler);
 app.use('/members', requireAuth, auditSuccessfulMutation, membersRouter);
+app.use('/orders', requireAuth, auditSuccessfulMutation, ordersRouter);
 app.use('/site-users', requireAuth, auditSuccessfulMutation, siteUsersRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

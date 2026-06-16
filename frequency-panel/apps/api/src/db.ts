@@ -84,6 +84,10 @@ async function ensureIndexes(db: Db) {
     db.collection('live_alert_configs').createIndex({ guild_id: 1, last_alert_updated_at: -1 }),
     db.collection('live_alert_configs').createIndex({ last_checked_at: 1 }),
     db.collection('live_alert_settings').createIndex({ guild_id: 1 }),
+    db.collection('order_settings').createIndex({ guild_id: 1 }, { unique: true }),
+    db.collection('orders').createIndex({ guild_id: 1, created_at: -1 }),
+    db.collection('orders').createIndex({ guild_id: 1, status: 1, created_at: -1 }),
+    db.collection('order_logs').createIndex({ guild_id: 1, order_id: 1, created_at: -1 }),
     db.collection('jsondocuments').createIndex({ key: 1 }, { unique: true })
   ]);
 }

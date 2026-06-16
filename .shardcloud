@@ -2,7 +2,7 @@ DISPLAY_NAME=bot-Vortex
 DESCRIPTION=Vortex Frequency Panel
 MAIN=shardcloud-start.js
 LANGUAGE=node
-MEMORY=512
+MEMORY=1024
 VERSION=recommended
 SUBDOMAIN=bot-vortex
-CUSTOM_COMMAND=PORT=80 npm start
+CUSTOM_COMMAND=BUILD_API_ON_STARTUP=true BUILD_WEB_ON_STARTUP=true PORT=80 npm start
