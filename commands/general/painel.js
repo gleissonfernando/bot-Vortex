@@ -107,6 +107,7 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/ausencia', value: 'ausencia', description: 'Quem pode usar ausência' },
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
+    { label: '/encomenda', value: 'encomenda', description: 'Quem pode abrir e criar encomendas' },
     { label: '/bau membro', value: 'bau', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: '/bau-membros', value: 'bau-membros', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: 'Acesso ao site', value: 'cadastrar-site', description: 'Quem pode cadastrar usuarios no site' },
