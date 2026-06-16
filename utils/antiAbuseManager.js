@@ -468,9 +468,25 @@ function overwriteSnapshot(channel) {
   })) || [];
 }
 
+function permissionBitfieldKey(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (value === null || value === undefined) return '0';
+  return String(value);
+}
+
+function comparableOverwriteSnapshot(channel) {
+  return overwriteSnapshot(channel)
+    .map((overwrite) => ({
+      ...overwrite,
+      allow: permissionBitfieldKey(overwrite.allow),
+      deny: permissionBitfieldKey(overwrite.deny),
+    }))
+    .sort((x, y) => String(x.id).localeCompare(String(y.id)));
+}
+
 function sameOverwrites(a, b) {
-  return JSON.stringify(overwriteSnapshot(a).sort((x, y) => String(x.id).localeCompare(String(y.id))))
-    === JSON.stringify(overwriteSnapshot(b).sort((x, y) => String(x.id).localeCompare(String(y.id))));
+  return JSON.stringify(comparableOverwriteSnapshot(a))
+    === JSON.stringify(comparableOverwriteSnapshot(b));
 }
 
 async function restoreChannel(channel) {
