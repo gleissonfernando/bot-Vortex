@@ -39,6 +39,7 @@ O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da S
 `shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
 
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
+- recompila API e web em todo restart no modo Git para evitar `.next`/`dist` antigo preservado pela hospedagem;
 - inicia o bot Discord, a Frequency API e o Next standalone;
 - abre o proxy publico em `PORT=80`;
 - expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
