@@ -246,16 +246,21 @@ function checkWorkflow() {
     'uses: shard-cloud/action@main',
     'SHARD_CLOUD_API_KEY',
     "grep -Eq '^APPID=",
+    'Read ShardCloud app id',
+    'id: shardcloud',
     'commands: |',
-    'commit',
-    'restart',
+    'commit ${{ steps.shardcloud.outputs.app_id }}',
+    'restart ${{ steps.shardcloud.outputs.app_id }}',
     'Validate public ShardCloud runtime',
     '$url/health',
     'rm -rf node_modules',
     'rm -f package-lock.json frequency-panel/package-lock.json',
     'rm -f .env .env.*',
     'rm -f commands/perfis.json',
-    'rm -f commands/pointTranscripts.json'
+    'rm -f commands/pointTranscripts.json',
+    'rm -f commands/orderSettings.json',
+    'rm -f commands/orders.json',
+    'rm -f commands/orderLogs.json'
   ];
   for (const snippet of requiredSnippets) {
     if (workflow.includes(snippet)) {

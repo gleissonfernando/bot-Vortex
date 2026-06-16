@@ -26,6 +26,12 @@ jobs:
           test -n "$SHARDCLOUD_API_TOKEN" || (echo "::error::Missing SHARD_CLOUD_API_KEY secret. Create it with an API key from Shard Cloud Dashboard > Config > Integrations." && exit 1)
           grep -Eq '^APPID=[0-9a-fA-F-]{36}$' .shardcloud || (echo "::error::.shardcloud must contain the target APPID so commit/restart always use the same ShardCloud app." && exit 1)
 
+      - name: Read ShardCloud app id
+        id: shardcloud
+        run: |
+          app_id="$(grep -E '^APPID=' .shardcloud | cut -d= -f2)"
+          echo "app_id=$app_id" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -61,6 +67,9 @@ jobs:
           rm -f commands/liveAlerts.json
           rm -f commands/liveLinks.json
           rm -f commands/nicks_originais.json
+          rm -f commands/orderLogs.json
+          rm -f commands/orderSettings.json
+          rm -f commands/orders.json
           rm -f commands/pedidos_ativos.json
           rm -f commands/perfis.json
           rm -f commands/perfisConfig.json
@@ -78,8 +87,8 @@ jobs:
         with:
           token: ${{ env.SHARDCLOUD_API_TOKEN }}
           commands: |
-            commit
-            restart
+            commit ${{ steps.shardcloud.outputs.app_id }}
+            restart ${{ steps.shardcloud.outputs.app_id }}
 
       - name: Validate public ShardCloud runtime
         run: |
