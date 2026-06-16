@@ -1,4 +1,5 @@
 const { spawn, spawnSync } = require('node:child_process');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -33,6 +34,57 @@ function loadRootEnv() {
 
 loadRootEnv();
 
+function isFalseValue(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
+function setRuntimeDefault(name, value) {
+  if (process.env[name] === undefined || process.env[name] === '') {
+    process.env[name] = value;
+  }
+}
+
+function isStrongRuntimeSecret(value, minLength) {
+  const text = String(value || '').trim();
+  return text.length >= minLength && !/^(change-this|replace-|put-your-)/i.test(text);
+}
+
+function ensureEphemeralSecret(name, minLength) {
+  if (isStrongRuntimeSecret(process.env[name], minLength)) return;
+
+  if (isFalseValue(process.env.SHARDCLOUD_BOOTSTRAP_SECRETS)) {
+    console.warn(`[shardcloud] ${name} ausente/fraco. Configure esta variavel na ShardCloud para a API iniciar.`);
+    return;
+  }
+
+  process.env[name] = crypto.randomBytes(Math.max(24, Math.ceil(minLength / 2))).toString('hex');
+  console.warn(`[shardcloud] ${name} ausente/fraco. Usando segredo efemero forte para manter o runtime online; configure um valor fixo na ShardCloud para sessoes estaveis.`);
+}
+
+function applyShardCloudRuntimeDefaults() {
+  setRuntimeDefault('NODE_ENV', 'production');
+  setRuntimeDefault('SHARDCLOUD_DEPLOY_MODE', 'git');
+  setRuntimeDefault('BUILD_API_ON_STARTUP', 'true');
+  setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'true');
+  setRuntimeDefault('REQUIRE_BUILT_ASSETS', 'false');
+  setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
+  setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
+  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
+  setRuntimeDefault('START_DISCORD_BOT', 'true');
+  setRuntimeDefault('START_FREQUENCY_API', 'true');
+  setRuntimeDefault('START_FREQUENCY_WEB', 'true');
+  setRuntimeDefault('BOT_LIGHT_MODE', 'true');
+  setRuntimeDefault('FIVEM_SYSTEM_ENABLED', 'true');
+  setRuntimeDefault('MONGODB_REQUIRED', 'false');
+  setRuntimeDefault('BOT_MONGODB_REQUIRED', 'false');
+
+  ensureEphemeralSecret('JWT_SECRET', 32);
+  ensureEphemeralSecret('INGEST_SECRET', 32);
+  setRuntimeDefault('BOT_INGEST_SECRET', process.env.INGEST_SECRET || '');
+}
+
+applyShardCloudRuntimeDefaults();
+
 const panelDir = path.join(rootDir, 'frequency-panel');
 const webDir = path.join(panelDir, 'apps', 'web');
 let apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
@@ -49,6 +101,7 @@ const publicBaseUrl = (
   || 'https://bot-vortex.shardweb.app'
 ).replace(/\/+$/, '');
 const childRestartState = new Map();
+const childStatuses = new Map();
 const managedChildren = new Set();
 let shuttingDown = false;
 const hasExplicitInternalApiUrl = Boolean(process.env.INTERNAL_API_URL);
@@ -56,7 +109,7 @@ const hasExplicitInternalApiUrl = Boolean(process.env.INTERNAL_API_URL);
 function envFlag(name, fallback = true) {
   const value = process.env[name];
   if (value === undefined || value === '') return fallback;
-  return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
+  return !isFalseValue(value);
 }
 
 function envValue(name, fallback) {
@@ -149,6 +202,7 @@ function run(command, args, options = {}) {
 function start(name, command, args, options = {}) {
   console.log(`[shardcloud] starting ${name}: ${command} ${args.join(' ')}`);
   const startedAt = Date.now();
+  setChildStatus(name, 'starting', { command, args });
   const child = spawn(command, args, {
     cwd: options.cwd || rootDir,
     env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '1', ...(options.env || {}) },
@@ -157,8 +211,17 @@ function start(name, command, args, options = {}) {
   });
   managedChildren.add(child);
 
+  child.once('spawn', () => {
+    setChildStatus(name, 'running', { pid: child.pid, command, args });
+  });
+
+  child.once('error', (error) => {
+    setChildStatus(name, 'failed', { error: error.message, command, args });
+  });
+
   child.on('exit', (code, signal) => {
     managedChildren.delete(child);
+    setChildStatus(name, 'stopped', { code, signal: signal || null, command, args });
     console.error(`[shardcloud] ${name} stopped (${signal || code})`);
     if (options.fatal !== false) process.exit(code || 1);
     if (!options.restart || shuttingDown) return;
@@ -178,6 +241,14 @@ function start(name, command, args, options = {}) {
   });
 
   return child;
+}
+
+function setChildStatus(name, status, details = {}) {
+  childStatuses.set(name, {
+    status,
+    updatedAt: new Date().toISOString(),
+    ...details,
+  });
 }
 
 function stopManagedChildren(signal) {
@@ -200,8 +271,31 @@ process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
 process.env.MONGODB_URI ||= process.env.MONGO_URI || process.env.DATABASE_URL;
 
+function runtimeHealth() {
+  return {
+    ok: true,
+    service: 'vortex-shardcloud-runtime',
+    mode: process.env.SHARDCLOUD_DEPLOY_MODE || 'git',
+    publicBaseUrl,
+    ports: {
+      public: webPort,
+      api: apiPort,
+      botApi: botApiPort,
+      webInternal: webInternalPort,
+    },
+    children: Object.fromEntries(childStatuses.entries()),
+  };
+}
+
 function startProxy() {
   const server = http.createServer((req, res) => {
+    const pathname = String(req.url || '/').split('?')[0];
+    if (pathname === '/health' || pathname === '/_shardcloud/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(runtimeHealth()));
+      return;
+    }
+
     const isApi = req.url?.startsWith('/api/');
     const target = new URL(isApi ? process.env.INTERNAL_API_URL : `http://127.0.0.1:${webInternalPort}`);
     const targetPath = isApi ? req.url.slice(4) || '/' : req.url || '/';
@@ -210,7 +304,12 @@ function startProxy() {
       port: target.port,
       path: targetPath,
       method: req.method,
-      headers: { ...req.headers, host: target.host }
+      headers: {
+        ...req.headers,
+        host: target.host,
+        'x-forwarded-host': req.headers.host || target.host,
+        'x-forwarded-proto': 'https',
+      }
     }, (upstreamRes) => {
       res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
       upstreamRes.pipe(res);

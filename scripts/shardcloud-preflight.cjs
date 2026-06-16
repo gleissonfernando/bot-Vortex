@@ -199,12 +199,17 @@ function checkShardCloudFile() {
     fail('.shardcloud precisa usar MAIN=shardcloud-start.js');
   }
 
-  const customCommand = shard.CUSTOM_COMMAND || '';
-  const gitDeployMode = /SHARDCLOUD_DEPLOY_MODE=git/.test(customCommand);
-  if (customCommand.includes('npm start')) {
-    ok('.shardcloud CUSTOM_COMMAND chama npm start');
+  if (shard.LANGUAGE === 'node') {
+    ok('.shardcloud LANGUAGE=node');
   } else {
-    fail('.shardcloud CUSTOM_COMMAND precisa chamar npm start');
+    fail('.shardcloud precisa usar LANGUAGE=node');
+  }
+
+  const customCommand = shard.CUSTOM_COMMAND || '';
+  if (/^(PORT=\d+\s+)?npm start$/.test(customCommand)) {
+    ok('.shardcloud CUSTOM_COMMAND curto chama npm start');
+  } else {
+    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: PORT=80 npm start');
   }
 
   if (customCommand.length <= 250) {
@@ -213,29 +218,17 @@ function checkShardCloudFile() {
     fail(`.shardcloud CUSTOM_COMMAND passa de 250 caracteres (${customCommand.length})`);
   }
 
-  if (gitDeployMode) {
-    ok('.shardcloud usa modo Git da ShardCloud');
-    if (/BUILD_API_ON_STARTUP=true/.test(customCommand) && /BUILD_WEB_ON_STARTUP=true/.test(customCommand)) {
-      ok('.shardcloud compila API e web no start para deploy Git');
-    } else {
-      fail('modo Git precisa de BUILD_API_ON_STARTUP=true e BUILD_WEB_ON_STARTUP=true');
-    }
-    if (/REQUIRE_BUILT_ASSETS=true/.test(customCommand)) {
-      fail('modo Git nao pode exigir artefatos prontos, pois .next/dist nao vem do Git');
-    }
-    return;
+  if (/SHARDCLOUD_DEPLOY_MODE|BUILD_API_ON_STARTUP|BUILD_WEB_ON_STARTUP|REGISTER_COMMANDS_ON_STARTUP|NODE_OPTIONS/.test(customCommand)) {
+    fail('.shardcloud CUSTOM_COMMAND nao deve carregar flags longas; os defaults ficam em shardcloud-start.js');
+  } else {
+    ok('.shardcloud deixa defaults de hospedagem dentro do runtime');
   }
 
-  if (/REQUIRE_BUILT_ASSETS=true/.test(customCommand)) {
-    ok('.shardcloud exige artefatos prontos para upload por API');
+  const memory = Number(shard.MEMORY);
+  if (Number.isInteger(memory) && memory >= 512) {
+    ok(`.shardcloud MEMORY adequado (${memory}MB)`);
   } else {
-    fail('.shardcloud precisa de REQUIRE_BUILT_ASSETS=true ou SHARDCLOUD_DEPLOY_MODE=git');
-  }
-
-  if (/BUILD_API_ON_STARTUP=true|BUILD_WEB_ON_STARTUP=true/.test(customCommand)) {
-    fail('upload por API nao deve compilar no boot; use npm run deploy:check antes de enviar');
-  } else {
-    ok('.shardcloud nao compila no boot');
+    fail('.shardcloud MEMORY precisa ser pelo menos 512');
   }
 }
 
@@ -250,6 +243,7 @@ function checkWorkflow() {
     'commit ${{ env.SHARDCLOUD_APP_ID }}',
     'restart ${{ env.SHARDCLOUD_APP_ID }}',
     'rm -rf node_modules',
+    'rm -f package-lock.json frequency-panel/package-lock.json',
     'rm -f .env .env.*'
   ];
   for (const snippet of requiredSnippets) {
@@ -257,6 +251,27 @@ function checkWorkflow() {
       ok(`workflow contem ${snippet}`);
     } else {
       fail(`workflow precisa conter ${snippet}`);
+    }
+  }
+}
+
+function checkShardCloudRuntime() {
+  const runtime = readText('shardcloud-start.js');
+  const requiredSnippets = [
+    'applyShardCloudRuntimeDefaults',
+    "ensureEphemeralSecret('JWT_SECRET', 32)",
+    "ensureEphemeralSecret('INGEST_SECRET', 32)",
+    "'/_shardcloud/health'",
+    'BUILD_API_ON_STARTUP',
+    'BUILD_WEB_ON_STARTUP',
+    'REGISTER_COMMANDS_ON_STARTUP'
+  ];
+
+  for (const snippet of requiredSnippets) {
+    if (runtime.includes(snippet)) {
+      ok(`runtime ShardCloud contem ${snippet}`);
+    } else {
+      fail(`runtime ShardCloud precisa conter ${snippet}`);
     }
   }
 }
@@ -319,6 +334,7 @@ function main() {
   checkPackageScripts();
   checkShardCloudFile();
   checkWorkflow();
+  checkShardCloudRuntime();
   checkEnvExamples();
   checkStrictEnv();
   checkSyntax();

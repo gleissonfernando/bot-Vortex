@@ -49,6 +49,7 @@ jobs:
           rm -rf frequency-panel/apps/bot/node_modules
           rm -rf frequency-panel/apps/web/node_modules
           rm -rf frequency-panel/apps/web/.next/cache
+          rm -f package-lock.json frequency-panel/package-lock.json
           rm -f .env .env.*
 
       - name: Commit and restart Shard Cloud app

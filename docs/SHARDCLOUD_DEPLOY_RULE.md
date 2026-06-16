@@ -21,19 +21,31 @@ Esse comando faz o preflight completo:
 
 O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
 
-Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules` e `.env`.
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, `package-lock.json` e `.env`.
 
-Por isso o `.shardcloud` usa:
+Por isso o `.shardcloud` deve ficar curto:
 
 ```env
-SHARDCLOUD_DEPLOY_MODE=git
-BUILD_API_ON_STARTUP=true
-BUILD_WEB_ON_STARTUP=true
-REQUIRE_BUILT_ASSETS=false
-REGISTER_COMMANDS_ON_STARTUP=true
+MAIN=shardcloud-start.js
+LANGUAGE=node
+MEMORY=1024
+CUSTOM_COMMAND=PORT=80 npm start
 ```
 
-O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. As flags de hospedagem nao ficam mais nesse campo; elas sao aplicadas pelo `shardcloud-start.js`.
+
+## Runtime da hospedagem
+
+`shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
+
+- aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
+- inicia o bot Discord, a Frequency API e o Next standalone;
+- abre o proxy publico em `PORT=80`;
+- expõe `/health` e `/_shardcloud/health` para diagnostico rapido;
+- reinicia processos internos que cairem;
+- gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados, para impedir loop de crash. Para sessoes estaveis, configure secrets fixos na ShardCloud.
+
+O arquivo `.shardignore` tambem deve continuar versionado para impedir envio de cache, segredos e JSONs de runtime.
 
 ## Variaveis obrigatorias no GitHub Actions
 
