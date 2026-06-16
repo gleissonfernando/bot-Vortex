@@ -1,6 +1,7 @@
 'use client';
 
-import { Activity, CalendarDays, Clock, Filter, Radio, RefreshCw, Search, Sparkles, Users, X } from 'lucide-react';
+import { Activity, CalendarDays, Clock, Filter, PackageOpen, Radio, RefreshCw, Search, ShoppingCart, Sparkles, Users, X } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { PresenceChart } from '@/components/presence-chart';
@@ -97,6 +98,12 @@ export default function DashboardPage() {
 
         {error ? <div className="rounded-lg bg-vortex-danger/10 p-3 text-sm text-red-100">{error}</div> : null}
 
+        <section className="grid gap-3 md:grid-cols-3">
+          <QuickLink href="/dashboard/orders" icon={ShoppingCart} label="Encomendas" helper="Categorias e pedidos" />
+          <QuickLink href="/dashboard/bau" icon={PackageOpen} label="Bau" helper="Estoque conectado" />
+          <QuickLink href="/dashboard/lives" icon={Radio} label="Lives" helper="Alertas do Discord" />
+        </section>
+
         <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Membros" value={data?.metrics.total_members ?? '...'} helper="Total sincronizado" icon={Users} tone="blue" />
         <StatCard label="Ativos" value={data?.metrics.active_members ?? '...'} helper="Na cidade agora" icon={Activity} tone="emerald" />
@@ -147,6 +154,20 @@ export default function DashboardPage() {
         </section>
       </div>
     </AppShell>
+  );
+}
+
+function QuickLink({ href, icon: Icon, label, helper }: { href: string; icon: typeof Users; label: string; helper: string }) {
+  return (
+    <Link href={href} className="panel flex items-center gap-3 p-4 transition hover:border-sky-300/25 hover:bg-white/[0.055]">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-sky-400/10 text-sky-200">
+        <Icon size={19} />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-white">{label}</span>
+        <span className="block truncate text-xs text-slate-500">{helper}</span>
+      </span>
+    </Link>
   );
 }
 
