@@ -389,8 +389,10 @@ function checkShardCloudRuntime() {
     "'/_shardcloud/health'",
     'BUILD_API_ON_STARTUP',
     'BUILD_WEB_ON_STARTUP',
+    'START_PUBLIC_PROXY',
     'REGISTER_COMMANDS_ON_STARTUP',
-    "process.env.SHARDCLOUD_DEPLOY_MODE === 'git'"
+    "if (!fs.existsSync(standaloneServer)) return true;",
+    "if (!fs.existsSync(apiDist)) return true;"
   ];
 
   for (const snippet of requiredSnippets) {

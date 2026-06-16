@@ -75,12 +75,13 @@ function ensureEphemeralSecret(name, minLength) {
 function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('NODE_ENV', 'production');
   setRuntimeDefault('SHARDCLOUD_DEPLOY_MODE', 'git');
-  setRuntimeDefault('BUILD_API_ON_STARTUP', 'true');
-  setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'true');
+  setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
+  setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
   setRuntimeDefault('REQUIRE_BUILT_ASSETS', 'false');
   setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
   setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
-  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
+  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=512');
+  setRuntimeDefault('START_PUBLIC_PROXY', 'true');
   setRuntimeDefault('START_DISCORD_BOT', 'true');
   setRuntimeDefault('START_FREQUENCY_API', 'true');
   setRuntimeDefault('START_FREQUENCY_WEB', 'true');
@@ -397,9 +398,8 @@ function newestMtimeMs(target) {
 
 function shouldBuildWeb() {
   if (process.env.FORCE_WEB_BUILD === 'true') return true;
-  if (!envFlag('BUILD_WEB_ON_STARTUP', false)) return false;
-  if (process.env.SHARDCLOUD_DEPLOY_MODE === 'git') return true;
   if (!fs.existsSync(standaloneServer)) return true;
+  if (!envFlag('BUILD_WEB_ON_STARTUP', false)) return false;
 
   const standaloneMtime = fs.statSync(standaloneServer).mtimeMs;
   const sourceMtime = Math.max(
@@ -414,9 +414,8 @@ function shouldBuildWeb() {
 
 function shouldBuildApi() {
   if (process.env.FORCE_API_BUILD === 'true') return true;
-  if (!envFlag('BUILD_API_ON_STARTUP', false)) return false;
-  if (process.env.SHARDCLOUD_DEPLOY_MODE === 'git') return true;
   if (!fs.existsSync(apiDist)) return true;
+  if (!envFlag('BUILD_API_ON_STARTUP', false)) return false;
 
   const distMtime = fs.statSync(apiDist).mtimeMs;
   const sourceMtime = Math.max(
@@ -446,6 +445,7 @@ function ensureStandaloneWebAssets() {
 const shouldStartDiscordBot = envFlag('START_DISCORD_BOT', true);
 const shouldStartFrequencyApi = envFlag('START_FREQUENCY_API', true);
 const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', true);
+const shouldStartPublicProxy = envFlag('START_PUBLIC_PROXY', true);
 const requireBuiltAssets = envFlag('REQUIRE_BUILT_ASSETS', false);
 
 let web = null;
@@ -458,8 +458,10 @@ function exitMissingBuiltAsset(label, relativePath) {
 }
 
 async function main() {
-  if (shouldStartFrequencyWeb) {
+  if (shouldStartPublicProxy) {
     proxyServer = startProxy();
+  } else {
+    console.log('[shardcloud] Public proxy disabled by START_PUBLIC_PROXY=false.');
   }
 
   if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN)) {
