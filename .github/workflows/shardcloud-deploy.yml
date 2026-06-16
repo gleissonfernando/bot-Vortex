@@ -1,4 +1,4 @@
-name: Deploy to Shard Cloud
+name: Validate Vortex Deploy
 
 on:
   push:
@@ -17,7 +17,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate secrets
+      - name: Validate ShardCloud API secrets
+        if: github.event_name == 'workflow_dispatch'
         run: |
           test -n "$SHARDCLOUD_API_TOKEN" || (echo "Missing SHARD_CLOUD_API_KEY secret" && exit 1)
           test -n "$SHARDCLOUD_APP_ID" || (echo "Missing SHARDCLOUD_APP_ID secret or variable" && exit 1)
@@ -38,6 +39,7 @@ jobs:
         run: npm run deploy:check
 
       - name: Build deployment archive
+        if: github.event_name == 'workflow_dispatch'
         run: |
           zip -qr shardcloud-project.zip . \
             -x ".git/*" \
@@ -67,6 +69,7 @@ jobs:
             -x "commands/stats.json"
 
       - name: Upload code to Shard Cloud
+        if: github.event_name == 'workflow_dispatch'
         run: |
           response_file="$(mktemp)"
           http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request PUT \
@@ -83,6 +86,7 @@ jobs:
           fi
 
       - name: Restart Shard Cloud app
+        if: github.event_name == 'workflow_dispatch'
         run: |
           response_file="$(mktemp)"
           http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request POST \

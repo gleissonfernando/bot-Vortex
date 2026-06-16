@@ -68,5 +68,6 @@ Ele significa que a API key usada no GitHub nao tem permissao para atualizar o a
 1. Faça a alteracao.
 2. Rode `npm run deploy:check`.
 3. Se passar, faça commit e push para `main`.
-4. O workflow `.github/workflows/shardcloud-deploy.yml` vai empacotar sem `.env`, sem `node_modules` e sem arquivos JSON de estado local.
-5. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
+4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida o pacote, mas nao faz upload por API automaticamente.
+5. O deploy automatico deve ficar com a integracao Git da ShardCloud. O upload por API do GitHub Actions deve ser usado apenas manualmente (`workflow_dispatch`) depois de confirmar que `SHARD_CLOUD_API_KEY` tem permissao.
+6. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
