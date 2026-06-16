@@ -41,8 +41,7 @@ O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem semp
 `shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
 
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
-- usa os artefatos gerados pelo GitHub Actions (`dist` e `.next/standalone`) para evitar build pesado no restart da hospedagem;
-- recompila API ou web na ShardCloud apenas se o artefato estiver ausente ou se `FORCE_API_BUILD=true` / `FORCE_WEB_BUILD=true` for definido;
+- recompila API e web em todo restart no modo Git para evitar `.next`/`dist` antigo ou ausente na hospedagem;
 - inicia o bot Discord, a Frequency API e o Next standalone;
 - abre o proxy publico na porta configurada e tambem tenta manter a porta `80` como fallback da ShardCloud;
 - expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;

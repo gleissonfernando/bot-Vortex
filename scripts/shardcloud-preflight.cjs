@@ -391,8 +391,7 @@ function checkShardCloudRuntime() {
     'BUILD_WEB_ON_STARTUP',
     'START_PUBLIC_PROXY',
     'REGISTER_COMMANDS_ON_STARTUP',
-    "if (!fs.existsSync(standaloneServer)) return true;",
-    "if (!fs.existsSync(apiDist)) return true;"
+    "process.env.SHARDCLOUD_DEPLOY_MODE === 'git'"
   ];
 
   for (const snippet of requiredSnippets) {
