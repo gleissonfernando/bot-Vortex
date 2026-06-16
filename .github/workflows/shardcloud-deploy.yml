@@ -1,10 +1,14 @@
-name: Validate Vortex Deploy
+name: Deploy Vortex to Shard Cloud
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
+concurrency:
+  group: shardcloud-vortex-main
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -17,11 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate ShardCloud API secrets
-        if: github.event_name == 'workflow_dispatch'
+      - name: Validate ShardCloud credentials
         run: |
-          test -n "$SHARDCLOUD_API_TOKEN" || (echo "Missing SHARD_CLOUD_API_KEY secret" && exit 1)
-          test -n "$SHARDCLOUD_APP_ID" || (echo "Missing SHARDCLOUD_APP_ID secret or variable" && exit 1)
+          test -n "$SHARDCLOUD_API_TOKEN" || (echo "::error::Missing SHARD_CLOUD_API_KEY secret. Create it with an API key from Shard Cloud Dashboard > Config > Integrations." && exit 1)
+          test -n "$SHARDCLOUD_APP_ID" || (echo "::error::Missing SHARDCLOUD_APP_ID secret or variable." && exit 1)
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -38,67 +41,20 @@ jobs:
       - name: ShardCloud preflight
         run: npm run deploy:check
 
-      - name: Build deployment archive
-        if: github.event_name == 'workflow_dispatch'
+      - name: Remove CI-only files before deploy
         run: |
-          zip -qr shardcloud-project.zip . \
-            -x ".git/*" \
-            -x ".github/*" \
-            -x "node_modules/*" \
-            -x "frequency-panel/node_modules/*" \
-            -x "frequency-panel/apps/*/node_modules/*" \
-            -x "frequency-panel/apps/web/.next/cache/*" \
-            -x ".env" \
-            -x ".env.*" \
-            -x "logs/*" \
-            -x "commands/approvedSetChannels.json" \
-            -x "commands/ausencias.json" \
-            -x "commands/config.json" \
-            -x "commands/dailyPointTranscriptState.json" \
-            -x "commands/nicks_originais.json" \
-            -x "commands/pedidos_ativos.json" \
-            -x "commands/perfis.json" \
-            -x "commands/perfisConfig.json" \
-            -x "commands/pointAutomationState.json" \
-            -x "commands/pointTranscripts.json" \
-            -x "commands/pontoAdjustRequests.json" \
-            -x "commands/pontoPanels.json" \
-            -x "commands/pontos.json" \
-            -x "commands/queuedChannelLogs.json" \
-            -x "commands/scheduled_messages.json" \
-            -x "commands/stats.json"
+          rm -rf node_modules
+          rm -rf frequency-panel/node_modules
+          rm -rf frequency-panel/apps/api/node_modules
+          rm -rf frequency-panel/apps/bot/node_modules
+          rm -rf frequency-panel/apps/web/node_modules
+          rm -rf frequency-panel/apps/web/.next/cache
+          rm -f .env .env.*
 
-      - name: Upload code to Shard Cloud
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          response_file="$(mktemp)"
-          http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request PUT \
-            --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/file" \
-            --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
-            --form "project=@shardcloud-project.zip;type=application/zip")"
-          cat "$response_file"
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            if grep -qi "user cannot update project" "$response_file"; then
-              echo "::error::ShardCloud recusou o upload: o token configurado no GitHub nao tem permissao para atualizar o projeto ${SHARDCLOUD_APP_ID}."
-              echo "::error::Crie/atualize o secret SHARD_CLOUD_API_KEY com uma API key do mesmo usuario dono do app na ShardCloud, ou ajuste SHARDCLOUD_APP_ID para o app correto."
-            fi
-            exit 1
-          fi
-
-      - name: Restart Shard Cloud app
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          response_file="$(mktemp)"
-          http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request POST \
-            --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/status" \
-            --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
-            --header "Content-Type: application/json" \
-            --data '{"status":"restart"}')"
-          cat "$response_file"
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            if grep -qi "user cannot update project" "$response_file"; then
-              echo "::error::ShardCloud recusou o restart: o token configurado no GitHub nao tem permissao para atualizar o projeto ${SHARDCLOUD_APP_ID}."
-              echo "::error::Crie/atualize o secret SHARD_CLOUD_API_KEY com uma API key do mesmo usuario dono do app na ShardCloud, ou ajuste SHARDCLOUD_APP_ID para o app correto."
-            fi
-            exit 1
-          fi
+      - name: Commit and restart Shard Cloud app
+        uses: shard-cloud/action@main
+        with:
+          token: ${{ env.SHARDCLOUD_API_TOKEN }}
+          commands: |
+            commit ${{ env.SHARDCLOUD_APP_ID }}
+            restart ${{ env.SHARDCLOUD_APP_ID }}

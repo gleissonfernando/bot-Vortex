@@ -207,6 +207,12 @@ function checkShardCloudFile() {
     fail('.shardcloud CUSTOM_COMMAND precisa chamar npm start');
   }
 
+  if (customCommand.length <= 250) {
+    ok(`.shardcloud CUSTOM_COMMAND respeita limite de 250 caracteres (${customCommand.length})`);
+  } else {
+    fail(`.shardcloud CUSTOM_COMMAND passa de 250 caracteres (${customCommand.length})`);
+  }
+
   if (gitDeployMode) {
     ok('.shardcloud usa modo Git da ShardCloud');
     if (/BUILD_API_ON_STARTUP=true/.test(customCommand) && /BUILD_WEB_ON_STARTUP=true/.test(customCommand)) {
@@ -238,12 +244,13 @@ function checkWorkflow() {
   const workflow = readText('.github/workflows/shardcloud-deploy.yml');
   const requiredSnippets = [
     'npm run deploy:check',
-    '-x ".env"',
-    '-x ".env.*"',
-    '-x "node_modules/*"',
-    '-x "frequency-panel/node_modules/*"',
-    '--write-out "%{http_code}"',
-    'user cannot update project'
+    'uses: shard-cloud/action@main',
+    'SHARD_CLOUD_API_KEY',
+    'SHARDCLOUD_APP_ID',
+    'commit ${{ env.SHARDCLOUD_APP_ID }}',
+    'restart ${{ env.SHARDCLOUD_APP_ID }}',
+    'rm -rf node_modules',
+    'rm -f .env .env.*'
   ];
   for (const snippet of requiredSnippets) {
     if (workflow.includes(snippet)) {

@@ -12,13 +12,16 @@ Esse comando faz o preflight completo:
 
 - confere `package.json`, `.shardcloud` e workflow do GitHub;
 - checa sintaxe dos arquivos JS do bot com `node --check`;
+- confirma que `/encomenda`, `/exibir` e `/painel` estao prontos para registro no Discord;
 - compila API, bot e web do `frequency-panel`;
 - confirma que existem `frequency-panel/apps/api/dist/index.js` e o Next standalone em `frequency-panel/apps/web/.next/standalone/apps/web/server.js`;
-- falha antes do upload se o pacote nao estiver pronto.
+- falha antes do deploy se o pacote nao estiver pronto.
 
 ## Regra da ShardCloud
 
-O app esta configurado para deploy Git da propria ShardCloud. Nesse modo, a hospedagem puxa o codigo-fonte do GitHub e precisa compilar no start, porque `.next` e `dist` nao ficam versionados no Git.
+O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
+
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules` e `.env`.
 
 Por isso o `.shardcloud` usa:
 
@@ -27,9 +30,21 @@ SHARDCLOUD_DEPLOY_MODE=git
 BUILD_API_ON_STARTUP=true
 BUILD_WEB_ON_STARTUP=true
 REQUIRE_BUILT_ASSETS=false
+REGISTER_COMMANDS_ON_STARTUP=true
 ```
 
-O GitHub Actions continua rodando `npm run deploy:check` antes, para garantir que a build passa antes da ShardCloud tentar compilar.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud.
+
+## Variaveis obrigatorias no GitHub Actions
+
+Configure no GitHub, em `Settings > Secrets and variables > Actions`:
+
+```env
+SHARD_CLOUD_API_KEY=
+SHARDCLOUD_APP_ID=ccc23af3-03b5-4174-8143-f9da45518d1c
+```
+
+`SHARD_CLOUD_API_KEY` precisa ser uma API key criada no painel da ShardCloud em `Config > Integrations`, no mesmo usuario que tem permissao para atualizar o app.
 
 ## Variaveis obrigatorias na hospedagem
 
@@ -58,17 +73,17 @@ npm run deploy:check:env
 
 Esse erro vem da API da ShardCloud, nao da build da Vortex.
 
-Ele significa que a API key usada no GitHub nao tem permissao para atualizar o app configurado. Corrija assim:
+Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem permissao para atualizar o app configurado. Corrija assim:
 
 - No GitHub, em `Settings > Secrets and variables > Actions`, atualize `SHARD_CLOUD_API_KEY` com uma API key criada no mesmo usuario que e dono do app na ShardCloud.
 - Se o app ID mudou, configure `SHARDCLOUD_APP_ID` como secret ou variable com o ID correto do projeto.
+- Se estiver usando a integracao Git nativa da ShardCloud, desconecte e conecte o GitHub novamente em `Config > Integrations`, liberando acesso ao repositorio `gleissonfernando/bot-Vortex`.
 - Nao coloque a API key no codigo, no `.env` ou em mensagem de chat.
 
 ## Fluxo certo
 
-1. Faça a alteracao.
+1. Faca a alteracao.
 2. Rode `npm run deploy:check`.
-3. Se passar, faça commit e push para `main`.
-4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida o pacote, mas nao faz upload por API automaticamente.
-5. O deploy automatico fica com a integracao Git da ShardCloud. O upload por API do GitHub Actions deve ser usado apenas manualmente (`workflow_dispatch`) depois de confirmar que `SHARD_CLOUD_API_KEY` tem permissao.
-6. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
+3. Se passar, faca commit e push para `main`.
+4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida, executa `shard-cloud/action@main`, faz `commit` na ShardCloud e reinicia o app.
+5. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
