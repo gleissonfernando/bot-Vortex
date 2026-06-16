@@ -20,6 +20,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: '/health',
+        destination: `${process.env.INTERNAL_API_URL || 'http://127.0.0.1:4100'}/health`
+      },
+      {
         source: '/api/:path*',
         destination: `${process.env.INTERNAL_API_URL || 'http://127.0.0.1:4100'}/:path*`
       }

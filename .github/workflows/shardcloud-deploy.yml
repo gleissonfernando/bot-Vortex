@@ -95,15 +95,19 @@ jobs:
           set -euo pipefail
           url="${SHARDCLOUD_PUBLIC_URL%/}"
           for attempt in $(seq 1 18); do
-            body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url/health" || true)"
-            if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{const j=JSON.parse(s); if (j.ok === true && ['vortex-shardcloud-runtime','vortex-shardcloud-health'].includes(j.service)) process.exit(0)}catch{} process.exit(1)})"; then
-              echo "ShardCloud public health is serving the current Vortex runtime."
-              exit 0
-            fi
+            for endpoint in /health /_shardcloud/health /api/health; do
+              body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url$endpoint" || true)"
+              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{const j=JSON.parse(s); if (j.ok === true && ['vortex-shardcloud-runtime','vortex-shardcloud-health','vortex-frequency-api'].includes(j.service)) process.exit(0)}catch{} process.exit(1)})"; then
+                echo "ShardCloud public health is serving Vortex at $endpoint."
+                exit 0
+              fi
+            done
             echo "Waiting for ShardCloud public health route... attempt $attempt/18"
             sleep 10
           done
 
-          echo "::error::ShardCloud did not expose the current /health route after restart. The app is probably serving an old build or a different project."
+          echo "::error::ShardCloud did not expose a Vortex health route after restart. The app is probably serving an old build or a different project."
           curl -i --max-time 20 "$url/health" || true
+          curl -i --max-time 20 "$url/_shardcloud/health" || true
+          curl -i --max-time 20 "$url/api/health" || true
           exit 1
