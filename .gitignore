@@ -84,6 +84,9 @@ commands/dailyPointTranscriptState.json
 commands/liveAlerts.json
 commands/liveLinks.json
 commands/nicks_originais.json
+commands/orderLogs.json
+commands/orderSettings.json
+commands/orders.json
 commands/pedidos_ativos.json
 commands/perfis.json
 commands/perfisConfig.json

@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -14,6 +16,12 @@ const { buildThemedPanelPayload } = require('./panelTheme');
 const { hasCommandRole, hasVortexAccess } = require('./permissions');
 const { safeDeferReply, safeEdit, safeReply, safeShowModal } = require('./safeReply');
 
+const DATA_DIR = path.join(__dirname, '..', 'commands');
+const LOCAL_ORDER_SETTINGS_PATH = path.join(DATA_DIR, 'orderSettings.json');
+const LOCAL_ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
+const LOCAL_ORDER_LOGS_PATH = path.join(DATA_DIR, 'orderLogs.json');
+const DEFAULT_ORDER_CATEGORY_NAME = 'encomendas';
+
 function hasOrderManagerPermission(member) {
   return hasVortexAccess(member, ['admin', 'medio'])
     || hasCommandRole(member, 'encomenda')
@@ -23,6 +31,180 @@ function hasOrderManagerPermission(member) {
 function getCollection(name) {
   if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) return null;
   return mongoose.connection.db.collection(name);
+}
+
+function readJsonFile(filePath, fallback) {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8') || 'null') || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonFile(filePath, data) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+function serializeDoc(doc) {
+  return JSON.parse(JSON.stringify(doc));
+}
+
+function getLocalOrderSettings(guildId) {
+  const data = readJsonFile(LOCAL_ORDER_SETTINGS_PATH, {});
+  return data[String(guildId)] || null;
+}
+
+function saveLocalOrderSettings(guildId, settings) {
+  const data = readJsonFile(LOCAL_ORDER_SETTINGS_PATH, {});
+  data[String(guildId)] = serializeDoc(settings);
+  writeJsonFile(LOCAL_ORDER_SETTINGS_PATH, data);
+}
+
+async function getOrderSettings(guildId) {
+  const settingsCollection = getCollection('order_settings');
+  if (settingsCollection) {
+    const settings = await settingsCollection.findOne({ guild_id: String(guildId) }).catch(() => null);
+    if (settings) return settings;
+  }
+
+  return getLocalOrderSettings(guildId);
+}
+
+async function saveOrderSettings(guildId, patch) {
+  const now = new Date();
+  const next = {
+    ...(getLocalOrderSettings(guildId) || {}),
+    ...patch,
+    guild_id: String(guildId),
+    updated_at: now,
+  };
+
+  const settingsCollection = getCollection('order_settings');
+  if (settingsCollection) {
+    await settingsCollection.updateOne(
+      { guild_id: String(guildId) },
+      { $set: next, $setOnInsert: { created_at: now } },
+      { upsert: true }
+    ).catch(() => null);
+  }
+
+  if (settingsCollection) {
+    try {
+      saveLocalOrderSettings(guildId, next);
+    } catch {
+      // Mongo is the source of truth in hosted mode; local JSON is only a fallback mirror.
+    }
+  } else {
+    saveLocalOrderSettings(guildId, next);
+  }
+  return next;
+}
+
+async function fetchConfiguredCategory(guild, categoryId) {
+  if (!categoryId) return null;
+  const category = await guild.channels.fetch(String(categoryId)).catch(() => null);
+  return category?.type === ChannelType.GuildCategory ? category : null;
+}
+
+async function findExistingOrderCategory(guild) {
+  const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+  const normalizedNames = new Set([
+    DEFAULT_ORDER_CATEGORY_NAME,
+    'encomenda',
+    'encomendas',
+    'pedidos',
+  ]);
+
+  return channels.find((channel) => (
+    channel?.type === ChannelType.GuildCategory
+    && normalizedNames.has(String(channel.name || '').trim().toLowerCase())
+  )) || null;
+}
+
+async function ensureOrderCategory(guild) {
+  const settings = await getOrderSettings(guild.id);
+  const configured = await fetchConfiguredCategory(guild, settings?.order_category_id);
+  if (configured) return { ok: true, category: configured, created: false };
+
+  const existing = await findExistingOrderCategory(guild);
+  if (existing) {
+    await saveOrderSettings(guild.id, { order_category_id: existing.id });
+    return { ok: true, category: existing, created: false };
+  }
+
+  const category = await guild.channels.create({
+    name: DEFAULT_ORDER_CATEGORY_NAME,
+    type: ChannelType.GuildCategory,
+    reason: 'Vortex Encomendas: categoria automatica',
+  }).catch(() => null);
+
+  if (!category) {
+    return {
+      ok: false,
+      message: 'Nao consegui criar a categoria de encomendas. Verifique se o bot tem permissao para Gerenciar Canais.',
+    };
+  }
+
+  await saveOrderSettings(guild.id, { order_category_id: category.id });
+  return { ok: true, category, created: true };
+}
+
+async function insertOrderDoc(doc) {
+  const orders = getCollection('orders');
+  if (orders) {
+    await orders.insertOne(doc);
+    return 'mongo';
+  }
+
+  const data = readJsonFile(LOCAL_ORDERS_PATH, {});
+  const guildId = String(doc.guild_id);
+  data[guildId] ||= {};
+  data[guildId][String(doc._id)] = serializeDoc(doc);
+  writeJsonFile(LOCAL_ORDERS_PATH, data);
+  return 'local';
+}
+
+async function insertOrderLog(doc) {
+  const logs = getCollection('order_logs');
+  if (logs) {
+    await logs.insertOne(doc);
+    return 'mongo';
+  }
+
+  const data = readJsonFile(LOCAL_ORDER_LOGS_PATH, {});
+  const guildId = String(doc.guild_id || 'unknown');
+  data[guildId] ||= [];
+  data[guildId].push(serializeDoc(doc));
+  data[guildId] = data[guildId].slice(-1000);
+  writeJsonFile(LOCAL_ORDER_LOGS_PATH, data);
+  return 'local';
+}
+
+function updateLocalOrderDoc(orderId, status, interaction, rejectionReason, now) {
+  const data = readJsonFile(LOCAL_ORDERS_PATH, {});
+  const guildId = String(interaction.guildId || interaction.guild?.id || '');
+  const guildOrders = data[guildId] || {};
+  const order = guildOrders[String(orderId)];
+
+  if (!order || order.status !== 'pending') {
+    return { ok: false, message: 'Encomenda nao encontrada ou ja finalizada.' };
+  }
+
+  const updated = {
+    ...order,
+    status,
+    updated_at: now.toISOString(),
+    closed_at: now.toISOString(),
+    decided_by_id: interaction.user.id,
+    decided_by_name: interaction.user.tag || interaction.user.username || interaction.user.id,
+  };
+  if (rejectionReason) updated.rejection_reason = rejectionReason;
+
+  data[guildId][String(orderId)] = updated;
+  writeJsonFile(LOCAL_ORDERS_PATH, data);
+  return { ok: true, order: updated };
 }
 
 function createSlug(value) {
@@ -103,7 +285,7 @@ function buildOrderPanelPayload(interaction = null) {
     .setDescription([
       'Crie pedidos de municao e acompanhe o status em um canal automatico.',
       '',
-      'O canal sera aberto dentro da categoria configurada na dashboard.',
+      'O canal sera aberto na categoria configurada ou em uma categoria criada automaticamente.',
     ].join('\n'))
     .addFields(
       {
@@ -201,25 +383,8 @@ function buildRejectModal(orderId) {
 }
 
 async function createOrderFromInteraction(interaction, input) {
-  const settingsCollection = getCollection('order_settings');
-  const orders = getCollection('orders');
-  const logs = getCollection('order_logs');
-  if (!settingsCollection || !orders || !logs) {
-    return { ok: false, message: 'MongoDB nao esta conectado. Nao foi possivel criar a encomenda.' };
-  }
-
   const guild = interaction.guild;
   if (!guild) return { ok: false, message: 'Use este comando dentro de um servidor.' };
-
-  const settings = await settingsCollection.findOne({ guild_id: guild.id });
-  if (!settings?.order_category_id) {
-    return { ok: false, message: 'Configure a categoria das encomendas na dashboard antes de criar pedidos.' };
-  }
-
-  const category = await guild.channels.fetch(settings.order_category_id).catch(() => null);
-  if (!category || category.type !== ChannelType.GuildCategory) {
-    return { ok: false, message: 'A categoria configurada nao existe mais no servidor. Escolha outra na dashboard.' };
-  }
 
   const familyName = String(input.familyName || '').trim().slice(0, 80);
   const ammoName = String(input.ammoName || '').trim().slice(0, 80);
@@ -232,6 +397,10 @@ async function createOrderFromInteraction(interaction, input) {
   if (!quantity) return { ok: false, message: 'Informe uma quantidade maior que zero.' };
   if (unitPrice === null) return { ok: false, message: 'Informe um valor unitario valido.' };
   if (discountPercent === null || discountPercent > 100) return { ok: false, message: 'Informe um desconto entre 0 e 100.' };
+
+  const categoryResult = await ensureOrderCategory(guild);
+  if (!categoryResult.ok) return categoryResult;
+  const category = categoryResult.category;
 
   const orderId = new mongoose.Types.ObjectId();
   const familySlug = createSlug(familyName);
@@ -305,8 +474,17 @@ async function createOrderFromInteraction(interaction, input) {
   });
 
   doc.order_message_id = message.id;
-  await orders.insertOne(doc);
-  await logs.insertOne({
+  const saved = await insertOrderDoc(doc)
+    .then(() => true)
+    .catch(() => false);
+  if (!saved) {
+    return {
+      ok: false,
+      message: `Canal criado em <#${channel.id}>, mas nao consegui salvar a encomenda. Verifique permissao de escrita ou MongoDB.`,
+    };
+  }
+
+  await insertOrderLog({
     guild_id: guild.id,
     order_id: String(orderId),
     action: 'created',
@@ -322,10 +500,6 @@ async function createOrderFromInteraction(interaction, input) {
 
 async function updateOrderStatus(orderId, status, interaction, rejectionReason = null) {
   const orders = getCollection('orders');
-  const logs = getCollection('order_logs');
-  if (!orders || !logs) {
-    return { ok: false, message: 'MongoDB nao esta conectado. Nao foi possivel atualizar a encomenda.' };
-  }
 
   const now = new Date();
   const id = new mongoose.Types.ObjectId(orderId);
@@ -338,18 +512,34 @@ async function updateOrderStatus(orderId, status, interaction, rejectionReason =
   };
   if (rejectionReason) update.rejection_reason = rejectionReason;
 
-  const result = await orders.findOneAndUpdate(
-    { _id: id, status: 'pending' },
-    { $set: update },
-    { returnDocument: 'after' }
-  );
+  if (orders) {
+    const result = await orders.findOneAndUpdate(
+      { _id: id, status: 'pending' },
+      { $set: update },
+      { returnDocument: 'after' }
+    ).catch(() => null);
 
-  if (!result) {
-    return { ok: false, message: 'Encomenda nao encontrada ou ja finalizada.' };
+    if (result) {
+      await insertOrderLog({
+        guild_id: result.guild_id,
+        order_id: orderId,
+        action: status,
+        actor_id: interaction.user.id,
+        actor_name: interaction.user.tag || interaction.user.username || interaction.user.id,
+        reason: rejectionReason,
+        channel_id: interaction.channelId,
+        created_at: now,
+      }).catch(() => null);
+
+      return { ok: true, order: result };
+    }
   }
 
-  await logs.insertOne({
-    guild_id: result.guild_id,
+  const localResult = updateLocalOrderDoc(orderId, status, interaction, rejectionReason, now);
+  if (!localResult.ok) return localResult;
+
+  await insertOrderLog({
+    guild_id: localResult.order.guild_id,
     order_id: orderId,
     action: status,
     actor_id: interaction.user.id,
@@ -359,7 +549,7 @@ async function updateOrderStatus(orderId, status, interaction, rejectionReason =
     created_at: now,
   }).catch(() => null);
 
-  return { ok: true, order: result };
+  return localResult;
 }
 
 async function closeOrderPanel(interaction, order, status) {

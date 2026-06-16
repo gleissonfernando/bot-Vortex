@@ -4,7 +4,12 @@ const { logger } = require('../utils/logger');
 const { logMemberJoin } = require('../utils/guildLogger');
 const { sendStaffLog } = require('../utils/notifications');
 const { getUserProfile } = require('../utils/profileManager');
-const { applyApprovedHierarchy, applyPendingHierarchy, getVortexAutoRoles } = require('../utils/vortexHierarchy');
+const {
+    applyApprovedHierarchy,
+    applyPendingHierarchy,
+    getVortexAutoRoles,
+    isVortexAutoRoleSyncEnabled,
+} = require('../utils/vortexHierarchy');
 const { memberHasFactionHierarchyRole, updateFactionHierarchyPanel } = require('../utils/factionHierarchy');
 const { isMaintenanceMode } = require('../utils/maintenanceMode');
 
@@ -17,10 +22,15 @@ module.exports = {
             const guild = member.guild;
             const client = guild.client;
             const existingProfile = getUserProfile(guild.id, member.id);
+            const autoRoleSyncEnabled = isVortexAutoRoleSyncEnabled();
             let hierarchyText = '';
 
             try {
-                if (existingProfile) {
+                if (!autoRoleSyncEnabled) {
+                    hierarchyText = existingProfile
+                        ? 'cadastro aprovado encontrado; sincronizacao automatica de cargos desativada.'
+                        : 'sincronizacao automatica de cargos desativada; nenhum cargo pendente aplicado.';
+                } else if (existingProfile) {
                     const result = await applyApprovedHierarchy(member, 'Hierarquia Vortex: membro entrou com perfil aprovado');
                     const added = result.addedApproved.added.map((roleId) => `<@&${roleId}>`).join(' ') || '`Ja estava sincronizado`';
                     const failed = result.addedApproved.failed.map((roleId) => `<@&${roleId}>`).join(' ');
@@ -80,7 +90,9 @@ module.exports = {
                         '',
                         existingProfile ? '**Seu cadastro aprovado foi encontrado:**' : '**Para liberar seu acesso:**',
                         existingProfile
-                            ? 'Seus cargos serao sincronizados automaticamente pelo sistema.'
+                            ? (autoRoleSyncEnabled
+                                ? 'Seus cargos serao sincronizados automaticamente pelo sistema.'
+                                : 'A sincronizacao automatica de cargos esta desativada; a equipe ajusta cargos quando necessario.')
                             : 'Use `/set` em um canal autorizado e preencha as informacoes solicitadas.',
                         '',
                         '**Depois da aprovacao:**',
