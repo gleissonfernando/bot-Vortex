@@ -131,7 +131,7 @@ const antiAbuseProtections = [
 
 const toolMeta: Record<string, { icon: LucideIcon; keys: string[] }> = {
   stats: { icon: Gauge, keys: ['MAINTENANCE_MODE', 'PANEL_PRIVATE_MODE'] },
-  roles: { icon: Shield, keys: ['VORTEX_ROLE_LEVELS', 'VORTEX_AUTO_ROLES'] },
+  roles: { icon: Shield, keys: ['VORTEX_ACCESS_ROLES', 'VORTEX_AUTO_ROLES'] },
   absence: { icon: Clock3, keys: ['ABSENCE_'] },
   commands: { icon: Lock, keys: ['COMMAND_ROLE_PERMISSIONS', 'COMMAND_DISABLED_COMMANDS'] },
   profile: { icon: Users, keys: ['PROFILE_'] },
@@ -150,7 +150,7 @@ const keyLabels: Record<string, string> = {
   PANEL_PRIVATE_MODE: 'painel privado',
   COMMAND_ROLE_PERMISSIONS: 'permissoes',
   COMMAND_DISABLED_COMMANDS: 'comandos desativados',
-  VORTEX_ROLE_LEVELS: 'cargos vortex',
+  VORTEX_ACCESS_ROLES: 'cargos vortex',
   VORTEX_AUTO_ROLES: 'cargos automaticos',
   ANTI_ABUSE: 'anti-abuso',
   PANEL_VISUALS: 'visual',
@@ -666,9 +666,9 @@ export function BotVortexDashboard({ initialSection = 'stats' }: BotVortexDashbo
               <ToolPanel title="Cargos Vortex" description="Niveis de acesso e cargos automaticos aplicados pelo bot." icon={Shield}>
                 <ControlGroup title="Niveis de permissao" description="Estes cargos viram Admin, Medio ou Membro Vortex no painel do bot.">
                   <div className="grid gap-4 md:grid-cols-3">
-                    <MultiSelect label="Admin Vortex" value={config.VORTEX_ROLE_LEVELS?.admin || []} options={roles} onChange={(value) => updateNested('VORTEX_ROLE_LEVELS', 'admin', value)} />
-                    <MultiSelect label="Medio Vortex" value={config.VORTEX_ROLE_LEVELS?.medio || []} options={roles} onChange={(value) => updateNested('VORTEX_ROLE_LEVELS', 'medio', value)} />
-                    <MultiSelect label="Membro Vortex" value={config.VORTEX_ROLE_LEVELS?.membro || []} options={roles} onChange={(value) => updateNested('VORTEX_ROLE_LEVELS', 'membro', value)} />
+                    <MultiSelect label="Admin Vortex" value={config.VORTEX_ACCESS_ROLES?.admin || []} options={roles} onChange={(value) => updateNested('VORTEX_ACCESS_ROLES', 'admin', value)} />
+                    <MultiSelect label="Medio Vortex" value={config.VORTEX_ACCESS_ROLES?.medio || []} options={roles} onChange={(value) => updateNested('VORTEX_ACCESS_ROLES', 'medio', value)} />
+                    <MultiSelect label="Membro Vortex" value={config.VORTEX_ACCESS_ROLES?.membro || []} options={roles} onChange={(value) => updateNested('VORTEX_ACCESS_ROLES', 'membro', value)} />
                   </div>
                 </ControlGroup>
                 <ControlGroup title="Cargos automaticos" description="Aplicados em pendencia ou aprovacao de cadastro.">

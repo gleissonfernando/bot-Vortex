@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
-const { hasAnyVortexRole, hasVortexLevel, hasCommandRole } = require('../../utils/permissions');
+const { hasAnyVortexRole, hasVortexAccess, hasCommandRole } = require('../../utils/permissions');
 const { sendVortexLog } = require('../../utils/notifications');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
 const { buildThemedPanelPayload } = require('../../utils/panelTheme');
@@ -36,7 +36,7 @@ const selections = new Map();
 
 function canUseAvisos(interaction) {
   return hasAnyVortexRole(interaction.member)
-    || hasVortexLevel(interaction.member, ['admin', 'medio'])
+    || hasVortexAccess(interaction.member, ['admin', 'medio'])
     || hasCommandRole(interaction.member, 'avisos');
 }
 

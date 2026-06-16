@@ -9,7 +9,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { handleBauButton, handleBauModal } = require('../utils/bauManager');
 const { handleOrderButton, handleOrderModal } = require('../utils/orderManager');
-const { hasAnyVortexRole, hasVortexLevel, hasPanelAccess } = require('../utils/permissions');
+const { hasAnyVortexRole, hasVortexAccess, hasPanelAccess } = require('../utils/permissions');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
@@ -27,7 +27,7 @@ function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } ca
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
 function hasStaffPermission(member) {
-    return hasVortexLevel(member, ['admin', 'medio']);
+    return hasVortexAccess(member, ['admin', 'medio']);
 }
 
 function hasMasterPermission(member) {
@@ -227,7 +227,7 @@ module.exports = {
 
                     if (interaction.commandName === 'perfil') {
                         const target = interaction.options.getUser('usuario') || interaction.user;
-                        if (target.id !== interaction.user.id && !hasVortexLevel(interaction.member, ['admin'])) {
+                        if (target.id !== interaction.user.id && !hasVortexAccess(interaction.member, ['admin'])) {
                             return safeReply(interaction, {
                                 content: '❌ Você só pode consultar ou atualizar o seu próprio perfil.',
                                 ephemeral: true,

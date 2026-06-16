@@ -44,15 +44,15 @@ function ensureVortexHierarchyConfig(config = readPanelConfig()) {
   config.VORTEX_AUTO_ROLES.pending = normalizeRoleIds(config.VORTEX_AUTO_ROLES.pending);
   config.VORTEX_AUTO_ROLES.approved = normalizeRoleIds(config.VORTEX_AUTO_ROLES.approved);
 
-  if (!config.VORTEX_ROLE_LEVELS || typeof config.VORTEX_ROLE_LEVELS !== 'object') {
-    config.VORTEX_ROLE_LEVELS = { admin: [], medio: [], membro: [] };
+  if (!config.VORTEX_ACCESS_ROLES || typeof config.VORTEX_ACCESS_ROLES !== 'object') {
+    config.VORTEX_ACCESS_ROLES = { admin: [], medio: [], membro: [] };
   }
   for (const level of ['admin', 'medio', 'membro']) {
-    config.VORTEX_ROLE_LEVELS[level] = normalizeRoleIds(config.VORTEX_ROLE_LEVELS[level]);
+    config.VORTEX_ACCESS_ROLES[level] = normalizeRoleIds(config.VORTEX_ACCESS_ROLES[level]);
   }
 
-  config.VORTEX_ROLE_LEVELS.membro = normalizeRoleIds([
-    ...config.VORTEX_ROLE_LEVELS.membro,
+  config.VORTEX_ACCESS_ROLES.membro = normalizeRoleIds([
+    ...config.VORTEX_ACCESS_ROLES.membro,
     ...config.VORTEX_AUTO_ROLES.approved,
   ]);
 

@@ -327,9 +327,16 @@ function ensureStandaloneWebAssets() {
 const shouldStartDiscordBot = envFlag('START_DISCORD_BOT', true);
 const shouldStartFrequencyApi = envFlag('START_FREQUENCY_API', true);
 const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', true);
+const requireBuiltAssets = envFlag('REQUIRE_BUILT_ASSETS', false);
 
 let web = null;
 let proxyServer = null;
+
+function exitMissingBuiltAsset(label, relativePath) {
+  console.error(`[shardcloud] ${label} nao encontrado: ${relativePath}`);
+  console.error('[shardcloud] Rode npm run deploy:check antes de subir ou envie o pacote gerado pelo workflow do GitHub.');
+  process.exit(1);
+}
 
 async function main() {
   if (shouldStartFrequencyWeb) {
@@ -415,6 +422,8 @@ async function main() {
             fatal: false,
             restart: true
           });
+        } else if (requireBuiltAssets) {
+          exitMissingBuiltAsset('Frequency API dist', path.relative(rootDir, apiDist));
         } else {
           const apiArgs = fs.existsSync(apiSource)
             ? ['--prefix', 'frequency-panel', '--workspace', 'apps/api', 'exec', 'tsx', 'src/index.ts']
@@ -448,6 +457,10 @@ async function main() {
   }
 
   if (shouldStartFrequencyWeb) {
+    if (requireBuiltAssets && !fs.existsSync(standaloneServer)) {
+      exitMissingBuiltAsset('Next standalone server', path.relative(rootDir, standaloneServer));
+    }
+
     ensureStandaloneWebAssets();
 
     if (await isPortBusy(webInternalPort)) {

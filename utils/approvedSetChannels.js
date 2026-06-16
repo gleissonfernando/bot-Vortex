@@ -79,7 +79,7 @@ function buildApprovedSetChannelPayload(profile = {}) {
 function getManagementRoleIds() {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8') || '{}');
-    const levels = config.VORTEX_ROLE_LEVELS || {};
+    const levels = config.VORTEX_ACCESS_ROLES || {};
     return [
       STAFF_ROLE_ID,
       ...(Array.isArray(levels.admin) ? levels.admin : []),

@@ -10,7 +10,7 @@ const {
 } = require('discord.js');
 const { buildThemedPanelPayload } = require('./panelTheme');
 const { getUserProfile } = require('./profileManager');
-const { hasCommandRole, hasVortexLevel } = require('./permissions');
+const { hasCommandRole, hasVortexAccess } = require('./permissions');
 const { safeDeferReply, safeEdit, safeReply, safeShowModal } = require('./safeReply');
 const { logger } = require('./logger');
 
@@ -226,7 +226,7 @@ function buildBauPanelPayload(guildId, chestKey = 'membros') {
 }
 
 function hasBauManagerPermission(member) {
-  return hasVortexLevel(member, ['admin', 'medio']) || hasCommandRole(member, 'bau-membros') || hasCommandRole(member, 'bau');
+  return hasVortexAccess(member, ['admin', 'medio']) || hasCommandRole(member, 'bau-membros') || hasCommandRole(member, 'bau');
 }
 
 function getProfileName(profile) {

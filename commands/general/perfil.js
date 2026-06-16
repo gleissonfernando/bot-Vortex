@@ -3,12 +3,11 @@ const {
   getUserProfile,
   registerApprovedProfile,
   updateProfileLink,
-  updateProfileLevel,
   buildProfileEmbed,
   syncProfilesFromApprovedSetChannels,
 } = require('../../utils/profileManager');
 const { getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../../utils/approvedSetChannels');
-const { hasVortexLevel } = require('../../utils/permissions');
+const { hasVortexAccess } = require('../../utils/permissions');
 const { safeDeferReply, safeEdit } = require('../../utils/safeReply');
 
 function isMissingProfileResult(result) {
@@ -26,7 +25,6 @@ async function ensureProfileFromApprovedSet(guild, user, record) {
   return registerApprovedProfile(guild, member, {
     nomeGame: record.nomeGame || member.displayName || user.username,
     idGame: record.idGame || user.id,
-    nivelGame: record.nivelGame || null,
     callChannelId: record.channelId,
     approvedBy: record.createdBy || null,
   }).catch(() => null);
@@ -50,11 +48,6 @@ module.exports = {
       option
         .setName('foto')
         .setDescription('Upload direto da mídia do perfil')
-        .setRequired(false))
-    .addStringOption((option) =>
-      option
-        .setName('nivel')
-        .setDescription('Número do nível em game para atualizar')
         .setRequired(false)),
 
   async execute(interaction) {
@@ -67,7 +60,6 @@ module.exports = {
     const target = interaction.options.getUser('usuario') || interaction.user;
     const link = interaction.options.getString('link');
     const photo = interaction.options.getAttachment('foto');
-    const nivel = interaction.options.getString('nivel');
     const approvedSetChannelRecord = getApprovedSetChannelRecord(interaction.guild.id, interaction.channelId);
     const requesterApprovedRecord = getApprovedSetChannelRecordByUser(interaction.guild.id, interaction.user.id);
     const targetApprovedRecord = getApprovedSetChannelRecordByUser(interaction.guild.id, target.id);
@@ -76,7 +68,7 @@ module.exports = {
       interaction.user,
       requesterApprovedRecord || (approvedSetChannelRecord?.userId === interaction.user.id ? approvedSetChannelRecord : null)
     );
-    const canManageProfiles = hasVortexLevel(interaction.member, ['admin']);
+    const canManageProfiles = hasVortexAccess(interaction.member, ['admin']);
     const isApprovedSetChannelOwner = approvedSetChannelRecord?.userId === interaction.user.id;
 
     if (!requesterProfile && !isApprovedSetChannelOwner && !canManageProfiles) {
@@ -106,17 +98,6 @@ module.exports = {
         interaction.user.id,
         isVideoUpload ? 'video' : 'image'
       );
-      if (!result.ok) {
-        if (isMissingProfileResult(result)) {
-          return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });
-        }
-        return safeEdit(interaction, { content: `❌ ${result.message}` });
-      }
-    }
-
-    if (nivel) {
-      await ensureProfileFromApprovedSet(interaction.guild, target, targetApprovedRecord);
-      const result = await updateProfileLevel(interaction.guild, target, nivel, interaction.user.id);
       if (!result.ok) {
         if (isMissingProfileResult(result)) {
           return safeEdit(interaction, { content: '❌ Usuário não possui cadastro.' });

@@ -70,7 +70,7 @@ function formatDate(value) {
 
 function getAbsenceManagementRoleIds() {
   const conf = loadJSON(CONFIG_PATH, {});
-  const levels = conf.VORTEX_ROLE_LEVELS || {};
+  const levels = conf.VORTEX_ACCESS_ROLES || {};
   return [
     ...MASTER_ROLE_IDS,
     ...(Array.isArray(levels.admin) ? levels.admin : []),

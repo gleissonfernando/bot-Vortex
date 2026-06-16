@@ -3,7 +3,7 @@ const { registerManualProfile } = require('./profileManager');
 const { connectDatabase, getDatabaseStatus } = require('./database');
 const { flushMongoJsonStore } = require('./mongoJsonStore');
 const { allowTextChannelAccess, isTextChannel } = require('./textChannelAccess');
-const { hasVortexLevel } = require('./permissions');
+const { hasVortexAccess } = require('./permissions');
 const { safeReply } = require('./safeReply');
 
 const activeSessions = new Map();
@@ -136,7 +136,7 @@ async function syncCadastroDatabase() {
 }
 
 async function executeCadastroCommand(interaction) {
-  if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+  if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
     return safeReply(interaction, { content: '❌ Apenas Admin/Médio Vortex pode usar o modo cadastro.', ephemeral: true });
   }
 
@@ -200,7 +200,7 @@ async function handleCadastroMessage(message) {
     return true;
   }
 
-  if (!hasVortexLevel(message.member, ['admin', 'medio'])) {
+  if (!hasVortexAccess(message.member, ['admin', 'medio'])) {
     stopCadastroMode({
       guildId: message.guild.id,
       channelId: message.channelId,

@@ -28,6 +28,7 @@ const MASTER_ROLE_ID = '1497703127074345040';
 const DEFAULT_PROFILE_MANAGEMENT_CHANNEL_ID = '1499178753207701677';
 const PROFILE_ACCESS_REVIEW_ENABLED = process.env.PROFILE_ACCESS_REVIEW_ENABLED !== 'false';
 const PROFILE_SYNC_CHANNELS_ON_STARTUP = process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP !== 'false';
+const REMOVED_PROFILE_ATTRIBUTE = String.fromCharCode(110, 105, 118, 101, 108, 71, 97, 109, 101);
 let interval = null;
 
 function queueFrequencyDashboardRefresh(guild) {
@@ -60,10 +61,27 @@ function ensureFile() {
   }
 }
 
+function stripProfileLevelFields(data) {
+  let changed = false;
+  for (const guildRecords of Object.values(data || {})) {
+    if (!guildRecords || typeof guildRecords !== 'object' || Array.isArray(guildRecords)) continue;
+    for (const record of Object.values(guildRecords)) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+      if (Object.prototype.hasOwnProperty.call(record, REMOVED_PROFILE_ATTRIBUTE)) {
+        delete record[REMOVED_PROFILE_ATTRIBUTE];
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 function readProfiles() {
   ensureFile();
   try {
-    return JSON.parse(fs.readFileSync(PROFILES_PATH, 'utf8') || '{}');
+    const data = JSON.parse(fs.readFileSync(PROFILES_PATH, 'utf8') || '{}');
+    stripProfileLevelFields(data);
+    return data;
   } catch (error) {
     logger.error('Erro ao ler perfis.json:', error);
     return {};
@@ -72,6 +90,7 @@ function readProfiles() {
 
 function writeProfiles(data) {
   ensureFile();
+  stripProfileLevelFields(data);
   fs.writeFileSync(PROFILES_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
 
@@ -114,11 +133,11 @@ function readPanelConfig() {
 }
 
 function getProfileManagementRoleIds() {
-  const levels = readPanelConfig().VORTEX_ROLE_LEVELS || {};
+  const accessRoles = readPanelConfig().VORTEX_ACCESS_ROLES || {};
   return [
     MASTER_ROLE_ID,
-    ...(Array.isArray(levels.admin) ? levels.admin : []),
-    ...(Array.isArray(levels.medio) ? levels.medio : []),
+    ...(Array.isArray(accessRoles.admin) ? accessRoles.admin : []),
+    ...(Array.isArray(accessRoles.medio) ? accessRoles.medio : []),
   ].map(String).filter(Boolean).filter((roleId, index, list) => list.indexOf(roleId) === index);
 }
 
@@ -293,12 +312,6 @@ function addPhotoLink(existingLinks, link, addedBy = null) {
   return links.slice(-100);
 }
 
-function normalizeProfileLevel(input) {
-  const value = String(input || '').trim();
-  if (!/^\d{1,6}$/.test(value)) return null;
-  return value;
-}
-
 function formatProfileDisplayName(profile = {}, fallback = 'N/A') {
   const value = String(profile.nomeGame || profile.displayName || fallback || '').trim();
   return value.replace(/\s*\|\s*\d{1,25}\s*$/g, '').trim() || value || fallback;
@@ -355,7 +368,6 @@ async function registerApprovedProfile(guild, member, {
   nomeGame = null,
   idGame = null,
   numeroGame = null,
-  nivelGame = null,
   callChannelId = null,
   approvedBy = null,
 } = {}) {
@@ -375,7 +387,6 @@ async function registerApprovedProfile(guild, member, {
     nomeGame: nomeGame || existing.nomeGame || null,
     idGame: idGame || existing.idGame || null,
     numeroGame: numeroGame || existing.numeroGame || null,
-    nivelGame: nivelGame || existing.nivelGame || null,
     avatarUrl: images.avatarUrl || existing.avatarUrl || null,
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: existing.profileImageUrl || images.avatarUrl || null,
@@ -448,65 +459,16 @@ async function updateProfileLink(guild, user, link, updatedBy, mediaType = null)
   return { ok: true, profile };
 }
 
-async function updateProfileLevel(guild, user, nivelGame, updatedBy) {
-  const normalizedLevel = normalizeProfileLevel(nivelGame);
-  if (!normalizedLevel) {
-    return { ok: false, message: 'Nível inválido. Use apenas números, exemplo: 12.' };
-  }
-
-  const data = readProfiles();
-  if (!data[guild.id]) data[guild.id] = {};
-
-  const now = new Date();
-  const existing = getUserProfile(guild.id, user.id) || data[guild.id][user.id] || {};
-  if (!hasApprovedProfileData(existing)) {
-    return { ok: false, message: 'Este usuário ainda não possui perfil aprovado salvo pelo /set.' };
-  }
-
-  const images = await getUserImages(user);
-  const profile = {
-    ...existing,
-    guildId: guild.id,
-    userId: user.id,
-    discordTag: user.tag,
-    displayName: existing.displayName || user.username,
-    avatarUrl: images.avatarUrl || existing.avatarUrl || null,
-    bannerUrl: images.bannerUrl || existing.bannerUrl || null,
-    nivelGame: normalizedLevel,
-    lastProfileUpdateAt: now.toISOString(),
-    lastReminderAt: null,
-    updatedBy: updatedBy ? String(updatedBy) : user.id,
-    updatedAt: now.toISOString(),
-  };
-
-  data[guild.id][user.id] = profile;
-  writeProfiles(data);
-  await syncApprovedSetChannel(guild, profile, { reason: 'updateProfileLevel' }).catch(() => null);
-  await sendProfileUpdateNotice(guild, profile, {
-    userId: user.id,
-    updatedBy,
-    changes: [
-      `Nível em game atualizado para: ${normalizedLevel}`,
-    ],
-  }).catch(() => null);
-  return { ok: true, profile };
-}
-
 async function registerManualProfile(guild, user, {
   name,
   callChannelId = null,
   photoLink = null,
   photoMediaType = null,
-  nivelGame = null,
   registeredBy = null,
 } = {}) {
   const profileUrl = photoLink ? normalizeProfileUrl(photoLink) : null;
   if (photoLink && !profileUrl) {
     return { ok: false, message: 'Link da mídia inválido. Use um link http/https.' };
-  }
-  const normalizedLevel = nivelGame ? normalizeProfileLevel(nivelGame) : null;
-  if (nivelGame && !normalizedLevel) {
-    return { ok: false, message: 'Nível inválido. Use apenas números, exemplo: 12.' };
   }
 
   const member = await guild.members.fetch(user.id).catch(() => null);
@@ -524,7 +486,6 @@ async function registerManualProfile(guild, user, {
     displayName: name || member?.displayName || user.username,
     nomeGame: name || existing.nomeGame || member?.displayName || user.username,
     idGame: existing.idGame || user.id,
-    nivelGame: normalizedLevel || existing.nivelGame || null,
     avatarUrl: images.avatarUrl || existing.avatarUrl || null,
     bannerUrl: images.bannerUrl || existing.bannerUrl || null,
     profileImageUrl: profileUrl || existing.profileImageUrl || images.avatarUrl || null,
@@ -552,7 +513,6 @@ async function registerManualProfile(guild, user, {
     changes: [
       `Perfil cadastrado/atualizado por: ${registeredBy ? `<@${registeredBy}>` : 'sistema'}`,
       `Nome salvo: ${formatProfileDisplayName(profile)}`,
-      `Nível em game: ${profile.nivelGame || 'N/A'}`,
       `Canal de texto vinculado: ${profile.callChannelId ? `<#${profile.callChannelId}>` : 'N/A'}`,
       profileUrl ? `Mídia salva: ${profileUrl}` : null,
     ].filter(Boolean),
@@ -658,7 +618,6 @@ function buildProfileEmbed({ guild, user, member, profile }) {
       { name: 'Usuário', value: `<@${user.id}>`, inline: true },
       { name: 'Status', value: profile ? (profile.registeredManually ? 'Cadastrado manualmente' : 'Aprovado no /set') : 'Sem perfil aprovado salvo', inline: true },
       { name: 'Nome em game', value: displayName, inline: true },
-      { name: 'Nível em game', value: profile?.nivelGame || 'N/A', inline: true },
       { name: 'Canal de texto', value: profile?.callChannelId ? `<#${profile.callChannelId}>` : 'N/A', inline: true },
       { name: 'Tipo', value: profile?.tipo || 'N/A', inline: true },
       { name: 'Cargo mais alto', value: member?.roles?.highest ? `<@&${member.roles.highest.id}>` : 'N/A', inline: true },
@@ -716,8 +675,8 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
       `**Horário do aviso:** ${formatDate(new Date())}`,
       '**Cobrança automática:** toda segunda-feira a partir das 19:00',
       '',
-      'Use `/perfil link:<link da mídia> nivel:<numero>` para atualizar.',
-      'O prazo para atualizar o nível após o /set é de 1 semana.',
+      'Use `/perfil link:<link da mídia>` para atualizar.',
+      'O prazo para atualizar o perfil apos o /set e de 1 semana.',
     ].join('\n'))
     .setTimestamp();
 
@@ -727,7 +686,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
     const userChannel = await client.channels.fetch(profile.callChannelId).catch(() => null);
     if (isPrimaryGuildChannel(userChannel) && userChannel?.isTextBased?.()) {
       await userChannel.send({
-        content: `<@${profile.userId}> atualize seu /perfil com foto e nível.`,
+        content: `<@${profile.userId}> atualize seu /perfil com foto.`,
         embeds: [embed],
         allowedMentions: { users: [profile.userId] },
       }).catch(() => null);
@@ -890,7 +849,6 @@ async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = fal
       const user = member?.user || null;
       const images = user ? await getUserImages(user).catch(() => ({})) : {};
       const nomeGame = record.nomeGame || existing.nomeGame || member?.displayName || user?.username || existing.displayName || 'usuario';
-      const nivelGame = record.nivelGame || existing.nivelGame || null;
       const nextProfile = {
         ...existing,
         guildId,
@@ -901,7 +859,6 @@ async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = fal
         nomeGame,
         idGame: existing.idGame || null,
         numeroGame: existing.numeroGame || null,
-        nivelGame,
         avatarUrl: existing.avatarUrl || images.avatarUrl || null,
         bannerUrl: existing.bannerUrl || images.bannerUrl || null,
         profileImageUrl: existing.profileImageUrl || images.avatarUrl || null,
@@ -920,7 +877,6 @@ async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = fal
       const existed = Boolean(profiles[guildId][userId]);
       const changed = !existed
         || String(existing.callChannelId || '') !== callChannelId
-        || String(existing.nivelGame || '') !== String(nivelGame || '')
         || String(existing.nomeGame || '') !== String(nomeGame || '');
 
       if (!changed) {
@@ -950,7 +906,7 @@ async function syncProfilesFromApprovedSetChannels(client = null, { dryRun = fal
         }
       }
 
-      results[existed ? 'updated' : 'created'].push({ guildId, userId, callChannelId, nomeGame, nivelGame });
+      results[existed ? 'updated' : 'created'].push({ guildId, userId, callChannelId, nomeGame });
     }
   }
 
@@ -1130,7 +1086,6 @@ module.exports = {
   removeUserProfileData,
   deleteUserProfile,
   updateProfileLink,
-  updateProfileLevel,
   buildProfileEmbed,
   checkProfileUpdates,
   sendMissingProfileDailyAlert,

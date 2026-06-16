@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node shardcloud-start.js",
     "start:bot": "node index.js",
+    "deploy:build": "npm --prefix frequency-panel run build",
+    "deploy:check": "node scripts/shardcloud-preflight.cjs",
+    "deploy:check:fast": "node scripts/shardcloud-preflight.cjs --skip-build",
+    "deploy:check:env": "node scripts/shardcloud-preflight.cjs --strict-env --skip-build",
     "postinstall": "npm --prefix frequency-panel install --include=dev --ignore-scripts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

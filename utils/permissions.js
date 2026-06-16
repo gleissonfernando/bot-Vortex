@@ -29,7 +29,7 @@ function getPanelConfig() {
 
 function getVortexRoleIds(levels = []) {
     const panelConfig = getPanelConfig();
-    const configured = panelConfig.VORTEX_ROLE_LEVELS || {};
+    const configured = panelConfig.VORTEX_ACCESS_ROLES || {};
     return levels.flatMap(level => normalizeIds(configured[level] || []));
 }
 
@@ -47,7 +47,7 @@ function hasAnyVortexRole(member) {
     return memberHasAnyRole(member, getAllVortexRoleIds());
 }
 
-function hasVortexLevel(member, levels = []) {
+function hasVortexAccess(member, levels = []) {
     if (!member?.roles?.cache) return false;
     if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     if (!Array.isArray(levels) || levels.length === 0) return false;
@@ -70,18 +70,18 @@ function hasPanelAccess(member) {
         return hasAnyVortexRole(member);
     }
 
-    if (hasVortexLevel(member, ['admin', 'medio'])) return true;
+    if (hasVortexAccess(member, ['admin', 'medio'])) return true;
     return hasCommandRole(member, 'painel');
 }
 
 function isRegisteredUser(interaction) {
     if (!interaction || !interaction.user) return false;
-    return hasAnyVortexRole(interaction.member) || hasVortexLevel(interaction.member, []);
+    return hasAnyVortexRole(interaction.member) || hasVortexAccess(interaction.member, []);
 }
 
 function isGerencia(interaction) {
     if (!interaction || !interaction.user) return false;
-    return hasVortexLevel(interaction.member, ['admin', 'medio']);
+    return hasVortexAccess(interaction.member, ['admin', 'medio']);
 }
 
 async function denyNotRegistered(interaction) {
@@ -95,7 +95,7 @@ module.exports = {
     isRegisteredUser,
     isGerencia,
     hasAnyVortexRole,
-    hasVortexLevel,
+    hasVortexAccess,
     hasCommandRole,
     hasPanelAccess,
     isPanelPrivateModeEnabled,

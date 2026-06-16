@@ -8,7 +8,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { hasVortexLevel } = require('../../utils/permissions');
+const { hasVortexAccess } = require('../../utils/permissions');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../../utils/safeReply');
 const {
   createLiveAlert,
@@ -20,7 +20,7 @@ const {
 } = require('../../utils/liveAlertManager');
 
 function canManage(interaction) {
-  return hasVortexLevel(interaction.member, ['admin']);
+  return hasVortexAccess(interaction.member, ['admin']);
 }
 
 function componentsV2Panel() {

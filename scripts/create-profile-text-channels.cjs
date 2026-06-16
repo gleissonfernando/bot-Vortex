@@ -88,7 +88,7 @@ function buildChannelPayload(profile = {}) {
 
 function getManagementRoleIds() {
   const config = readJson(CONFIG_PATH, {});
-  const levels = config.VORTEX_ROLE_LEVELS || {};
+  const levels = config.VORTEX_ACCESS_ROLES || {};
   return [
     STAFF_ROLE_ID,
     ...(Array.isArray(levels.admin) ? levels.admin : []),

@@ -38,7 +38,7 @@ const {
   addBillingExemptUserId,
   deleteUserProfile,
 } = require('../../utils/profileManager');
-const { hasAnyVortexRole, hasVortexLevel, hasCommandRole, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
+const { hasAnyVortexRole, hasVortexAccess, hasCommandRole, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
   FACTION_HIERARCHY_ROLES,
@@ -187,12 +187,12 @@ function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } ca
 function saveJSON(p, d) { try { fs.writeFileSync(p, JSON.stringify(d, null, 2)); } catch {} }
 
 function hasStaffPermission(member) {
-    return hasVortexLevel(member, ['admin', 'medio']);
+    return hasVortexAccess(member, ['admin', 'medio']);
 }
 
 function canRegisterSiteAccess(member) {
     if (hasCommandRole(member, 'cadastrar-site')) return true;
-    if (hasVortexLevel(member, ['admin', 'medio'])) return true;
+    if (hasVortexAccess(member, ['admin', 'medio'])) return true;
     const highRoleNames = ['dono', 'diretor', 'lider geral', 'gerente', 'administrador', 'admin'];
     const names = Array.from(member?.roles?.cache?.values?.() || [])
         .map((role) => String(role.name || '').trim().toLowerCase());
@@ -224,13 +224,13 @@ function canAccessPanelTab(member, tab) {
 }
 
 function ensureRoleLevels(conf) {
-    if (!conf.VORTEX_ROLE_LEVELS || typeof conf.VORTEX_ROLE_LEVELS !== 'object') {
-        conf.VORTEX_ROLE_LEVELS = { admin: [], medio: [], membro: [] };
+    if (!conf.VORTEX_ACCESS_ROLES || typeof conf.VORTEX_ACCESS_ROLES !== 'object') {
+        conf.VORTEX_ACCESS_ROLES = { admin: [], medio: [], membro: [] };
     }
     for (const level of ['admin', 'medio', 'membro']) {
-        if (!Array.isArray(conf.VORTEX_ROLE_LEVELS[level])) conf.VORTEX_ROLE_LEVELS[level] = [];
+        if (!Array.isArray(conf.VORTEX_ACCESS_ROLES[level])) conf.VORTEX_ACCESS_ROLES[level] = [];
     }
-    return conf.VORTEX_ROLE_LEVELS;
+    return conf.VORTEX_ACCESS_ROLES;
 }
 
 function ensureCommandPermissions(conf) {
@@ -818,7 +818,7 @@ module.exports = {
     }
 
     if (customId === 'visual_set_color' || customId === 'visual_set_banner') {
-      if (!hasVortexLevel(interaction.member, ['admin'])) {
+      if (!hasVortexAccess(interaction.member, ['admin'])) {
         return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o visual dos painéis.', ephemeral: true });
       }
 
@@ -869,7 +869,7 @@ module.exports = {
     }
 
     if (customId === 'visual_clear_target') {
-      if (!hasVortexLevel(interaction.member, ['admin'])) {
+      if (!hasVortexAccess(interaction.member, ['admin'])) {
         return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode limpar o visual dos painéis.', ephemeral: true });
       }
 
@@ -1002,7 +1002,7 @@ module.exports = {
     }
 
     if (customId === 'toggle_panel_private_mode') {
-      if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+      if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
         return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
       }
       conf.PANEL_PRIVATE_MODE = !conf.PANEL_PRIVATE_MODE;
@@ -1020,7 +1020,7 @@ module.exports = {
     }
 
     if (customId === 'toggle_vortex_role_remove_mode') {
-      if (!hasVortexLevel(interaction.member, ['admin'])) {
+      if (!hasVortexAccess(interaction.member, ['admin'])) {
         return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
       }
 
@@ -1032,7 +1032,7 @@ module.exports = {
     }
 
     if (customId === 'set_vortex_auto_pending' || customId === 'set_vortex_auto_approved') {
-      if (!hasVortexLevel(interaction.member, ['admin'])) {
+      if (!hasVortexAccess(interaction.member, ['admin'])) {
         return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar cargos automáticos.', ephemeral: true });
       }
 
@@ -1057,7 +1057,7 @@ module.exports = {
     }
 
     if (customId === 'publish_fac_hierarchy_panel' || customId === 'refresh_fac_hierarchy_panel') {
-      if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+      if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
         return safeReply(interaction, { content: '❌ Seu nível não libera o painel de hierarquia da fac.', ephemeral: true });
       }
 
@@ -1136,7 +1136,7 @@ module.exports = {
     }
 
     if (customId === 'open_adjust_call_v2') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1144,7 +1144,7 @@ module.exports = {
     }
 
     if (customId === 'adjust_call_select_by_id') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1152,7 +1152,7 @@ module.exports = {
     }
 
     if (customId === 'adjust_call_sync') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1161,7 +1161,7 @@ module.exports = {
     }
 
     if (customId === 'adjust_call_activate' || customId === 'adjust_call_deactivate') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1221,7 +1221,7 @@ module.exports = {
     }
 
     if (customId === 'toggle_mirror_message_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera configuração de mensagens.', ephemeral: true });
         }
         const selectedChannelId = mirrorMessageSelections.get(getSelectionKey(interaction));
@@ -1502,7 +1502,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_mirror_message_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera configuração de mensagens.', ephemeral: true });
         }
         mirrorMessageSelections.set(getSelectionKey(interaction), String(interaction.values[0]));
@@ -1510,7 +1510,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_adjust_call_id') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1526,7 +1526,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_adjust_call_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1541,7 +1541,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_visual_target') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) {
+        if (!hasVortexAccess(interaction.member, ['admin'])) {
             return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode configurar o visual dos painéis.', ephemeral: true });
         }
 
@@ -1555,7 +1555,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_notice_mention_role') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera configuração de avisos.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera configuração de avisos.', ephemeral: true });
         data.NOTICE_MENTION_ROLE_ID = String(interaction.values[0]);
         saveJSON(CONFIG_PATH, data);
 
@@ -1571,7 +1571,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_fac_hierarchy_channel') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
         const hierarchy = setFactionHierarchyChannelId(interaction.values[0]);
 
         sendVortexLog(interaction.client, {
@@ -1586,7 +1586,7 @@ module.exports = {
     }
 
     if (interaction.customId.startsWith('select_fac_hierarchy_role_')) {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
         const roleKey = interaction.customId.replace('select_fac_hierarchy_role_', '');
         const role = getFactionHierarchyRole(roleKey);
         if (!role) return safeReply(interaction, { content: '❌ Cargo da hierarquia inválido.', ephemeral: true });
@@ -1610,7 +1610,7 @@ module.exports = {
     }
 
     if (interaction.customId.startsWith('select_vortex_role_')) {
-        if (!hasVortexLevel(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin'])) return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar Cargos Vortex.', ephemeral: true });
         const level = interaction.customId.replace('select_vortex_role_', '');
         const levels = ensureRoleLevels(data);
         const mode = getVortexRoleMode(interaction);
@@ -1637,19 +1637,19 @@ module.exports = {
     }
 
     if (interaction.customId === 'select_command_permission_target') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
         commandPermissionSelections.set(getSelectionKey(interaction), interaction.values[0]);
         return renderDashboard(interaction, 'tab_commands', true);
     }
 
     if (interaction.customId === 'select_fac_hierarchy_target') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera essa configuração.', ephemeral: true });
         factionHierarchySelections.set(getSelectionKey(interaction), interaction.values[0]);
         return renderDashboard(interaction, 'tab_fac_hierarchy', true);
     }
 
     if (interaction.customId === 'select_command_permission_roles') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) return safeReply(interaction, { content: '❌ Seu nível não libera esta configuração.', ephemeral: true });
         const target = commandPermissionSelections.get(getSelectionKey(interaction));
         if (!target) {
             return safeReply(interaction, { content: '❌ Selecione primeiro qual comando/ação deseja configurar.', ephemeral: true });
@@ -1727,7 +1727,7 @@ module.exports = {
     
     const data = loadJSON(CONFIG_PATH);
     if (interaction.customId === 'modal_adjust_call_id') {
-        if (!hasVortexLevel(interaction.member, ['admin', 'medio'])) {
+        if (!hasVortexAccess(interaction.member, ['admin', 'medio'])) {
             return safeReply(interaction, { content: '❌ Seu nível não libera a ferramenta de ajuste.', ephemeral: true });
         }
 
@@ -1747,7 +1747,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'modal_visual_color' || interaction.customId === 'modal_visual_banner') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) {
+        if (!hasVortexAccess(interaction.member, ['admin'])) {
             return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar o visual dos painéis.', ephemeral: true });
         }
 
@@ -1794,7 +1794,7 @@ module.exports = {
     }
 
     if (interaction.customId === 'modal_vortex_auto_role_pending' || interaction.customId === 'modal_vortex_auto_role_approved') {
-        if (!hasVortexLevel(interaction.member, ['admin'])) {
+        if (!hasVortexAccess(interaction.member, ['admin'])) {
             return safeReply(interaction, { content: '❌ Apenas Admin Vortex pode alterar cargos automáticos.', ephemeral: true });
         }
 

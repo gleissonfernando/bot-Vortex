@@ -11,11 +11,11 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const { buildThemedPanelPayload } = require('./panelTheme');
-const { hasCommandRole, hasVortexLevel } = require('./permissions');
+const { hasCommandRole, hasVortexAccess } = require('./permissions');
 const { safeDeferReply, safeEdit, safeReply, safeShowModal } = require('./safeReply');
 
 function hasOrderManagerPermission(member) {
-  return hasVortexLevel(member, ['admin', 'medio'])
+  return hasVortexAccess(member, ['admin', 'medio'])
     || hasCommandRole(member, 'encomenda')
     || Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageChannels));
 }
