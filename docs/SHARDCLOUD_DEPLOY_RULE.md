@@ -30,10 +30,10 @@ APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
-CUSTOM_COMMAND=PORT=80 npm start
+CUSTOM_COMMAND=npm start
 ```
 
-O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. As flags de hospedagem nao ficam mais nesse campo; elas sao aplicadas pelo `shardcloud-start.js`.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. As flags de hospedagem e a porta publica nao ficam mais nesse campo; elas sao aplicadas pelo `shardcloud-start.js` e pelas variaveis do painel.
 O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud. Nao deixe um fallback de app id escondido no workflow.
 
 ## Runtime da hospedagem

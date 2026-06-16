@@ -316,10 +316,10 @@ function checkShardCloudFile() {
   }
 
   const customCommand = shard.CUSTOM_COMMAND || '';
-  if (/^(PORT=\d+\s+)?npm start$/.test(customCommand)) {
+  if (customCommand === 'npm start') {
     ok('.shardcloud CUSTOM_COMMAND curto chama npm start');
   } else {
-    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: PORT=80 npm start');
+    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: npm start');
   }
 
   if (customCommand.length <= 250) {

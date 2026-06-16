@@ -111,3 +111,12 @@ jobs:
           curl -i --max-time 20 "$url/_shardcloud/health" || true
           curl -i --max-time 20 "$url/api/health" || true
           exit 1
+
+      - name: Show ShardCloud status and logs on failure
+        if: failure()
+        uses: shard-cloud/action@main
+        with:
+          token: ${{ env.SHARDCLOUD_API_TOKEN }}
+          commands: |
+            status ${{ steps.shardcloud.outputs.app_id }}
+            logs ${{ steps.shardcloud.outputs.app_id }}

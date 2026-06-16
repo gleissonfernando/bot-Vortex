@@ -80,7 +80,7 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('REQUIRE_BUILT_ASSETS', 'false');
   setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
   setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
-  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=512');
+  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
   setRuntimeDefault('START_PUBLIC_PROXY', 'true');
   setRuntimeDefault('START_DISCORD_BOT', 'true');
   setRuntimeDefault('START_FREQUENCY_API', 'true');
