@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHARDCLOUD_API_TOKEN: ${{ secrets.SHARD_CLOUD_API_KEY || secrets.SHARDCLOUD_API_TOKEN }}
-      SHARDCLOUD_APP_ID: ${{ secrets.SHARDCLOUD_APP_ID || vars.SHARDCLOUD_APP_ID || 'ccc23af3-03b5-4174-8143-f9da45518d1c' }}
+      SHARDCLOUD_PUBLIC_URL: ${{ vars.SHARDCLOUD_PUBLIC_URL || 'https://bot-vortex.shardweb.app' }}
 
     steps:
       - name: Checkout
@@ -24,7 +24,7 @@ jobs:
       - name: Validate ShardCloud credentials
         run: |
           test -n "$SHARDCLOUD_API_TOKEN" || (echo "::error::Missing SHARD_CLOUD_API_KEY secret. Create it with an API key from Shard Cloud Dashboard > Config > Integrations." && exit 1)
-          test -n "$SHARDCLOUD_APP_ID" || (echo "::error::Missing SHARDCLOUD_APP_ID secret or variable." && exit 1)
+          grep -Eq '^APPID=[0-9a-fA-F-]{36}$' .shardcloud || (echo "::error::.shardcloud must contain the target APPID so commit/restart always use the same ShardCloud app." && exit 1)
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -49,13 +49,52 @@ jobs:
           rm -rf frequency-panel/apps/bot/node_modules
           rm -rf frequency-panel/apps/web/node_modules
           rm -rf frequency-panel/apps/web/.next/cache
+          rm -rf logs reports coverage .cache
           rm -f package-lock.json frequency-panel/package-lock.json
           rm -f .env .env.*
+          rm -f *.log
+          rm -f commands/approvedSetChannels.json
+          rm -f commands/ausencias.json
+          rm -f commands/bauStorage.json
+          rm -f commands/config.json
+          rm -f commands/dailyPointTranscriptState.json
+          rm -f commands/liveAlerts.json
+          rm -f commands/liveLinks.json
+          rm -f commands/nicks_originais.json
+          rm -f commands/pedidos_ativos.json
+          rm -f commands/perfis.json
+          rm -f commands/perfisConfig.json
+          rm -f commands/pointAutomationState.json
+          rm -f commands/pointTranscripts.json
+          rm -f commands/pontoAdjustRequests.json
+          rm -f commands/pontoPanels.json
+          rm -f commands/pontos.json
+          rm -f commands/queuedChannelLogs.json
+          rm -f commands/scheduled_messages.json
+          rm -f commands/stats.json
 
       - name: Commit and restart Shard Cloud app
         uses: shard-cloud/action@main
         with:
           token: ${{ env.SHARDCLOUD_API_TOKEN }}
           commands: |
-            commit ${{ env.SHARDCLOUD_APP_ID }}
-            restart ${{ env.SHARDCLOUD_APP_ID }}
+            commit
+            restart
+
+      - name: Validate public ShardCloud runtime
+        run: |
+          set -euo pipefail
+          url="${SHARDCLOUD_PUBLIC_URL%/}"
+          for attempt in $(seq 1 18); do
+            body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url/health" || true)"
+            if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{const j=JSON.parse(s); if (j.ok === true && ['vortex-shardcloud-runtime','vortex-shardcloud-health'].includes(j.service)) process.exit(0)}catch{} process.exit(1)})"; then
+              echo "ShardCloud public health is serving the current Vortex runtime."
+              exit 0
+            fi
+            echo "Waiting for ShardCloud public health route... attempt $attempt/18"
+            sleep 10
+          done
+
+          echo "::error::ShardCloud did not expose the current /health route after restart. The app is probably serving an old build or a different project."
+          curl -i --max-time 20 "$url/health" || true
+          exit 1

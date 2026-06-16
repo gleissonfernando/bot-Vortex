@@ -26,6 +26,7 @@ Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`
 Por isso o `.shardcloud` deve ficar curto:
 
 ```env
+APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
@@ -33,6 +34,7 @@ CUSTOM_COMMAND=PORT=80 npm start
 ```
 
 O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. As flags de hospedagem nao ficam mais nesse campo; elas sao aplicadas pelo `shardcloud-start.js`.
+O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud. Nao deixe um fallback de app id escondido no workflow.
 
 ## Runtime da hospedagem
 
@@ -46,7 +48,7 @@ O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da S
 - reinicia processos internos que cairem;
 - gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados, para impedir loop de crash. Para sessoes estaveis, configure secrets fixos na ShardCloud.
 
-O arquivo `.shardignore` tambem deve continuar versionado para impedir envio de cache, segredos e JSONs de runtime.
+O arquivo `.shardignore` tambem deve continuar versionado como contrato do pacote, mas a CLI oficial da ShardCloud nao le esse arquivo. Por isso o workflow precisa remover explicitamente cache, segredos e JSONs de runtime antes do `commit`.
 
 ## Variaveis obrigatorias no GitHub Actions
 
@@ -54,10 +56,11 @@ Configure no GitHub, em `Settings > Secrets and variables > Actions`:
 
 ```env
 SHARD_CLOUD_API_KEY=
-SHARDCLOUD_APP_ID=ccc23af3-03b5-4174-8143-f9da45518d1c
 ```
 
 `SHARD_CLOUD_API_KEY` precisa ser uma API key criada no painel da ShardCloud em `Config > Integrations`, no mesmo usuario que tem permissao para atualizar o app.
+O app alvo fica em `APPID` dentro da `.shardcloud`. Se o app mudar, atualize esse arquivo e rode `npm run deploy:check`.
+Opcionalmente configure `SHARDCLOUD_PUBLIC_URL` se o dominio publico mudar.
 
 ## Variaveis obrigatorias na hospedagem
 
@@ -89,7 +92,7 @@ Esse erro vem da API da ShardCloud, nao da build da Vortex.
 Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem permissao para atualizar o app configurado. Corrija assim:
 
 - No GitHub, em `Settings > Secrets and variables > Actions`, atualize `SHARD_CLOUD_API_KEY` com uma API key criada no mesmo usuario que e dono do app na ShardCloud.
-- Se o app ID mudou, configure `SHARDCLOUD_APP_ID` como secret ou variable com o ID correto do projeto.
+- Se o app ID mudou, atualize `APPID` na `.shardcloud` com o ID correto do projeto.
 - Se estiver usando a integracao Git nativa da ShardCloud, desconecte e conecte o GitHub novamente em `Config > Integrations`, liberando acesso ao repositorio `gleissonfernando/bot-Vortex`.
 - Nao coloque a API key no codigo, no `.env` ou em mensagem de chat.
 
@@ -98,5 +101,5 @@ Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem per
 1. Faca a alteracao.
 2. Rode `npm run deploy:check`.
 3. Se passar, faca commit e push para `main`.
-4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida, executa `shard-cloud/action@main`, faz `commit` na ShardCloud e reinicia o app.
-5. Depois do restart, valide `https://bot-vortex.shardweb.app` e `/api/health`.
+4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida, executa `shard-cloud/action@main`, faz `commit` na ShardCloud e reinicia o app usando o `APPID` da `.shardcloud`.
+5. Depois do restart, o workflow valida `https://bot-vortex.shardweb.app/health`; se a rota continuar 404 ou mostrar build antigo, o deploy fica vermelho.

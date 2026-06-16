@@ -1,3 +1,4 @@
+APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 DISPLAY_NAME=bot-Vortex
 DESCRIPTION=Vortex Frequency Panel
 MAIN=shardcloud-start.js

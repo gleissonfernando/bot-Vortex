@@ -93,7 +93,7 @@ const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
 const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
 const standaloneWebDir = path.dirname(standaloneServer);
-const webInternalPort = String(process.env.WEB_INTERNAL_PORT || 3001);
+let webInternalPort = String(process.env.WEB_INTERNAL_PORT || 3001);
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
   || process.env.VORTEX_TRANSCRIPT_BASE_URL
@@ -352,8 +352,8 @@ function startProxy() {
 
   server.on('error', (error) => {
     if (error?.code === 'EADDRINUSE') {
-      console.warn(`[shardcloud] proxy skipped: port ${webPort} is already in use.`);
-      return;
+      console.error(`[shardcloud] public port ${webPort} is already in use. Exiting to let ShardCloud recycle the runtime instead of serving stale files.`);
+      process.exit(1);
     }
     console.error('[shardcloud] proxy failed:', error);
     process.exit(1);
@@ -570,7 +570,13 @@ async function main() {
     ensureStandaloneWebAssets();
 
     if (await isPortBusy(webInternalPort)) {
-      console.warn(`[shardcloud] frequency-web skipped: port ${webInternalPort} is already in use.`);
+      const nextWebPort = await findFreePort(Number(webInternalPort) + 1);
+      if (!nextWebPort) {
+        console.warn(`[shardcloud] frequency-web skipped: port ${webInternalPort} is busy and no fallback port is available.`);
+        return;
+      }
+      console.warn(`[shardcloud] port ${webInternalPort} is busy. Starting frequency-web on ${nextWebPort}.`);
+      webInternalPort = nextWebPort;
     } else {
       web = fs.existsSync(standaloneServer)
         ? start('frequency-web', 'node', [standaloneServer], {

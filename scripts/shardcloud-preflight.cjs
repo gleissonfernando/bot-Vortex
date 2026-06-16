@@ -199,6 +199,12 @@ function checkShardCloudFile() {
     fail('.shardcloud precisa usar MAIN=shardcloud-start.js');
   }
 
+  if (/^[0-9a-fA-F-]{36}$/.test(shard.APPID || '')) {
+    ok('.shardcloud APPID configurado');
+  } else {
+    fail('.shardcloud precisa ter APPID=<id-do-app> para commit/restart mirarem o app certo');
+  }
+
   if (shard.LANGUAGE === 'node') {
     ok('.shardcloud LANGUAGE=node');
   } else {
@@ -239,12 +245,17 @@ function checkWorkflow() {
     'npm run deploy:check',
     'uses: shard-cloud/action@main',
     'SHARD_CLOUD_API_KEY',
-    'SHARDCLOUD_APP_ID',
-    'commit ${{ env.SHARDCLOUD_APP_ID }}',
-    'restart ${{ env.SHARDCLOUD_APP_ID }}',
+    "grep -Eq '^APPID=",
+    'commands: |',
+    'commit',
+    'restart',
+    'Validate public ShardCloud runtime',
+    '$url/health',
     'rm -rf node_modules',
     'rm -f package-lock.json frequency-panel/package-lock.json',
-    'rm -f .env .env.*'
+    'rm -f .env .env.*',
+    'rm -f commands/perfis.json',
+    'rm -f commands/pointTranscripts.json'
   ];
   for (const snippet of requiredSnippets) {
     if (workflow.includes(snippet)) {
