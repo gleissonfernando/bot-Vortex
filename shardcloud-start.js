@@ -133,6 +133,17 @@ function envValue(name, fallback) {
   return value === undefined || value === '' ? fallback : value;
 }
 
+function uniquePortList(values) {
+  const ports = [];
+  for (const value of values) {
+    const port = Number(value);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) continue;
+    const text = String(port);
+    if (!ports.includes(text)) ports.push(text);
+  }
+  return ports;
+}
+
 function canConnect(port, host) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ port: Number(port), host });
@@ -292,16 +303,27 @@ function runtimeHealth() {
     mode: process.env.SHARDCLOUD_DEPLOY_MODE || 'git',
     publicBaseUrl,
     ports: {
-      public: webPort,
+      public: uniquePortList([
+        webPort,
+        envFlag('SHARDCLOUD_BIND_PORT_80_FALLBACK', true) ? '80' : null,
+      ]),
       api: apiPort,
       botApi: botApiPort,
       webInternal: webInternalPort,
+    },
+    config: {
+      startPublicProxy: shouldStartPublicProxy,
+      startDiscordBot: shouldStartDiscordBot,
+      startFrequencyApi: shouldStartFrequencyApi,
+      startFrequencyWeb: shouldStartFrequencyWeb,
+      hasDiscordToken: Boolean(process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN),
+      hasMongoDb: Boolean(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL),
     },
     children: Object.fromEntries(childStatuses.entries()),
   };
 }
 
-function startProxy() {
+function createProxyServer(port, { fatalOnError = true } = {}) {
   const server = http.createServer((req, res) => {
     const pathname = String(req.url || '/').split('?')[0];
     if (pathname === '/health' || pathname === '/_shardcloud/health') {
@@ -360,20 +382,41 @@ function startProxy() {
     req.pipe(upstream);
   });
 
-  server.listen(Number(webPort), '0.0.0.0', () => {
-    console.log(`[shardcloud] proxy listening on 0.0.0.0:${webPort}`);
+  server.listen(Number(port), '0.0.0.0', () => {
+    console.log(`[shardcloud] proxy listening on 0.0.0.0:${port}`);
+    setChildStatus(`public-proxy:${port}`, 'running', { port });
   });
 
   server.on('error', (error) => {
     if (error?.code === 'EADDRINUSE') {
-      console.error(`[shardcloud] public port ${webPort} is already in use. Exiting to let ShardCloud recycle the runtime instead of serving stale files.`);
+      const message = `[shardcloud] public port ${port} is already in use.`;
+      if (fatalOnError) {
+        setChildStatus(`public-proxy:${port}`, 'failed', { reason: 'port busy', port });
+        console.error(`${message} Exiting to let ShardCloud recycle the runtime instead of serving stale files.`);
+        process.exit(1);
+      }
+      setChildStatus(`public-proxy:${port}`, 'skipped', { reason: 'port busy', port });
+      console.warn(`${message} Continuing because this is only the port 80 fallback.`);
+      return;
+    }
+    if (fatalOnError) {
+      setChildStatus(`public-proxy:${port}`, 'failed', { reason: error.message, port });
+      console.error('[shardcloud] proxy failed:', error);
       process.exit(1);
     }
-    console.error('[shardcloud] proxy failed:', error);
-    process.exit(1);
+    setChildStatus(`public-proxy:${port}`, 'failed', { reason: error.message, port });
+    console.warn(`[shardcloud] optional proxy on port ${port} failed: ${error.message}`);
   });
 
   return server;
+}
+
+function startProxy() {
+  const ports = uniquePortList([
+    webPort,
+    envFlag('SHARDCLOUD_BIND_PORT_80_FALLBACK', true) ? '80' : null,
+  ]);
+  return ports.map((port, index) => createProxyServer(port, { fatalOnError: index === 0 }));
 }
 
 function copyIfExists(source, target) {
@@ -449,7 +492,7 @@ const shouldStartPublicProxy = envFlag('START_PUBLIC_PROXY', true);
 const requireBuiltAssets = envFlag('REQUIRE_BUILT_ASSETS', false);
 
 let web = null;
-let proxyServer = null;
+let proxyServers = [];
 
 function exitMissingBuiltAsset(label, relativePath) {
   console.error(`[shardcloud] ${label} nao encontrado: ${relativePath}`);
@@ -459,14 +502,16 @@ function exitMissingBuiltAsset(label, relativePath) {
 
 async function main() {
   if (shouldStartPublicProxy) {
-    proxyServer = startProxy();
+    proxyServers = startProxy();
   } else {
     console.log('[shardcloud] Public proxy disabled by START_PUBLIC_PROXY=false.');
+    setChildStatus('public-proxy', 'disabled', { reason: 'START_PUBLIC_PROXY=false' });
   }
 
   if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN)) {
     if (await isPortBusy(botApiPort)) {
       console.warn(`[shardcloud] discord-bot skipped: port ${botApiPort} is already in use.`);
+      setChildStatus('discord-bot', 'skipped', { reason: `port ${botApiPort} busy` });
     } else {
       const botLightMode = envFlag('BOT_LIGHT_MODE', true);
       const fivemSystemEnabled = envFlag('FIVEM_SYSTEM_ENABLED', true);
@@ -497,8 +542,10 @@ async function main() {
     }
   } else if (shouldStartDiscordBot) {
     console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN/TOKEN not configured. Discord bot will not start.');
+    setChildStatus('discord-bot', 'skipped', { reason: 'missing DISCORD_TOKEN/DISCORD_BOT_TOKEN/TOKEN' });
   } else {
     console.log('[shardcloud] Discord bot disabled by START_DISCORD_BOT=false.');
+    setChildStatus('discord-bot', 'disabled', { reason: 'START_DISCORD_BOT=false' });
   }
 
   if (shouldStartFrequencyApi) {
@@ -628,12 +675,12 @@ main().catch((error) => {
 
 process.on('SIGINT', () => {
   stopManagedChildren('SIGINT');
-  proxyServer?.close();
+  for (const server of proxyServers) server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   stopManagedChildren('SIGTERM');
-  proxyServer?.close();
+  for (const server of proxyServers) server.close();
   process.exit(0);
 });
