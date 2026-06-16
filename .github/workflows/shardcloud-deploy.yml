@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHARDCLOUD_API_TOKEN: ${{ secrets.SHARD_CLOUD_API_KEY || secrets.SHARDCLOUD_API_TOKEN }}
-      SHARDCLOUD_APP_ID: ccc23af3-03b5-4174-8143-f9da45518d1c
+      SHARDCLOUD_APP_ID: ${{ secrets.SHARDCLOUD_APP_ID || vars.SHARDCLOUD_APP_ID || 'ccc23af3-03b5-4174-8143-f9da45518d1c' }}
 
     steps:
       - name: Checkout
@@ -20,6 +20,7 @@ jobs:
       - name: Validate secrets
         run: |
           test -n "$SHARDCLOUD_API_TOKEN" || (echo "Missing SHARD_CLOUD_API_KEY secret" && exit 1)
+          test -n "$SHARDCLOUD_APP_ID" || (echo "Missing SHARDCLOUD_APP_ID secret or variable" && exit 1)
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -67,15 +68,33 @@ jobs:
 
       - name: Upload code to Shard Cloud
         run: |
-          curl --fail-with-body --show-error --request PUT \
+          response_file="$(mktemp)"
+          http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request PUT \
             --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/file" \
             --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
-            --form "project=@shardcloud-project.zip;type=application/zip"
+            --form "project=@shardcloud-project.zip;type=application/zip")"
+          cat "$response_file"
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            if grep -qi "user cannot update project" "$response_file"; then
+              echo "::error::ShardCloud recusou o upload: o token configurado no GitHub nao tem permissao para atualizar o projeto ${SHARDCLOUD_APP_ID}."
+              echo "::error::Crie/atualize o secret SHARD_CLOUD_API_KEY com uma API key do mesmo usuario dono do app na ShardCloud, ou ajuste SHARDCLOUD_APP_ID para o app correto."
+            fi
+            exit 1
+          fi
 
       - name: Restart Shard Cloud app
         run: |
-          curl --fail-with-body --show-error --request POST \
+          response_file="$(mktemp)"
+          http_code="$(curl --silent --show-error --write-out "%{http_code}" --output "$response_file" --request POST \
             --url "https://shardcloud.app/api/apps/${SHARDCLOUD_APP_ID}/status" \
             --header "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" \
             --header "Content-Type: application/json" \
-            --data '{"status":"restart"}'
+            --data '{"status":"restart"}')"
+          cat "$response_file"
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            if grep -qi "user cannot update project" "$response_file"; then
+              echo "::error::ShardCloud recusou o restart: o token configurado no GitHub nao tem permissao para atualizar o projeto ${SHARDCLOUD_APP_ID}."
+              echo "::error::Crie/atualize o secret SHARD_CLOUD_API_KEY com uma API key do mesmo usuario dono do app na ShardCloud, ou ajuste SHARDCLOUD_APP_ID para o app correto."
+            fi
+            exit 1
+          fi

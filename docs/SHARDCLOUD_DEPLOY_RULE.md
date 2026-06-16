@@ -53,6 +53,16 @@ DISCORD_OAUTH_REDIRECT_URI=https://bot-vortex.shardweb.app/api/auth/discord/call
 npm run deploy:check:env
 ```
 
+## Erro `user cannot update project`
+
+Esse erro vem da API da ShardCloud, nao da build da Vortex.
+
+Ele significa que a API key usada no GitHub nao tem permissao para atualizar o app configurado. Corrija assim:
+
+- No GitHub, em `Settings > Secrets and variables > Actions`, atualize `SHARD_CLOUD_API_KEY` com uma API key criada no mesmo usuario que e dono do app na ShardCloud.
+- Se o app ID mudou, configure `SHARDCLOUD_APP_ID` como secret ou variable com o ID correto do projeto.
+- Nao coloque a API key no codigo, no `.env` ou em mensagem de chat.
+
 ## Fluxo certo
 
 1. Faça a alteracao.

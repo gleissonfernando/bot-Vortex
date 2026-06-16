@@ -176,7 +176,8 @@ function checkWorkflow() {
     '-x ".env.*"',
     '-x "node_modules/*"',
     '-x "frequency-panel/node_modules/*"',
-    'curl --fail-with-body'
+    '--write-out "%{http_code}"',
+    'user cannot update project'
   ];
   for (const snippet of requiredSnippets) {
     if (workflow.includes(snippet)) {
