@@ -43,7 +43,7 @@ const navGroups = [
     items: [
       { href: '/dashboard/absences', label: 'Ausencias', icon: CalendarOff },
       { href: '/dashboard/bau', label: 'Bau', icon: PackageOpen },
-      { href: '/dashboard/orders', label: 'Encomendas', icon: ShoppingCart, roles: ['admin', 'manager'] },
+      { href: '/dashboard/orders', label: 'Encomendas', icon: ShoppingCart },
       { href: '/dashboard/lives', label: 'Lives', icon: Radio },
       { href: '/dashboard/bot-vortex', label: 'Bot Vortex', icon: Bot }
     ]

@@ -3,7 +3,6 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { collection, serializeDoc } from '../db.js';
 import { env } from '../env.js';
-import { requireManager } from '../middleware.js';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const CHANNEL_TYPE_TEXT = 0;
@@ -304,9 +303,7 @@ async function orderStats(guildId: string) {
 
 export const ordersRouter = Router();
 
-ordersRouter.use(requireManager);
-
-ordersRouter.get('/discord-options', requireManager, asyncRoute(async (req, res) => {
+ordersRouter.get('/discord-options', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   try {
     return res.json({ ok: true, guildId, categories: await fetchDiscordCategories(guildId), error: null });
@@ -331,7 +328,7 @@ ordersRouter.get('/settings', asyncRoute(async (req, res) => {
   return res.json({ ok: true, settings: normalizeSettings(doc, category) });
 }));
 
-ordersRouter.put('/settings', requireManager, asyncRoute(async (req, res) => {
+ordersRouter.put('/settings', asyncRoute(async (req, res) => {
   const input = settingsSchema.parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const category = await findDiscordCategory(guildId, input.orderCategoryId).catch((error) => {
@@ -379,7 +376,7 @@ ordersRouter.get('/', asyncRoute(async (req, res) => {
   });
 }));
 
-ordersRouter.post('/', requireManager, asyncRoute(async (req, res) => {
+ordersRouter.post('/', asyncRoute(async (req, res) => {
   const input = createOrderSchema.parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const settings = await (await collection<OrderSettingsDoc>('order_settings')).findOne({ guild_id: guildId });
