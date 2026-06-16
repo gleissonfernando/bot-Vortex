@@ -119,4 +119,3 @@ jobs:
           token: ${{ env.SHARDCLOUD_API_TOKEN }}
           commands: |
             status ${{ steps.shardcloud.outputs.app_id }}
-            logs ${{ steps.shardcloud.outputs.app_id }}
