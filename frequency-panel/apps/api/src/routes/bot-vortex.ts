@@ -231,7 +231,7 @@ function sanitizePatch(patch: Record<string, any>) {
 }
 
 async function discordOptions(guildId: string) {
-  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
   if (!token || !guildId) return { channels: [], roles: [], error: token ? null : 'Token do bot ausente.' };
   const headers = { Authorization: `Bot ${token}` };
   const [channelsResponse, rolesResponse] = await Promise.all([

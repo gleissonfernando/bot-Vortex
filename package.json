@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node shardcloud-start.js",
+    "dev": "node scripts/dev-start.cjs",
+    "build": "npm run deploy:build",
+    "check": "npm run deploy:check:fast",
     "start:bot": "node index.js",
     "deploy:build": "npm --prefix frequency-panel run build",
     "deploy:check": "node scripts/shardcloud-preflight.cjs",

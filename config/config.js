@@ -2,9 +2,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 module.exports = {
-    token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN,
-    clientId: process.env.VITE_DISCORD_CLIENT_ID || process.env.DISCORD_CLIENT_ID || '',
-    guildId: process.env.VITE_DISCORD_GUILD_ID || process.env.DISCORD_GUILD_ID || '1201193356810780773',
+    token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN,
+    clientId: process.env.VITE_DISCORD_CLIENT_ID || process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '',
+    guildId: process.env.VITE_DISCORD_GUILD_ID || process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || '',
     twitchClientId: process.env.TWITCH_CLIENT_ID || '',
     twitchClientSecret: process.env.TWITCH_CLIENT_SECRET || '',
     

@@ -44,6 +44,17 @@ function setRuntimeDefault(name, value) {
   }
 }
 
+function setRuntimeAlias(target, sources) {
+  if (process.env[target] !== undefined && process.env[target] !== '') return;
+  for (const source of sources) {
+    const value = process.env[source];
+    if (value !== undefined && value !== '') {
+      process.env[target] = value;
+      return;
+    }
+  }
+}
+
 function isStrongRuntimeSecret(value, minLength) {
   const text = String(value || '').trim();
   return text.length >= minLength && !/^(change-this|replace-|put-your-)/i.test(text);
@@ -77,6 +88,10 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('FIVEM_SYSTEM_ENABLED', 'true');
   setRuntimeDefault('MONGODB_REQUIRED', 'false');
   setRuntimeDefault('BOT_MONGODB_REQUIRED', 'false');
+  setRuntimeAlias('DISCORD_TOKEN', ['DISCORD_BOT_TOKEN', 'TOKEN']);
+  setRuntimeAlias('DISCORD_CLIENT_ID', ['CLIENT_ID', 'VITE_DISCORD_CLIENT_ID']);
+  setRuntimeAlias('DISCORD_GUILD_ID', ['GUILD_ID', 'VITE_DISCORD_GUILD_ID']);
+  setRuntimeAlias('MONGODB_URI', ['MONGO_URI', 'DATABASE_URL']);
 
   ensureEphemeralSecret('JWT_SECRET', 32);
   ensureEphemeralSecret('INGEST_SECRET', 32);
@@ -265,11 +280,9 @@ function stopManagedChildren(signal) {
 process.env.PUBLIC_BASE_URL ||= publicBaseUrl;
 process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.SITE_ORIGIN ||= publicBaseUrl || 'https://bot-vortex.shardweb.app';
-process.env.DISCORD_CLIENT_ID ||= '1505924330490695800';
 process.env.DISCORD_OAUTH_REDIRECT_URI ||= `${process.env.SITE_ORIGIN.replace(/\/+$/, '')}/api/auth/discord/callback`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
 process.env.NEXT_PUBLIC_API_URL ||= '/api';
-process.env.MONGODB_URI ||= process.env.MONGO_URI || process.env.DATABASE_URL;
 
 function runtimeHealth() {
   return {
@@ -449,7 +462,7 @@ async function main() {
     proxyServer = startProxy();
   }
 
-  if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN)) {
+  if (shouldStartDiscordBot && (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN)) {
     if (await isPortBusy(botApiPort)) {
       console.warn(`[shardcloud] discord-bot skipped: port ${botApiPort} is already in use.`);
     } else {
@@ -481,7 +494,7 @@ async function main() {
       });
     }
   } else if (shouldStartDiscordBot) {
-    console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN not configured. Discord bot will not start.');
+    console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN/TOKEN not configured. Discord bot will not start.');
   } else {
     console.log('[shardcloud] Discord bot disabled by START_DISCORD_BOT=false.');
   }

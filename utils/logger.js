@@ -32,6 +32,28 @@ const COLORS = {
     GRAY: '\x1b[90m'
 };
 
+function safeJsonReplacer(_key, value) {
+    if (typeof value === 'bigint') return value.toString();
+    if (value instanceof Error) {
+        return {
+            name: value.name,
+            message: value.message,
+            stack: value.stack || null
+        };
+    }
+    return value;
+}
+
+function safeStringify(value) {
+    try {
+        return JSON.stringify(value, safeJsonReplacer);
+    } catch (error) {
+        return JSON.stringify({
+            serializationError: error?.message || String(error)
+        });
+    }
+}
+
 class Logger {
     constructor(options = {}) {
         this.minLevel = options.minLevel || LOG_LEVELS.INFO;
@@ -98,7 +120,7 @@ class Logger {
     formatMessage(level, message, meta = {}) {
         const timestamp = this.getTimestamp();
         const metaStr = Object.keys(meta).length > 0 
-            ? ` | ${JSON.stringify(meta)}`
+            ? ` | ${safeStringify(meta)}`
             : '';
         
         return `[${timestamp}] [${level}] ${message}${metaStr}`;

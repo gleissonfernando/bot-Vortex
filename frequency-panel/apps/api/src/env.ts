@@ -3,6 +3,22 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '../../.env' });
 dotenv.config();
 
+function applyAlias(target: string, sources: string[]) {
+  if (process.env[target]?.trim()) return;
+  for (const source of sources) {
+    const value = process.env[source]?.trim();
+    if (value) {
+      process.env[target] = value;
+      return;
+    }
+  }
+}
+
+applyAlias('DISCORD_TOKEN', ['DISCORD_BOT_TOKEN', 'TOKEN']);
+applyAlias('DISCORD_CLIENT_ID', ['CLIENT_ID', 'VITE_DISCORD_CLIENT_ID']);
+applyAlias('DISCORD_GUILD_ID', ['GUILD_ID', 'VITE_DISCORD_GUILD_ID']);
+applyAlias('MONGODB_URI', ['MONGO_URI', 'DATABASE_URL']);
+
 function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing env var ${name}`);
@@ -53,10 +69,10 @@ export const env = {
   apiOrigin: process.env.API_ORIGIN || 'http://localhost:3000',
   siteOrigin,
   ingestSecret: requiredSecret('INGEST_SECRET', 32),
-  discordClientId: process.env.DISCORD_CLIENT_ID || '',
+  discordClientId: process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '',
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
   discordOauthRedirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || defaultDiscordOauthRedirectUri,
-  discordBotToken: process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || '',
+  discordBotToken: process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || process.env.TOKEN || '',
   discordGuildId: process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || '',
   discordIdLoginEnabled: String(process.env.DISCORD_ID_LOGIN_ENABLED || '').toLowerCase() === 'true',
   apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60 * 1000),

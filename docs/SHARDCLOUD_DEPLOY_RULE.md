@@ -64,21 +64,46 @@ Opcionalmente configure `SHARDCLOUD_PUBLIC_URL` se o dominio publico mudar.
 
 ## Variaveis obrigatorias na hospedagem
 
-Configure na ShardCloud, nunca no Git:
+Configure na ShardCloud, nunca no Git. O bloco canônico tem 34 linhas:
 
 ```env
-MONGODB_URI=
-JWT_SECRET=
-INGEST_SECRET=
-ADMIN_EMAIL=
-ADMIN_PASSWORD=
-SITE_ORIGIN=https://bot-vortex.shardweb.app
 DISCORD_TOKEN=
-DISCORD_CLIENT_ID=1505924330490695800
+DISCORD_CLIENT_ID=
+DISCORD_GUILD_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_OAUTH_REDIRECT_URI=https://bot-vortex.shardweb.app/api/auth/discord/callback
+REGISTER_COMMANDS_ON_STARTUP=true
+ENABLE_PRESENCE_FEATURES=true
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+LIVE_ALERT_CHECK_INTERVAL_MS=120000
+LIVE_ALERT_WRITE_OFFLINE_HEARTBEAT=false
+MONGODB_URI=
+MONGODB_REQUIRED=false
+MONGODB_MAX_POOL_SIZE=5
+MONGODB_MAX_IDLE_TIME_MS=30000
+MONGODB_SERVER_SELECTION_TIMEOUT_MS=10000
+VORTEX_TRANSCRIPT_BASE_URL=https://bot-vortex.shardweb.app
+APP_URL=https://bot-vortex.shardweb.app
+SITE_ORIGIN=https://bot-vortex.shardweb.app
+API_PORT=3000
+API_HOST=0.0.0.0
+BOT_API_PORT=3000
+PORT=80
+WEB_PORT=80
+WEB_INTERNAL_PORT=3001
+JWT_SECRET=
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+INGEST_SECRET=
+BOT_INGEST_SECRET=
+FREQUENCY_API_URL=http://127.0.0.1:4100
+FREQUENCY_DASHBOARD_SYNC=true
+FREQUENCY_MEMBER_SYNC_INTERVAL_MS=900000
+POINT_AUTOMATION_INTERVAL_MS=900000
 ```
 
+As variaveis canonicas sao `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI`. O runtime tambem aceita os aliases comuns da ShardCloud (`TOKEN`, `CLIENT_ID`, `GUILD_ID`, `DATABASE_URL`, `MONGO_URI`, `DISCORD_BOT_TOKEN`) se voce precisar trocar algum nome, mas nao configure a variavel canonica e o alias ao mesmo tempo quando estiver mantendo o limite de 34 linhas.
 `JWT_SECRET` e `INGEST_SECRET` precisam ter pelo menos 32 caracteres. `ADMIN_PASSWORD` precisa ter pelo menos 12 caracteres. Para validar o `.env` local sem mostrar segredos:
 
 ```bash
@@ -102,4 +127,4 @@ Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem per
 2. Rode `npm run deploy:check`.
 3. Se passar, faca commit e push para `main`.
 4. No push, o workflow `.github/workflows/shardcloud-deploy.yml` valida, executa `shard-cloud/action@main`, faz `commit` na ShardCloud e reinicia o app usando o `APPID` da `.shardcloud`.
-5. Depois do restart, o workflow valida `https://bot-vortex.shardweb.app/health`; se a rota continuar 404 ou mostrar build antigo, o deploy fica vermelho.
+5. Depois do restart, o workflow valida `https://bot-vortex.shardweb.app/health`, `https://bot-vortex.shardweb.app/_shardcloud/health` e `https://bot-vortex.shardweb.app/api/health`; se todas falharem ou mostrarem build antigo, o deploy fica vermelho.

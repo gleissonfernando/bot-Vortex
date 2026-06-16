@@ -53,6 +53,98 @@ function parseKeyValueFile(relativePath) {
   return entries;
 }
 
+const compactEnvKeys = [
+  'DISCORD_TOKEN',
+  'DISCORD_CLIENT_ID',
+  'DISCORD_GUILD_ID',
+  'DISCORD_CLIENT_SECRET',
+  'DISCORD_OAUTH_REDIRECT_URI',
+  'REGISTER_COMMANDS_ON_STARTUP',
+  'ENABLE_PRESENCE_FEATURES',
+  'TWITCH_CLIENT_ID',
+  'TWITCH_CLIENT_SECRET',
+  'LIVE_ALERT_CHECK_INTERVAL_MS',
+  'LIVE_ALERT_WRITE_OFFLINE_HEARTBEAT',
+  'MONGODB_URI',
+  'MONGODB_REQUIRED',
+  'MONGODB_MAX_POOL_SIZE',
+  'MONGODB_MAX_IDLE_TIME_MS',
+  'MONGODB_SERVER_SELECTION_TIMEOUT_MS',
+  'VORTEX_TRANSCRIPT_BASE_URL',
+  'APP_URL',
+  'SITE_ORIGIN',
+  'API_PORT',
+  'API_HOST',
+  'BOT_API_PORT',
+  'PORT',
+  'WEB_PORT',
+  'WEB_INTERNAL_PORT',
+  'JWT_SECRET',
+  'ADMIN_EMAIL',
+  'ADMIN_PASSWORD',
+  'INGEST_SECRET',
+  'BOT_INGEST_SECRET',
+  'FREQUENCY_API_URL',
+  'FREQUENCY_DASHBOARD_SYNC',
+  'FREQUENCY_MEMBER_SYNC_INTERVAL_MS',
+  'POINT_AUTOMATION_INTERVAL_MS'
+];
+
+function compactEnvLines(content) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+}
+
+function checkCompactEnvFile(relativePath, label, options = {}) {
+  if (!fileExists(relativePath)) {
+    if (options.optional) return;
+    fail(`${label} nao encontrado em ${relativePath}`);
+    return;
+  }
+
+  const lines = compactEnvLines(readText(relativePath));
+  const keys = new Set();
+  const duplicates = new Set();
+  const invalid = [];
+
+  for (const line of lines) {
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
+    if (!match) {
+      invalid.push(line);
+      continue;
+    }
+    if (keys.has(match[1])) duplicates.add(match[1]);
+    keys.add(match[1]);
+  }
+
+  if (lines.length === compactEnvKeys.length) {
+    ok(`${label} usa ${compactEnvKeys.length} linhas compactas`);
+  } else {
+    fail(`${label} precisa usar exatamente ${compactEnvKeys.length} linhas compactas; atual=${lines.length}`);
+  }
+
+  const missing = compactEnvKeys.filter((name) => !keys.has(name));
+  if (missing.length === 0) {
+    ok(`${label} contem todas as variaveis compactas`);
+  } else {
+    fail(`${label} sem variaveis compactas: ${missing.join(', ')}`);
+  }
+
+  if (duplicates.size === 0) {
+    ok(`${label} nao duplica variaveis`);
+  } else {
+    fail(`${label} duplica variaveis: ${[...duplicates].join(', ')}`);
+  }
+
+  if (invalid.length === 0) {
+    ok(`${label} contem apenas linhas KEY=VALUE`);
+  } else {
+    fail(`${label} contem linhas invalidas de env`);
+  }
+}
+
 function readJson(relativePath) {
   return JSON.parse(readText(relativePath));
 }
@@ -183,6 +275,18 @@ function checkPackageScripts() {
     fail('postinstall precisa instalar frequency-panel para a hospedagem');
   }
 
+  if (scripts.build === 'npm run deploy:build') {
+    ok('npm run build aponta para deploy:build');
+  } else {
+    fail('package.json precisa ter "build": "npm run deploy:build"');
+  }
+
+  if (scripts.dev === 'node scripts/dev-start.cjs') {
+    ok('npm run dev aponta para scripts/dev-start.cjs');
+  } else {
+    fail('package.json precisa ter "dev": "node scripts/dev-start.cjs"');
+  }
+
   if (versionAtLeast(process.versions.node, '20.19.0')) {
     ok(`Node ${process.versions.node} atende >=20.19.0`);
   } else {
@@ -275,9 +379,11 @@ function checkWorkflow() {
 }
 
 function checkShardCloudRuntime() {
+  requireFile('scripts/dev-start.cjs', 'script de dev local');
   const runtime = readText('shardcloud-start.js');
   const requiredSnippets = [
     'applyShardCloudRuntimeDefaults',
+    'setRuntimeAlias',
     "ensureEphemeralSecret('JWT_SECRET', 32)",
     "ensureEphemeralSecret('INGEST_SECRET', 32)",
     "'/_shardcloud/health'",
@@ -299,24 +405,37 @@ function checkShardCloudRuntime() {
 function checkEnvExamples() {
   const rootExample = readText('.env.example');
   const panelExample = readText('frequency-panel/.env.example');
-  for (const name of ['MONGODB_URI', 'JWT_SECRET', 'INGEST_SECRET', 'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'SITE_ORIGIN']) {
-    if (rootExample.includes(`${name}=`)) {
-      ok(`.env.example lista ${name}`);
+  const deployRule = readText('docs/SHARDCLOUD_DEPLOY_RULE.md');
+  const panelReadme = readText('frequency-panel/README.md');
+  checkCompactEnvFile('.env.example', '.env.example');
+  checkCompactEnvFile('frequency-panel/.env.example', 'frequency-panel/.env.example');
+
+  for (const alias of ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'DATABASE_URL', 'MONGO_URI', 'DISCORD_BOT_TOKEN']) {
+    if (deployRule.includes(alias)) {
+      ok(`docs explicam alias ${alias}`);
     } else {
-      fail(`.env.example precisa listar ${name}`);
+      fail(`docs precisam explicar alias ${alias}`);
     }
   }
 
-  if (panelExample.includes('BOT_INGEST_SECRET=replace-with-the-same-value-as-ingest-secret')) {
-    ok('frequency-panel/.env.example documenta BOT_INGEST_SECRET');
-  } else {
-    fail('frequency-panel/.env.example precisa documentar BOT_INGEST_SECRET');
+  for (const [file, content] of [
+    ['.env.example', rootExample],
+    ['frequency-panel/.env.example', panelExample],
+    ['frequency-panel/README.md', panelReadme]
+  ]) {
+    for (const forbidden of ['valor_real_do_client_secret', 'put-your-discord-bot-token', 'put-your-discord-guild-id']) {
+      if (content.includes(forbidden)) {
+        fail(`${file} contem placeholder inseguro/desatualizado: ${forbidden}`);
+      }
+    }
   }
 }
 
 function checkStrictEnv() {
   if (!strictEnv) return;
-  const env = { ...parseKeyValueFile('.env'), ...process.env };
+  checkCompactEnvFile('.env', '.env local', { optional: true });
+  const fileEnv = parseKeyValueFile('.env');
+  const env = { ...fileEnv, ...process.env };
   const secretChecks = [
     ['JWT_SECRET', 32],
     ['INGEST_SECRET', 32],
@@ -331,14 +450,48 @@ function checkStrictEnv() {
     }
   }
 
-  if (env.DISCORD_TOKEN || env.DISCORD_BOT_TOKEN) {
+  if (env.DISCORD_TOKEN || env.DISCORD_BOT_TOKEN || env.TOKEN) {
     ok('token do bot Discord configurado');
   } else {
-    fail('DISCORD_TOKEN ou DISCORD_BOT_TOKEN precisa estar configurado');
+    fail('DISCORD_TOKEN, DISCORD_BOT_TOKEN ou TOKEN precisa estar configurado');
   }
 
-  if (String(env.NODE_TLS_REJECT_UNAUTHORIZED || '') === '0') {
-    fail('NODE_TLS_REJECT_UNAUTHORIZED=0 nao pode ir para deploy');
+  if (env.DISCORD_CLIENT_ID || env.CLIENT_ID || env.VITE_DISCORD_CLIENT_ID) {
+    ok('client id do Discord configurado');
+  } else {
+    fail('DISCORD_CLIENT_ID, CLIENT_ID ou VITE_DISCORD_CLIENT_ID precisa estar configurado');
+  }
+
+  if (env.DISCORD_GUILD_ID || env.GUILD_ID || env.VITE_DISCORD_GUILD_ID) {
+    ok('guild id do Discord configurado');
+  } else {
+    fail('DISCORD_GUILD_ID, GUILD_ID ou VITE_DISCORD_GUILD_ID precisa estar configurado');
+  }
+
+  const discordClientSecret = String(env.DISCORD_CLIENT_SECRET || '').trim();
+  if (!discordClientSecret) {
+    ok('DISCORD_CLIENT_SECRET vazio no .env local; configure o valor real na ShardCloud para OAuth Discord');
+  } else if (
+    /^\d{15,25}$/.test(discordClientSecret)
+    || [env.DISCORD_CLIENT_ID, env.CLIENT_ID, env.VITE_DISCORD_CLIENT_ID, env.DISCORD_GUILD_ID, env.GUILD_ID, env.VITE_DISCORD_GUILD_ID]
+      .filter(Boolean)
+      .includes(discordClientSecret)
+  ) {
+    fail('DISCORD_CLIENT_SECRET parece um ID publico; use o client secret real do Discord Developer Portal');
+  } else {
+    ok('DISCORD_CLIENT_SECRET nao parece ID publico');
+  }
+
+  if (env.MONGODB_URI || env.MONGO_URI || env.DATABASE_URL) {
+    ok('URI do banco configurada');
+  } else {
+    fail('MONGODB_URI, MONGO_URI ou DATABASE_URL precisa estar configurado');
+  }
+
+  if (String(fileEnv.NODE_TLS_REJECT_UNAUTHORIZED || '') === '0') {
+    fail('NODE_TLS_REJECT_UNAUTHORIZED=0 nao pode ir para deploy no .env');
+  } else if (String(process.env.NODE_TLS_REJECT_UNAUTHORIZED || '') === '0') {
+    ok('NODE_TLS_REJECT_UNAUTHORIZED=0 existe apenas no terminal local; .env de deploy esta limpo');
   }
 }
 
