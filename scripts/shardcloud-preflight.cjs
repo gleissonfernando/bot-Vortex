@@ -361,7 +361,6 @@ function checkWorkflow() {
     '/api/health',
     'vortex-frequency-api',
     'rm -rf node_modules',
-    'rm -f package-lock.json frequency-panel/package-lock.json',
     'rm -f .env .env.*',
     'rm -f commands/perfis.json',
     'rm -f commands/pointTranscripts.json',

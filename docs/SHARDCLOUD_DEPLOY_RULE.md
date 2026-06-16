@@ -21,7 +21,7 @@ Esse comando faz o preflight completo:
 
 O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
 
-Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, `package-lock.json` e `.env`.
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches e `.env`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
 
 Por isso o `.shardcloud` deve ficar curto:
 

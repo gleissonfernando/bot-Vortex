@@ -52,7 +52,6 @@ jobs:
           rm -rf frequency-panel/apps/web/node_modules
           rm -rf frequency-panel/apps/web/.next/cache
           rm -rf logs reports coverage .cache
-          rm -f package-lock.json frequency-panel/package-lock.json
           rm -f .env .env.*
           rm -f *.log
           rm -f commands/approvedSetChannels.json

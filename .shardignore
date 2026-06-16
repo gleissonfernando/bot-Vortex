@@ -8,8 +8,6 @@ reports
 coverage
 .cache
 *.log
-package-lock.json
-frequency-panel/package-lock.json
 frequency-panel/apps/web/.next/cache
 commands/approvedSetChannels.json
 commands/ausencias.json
