@@ -41,7 +41,7 @@ O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da S
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
 - inicia o bot Discord, a Frequency API e o Next standalone;
 - abre o proxy publico em `PORT=80`;
-- expõe `/health` e `/_shardcloud/health` para diagnostico rapido;
+- expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
 - reinicia processos internos que cairem;
 - gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados, para impedir loop de crash. Para sessoes estaveis, configure secrets fixos na ShardCloud.
 

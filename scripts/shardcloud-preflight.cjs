@@ -327,6 +327,7 @@ function checkBuildArtifacts() {
   requireFile('frequency-panel/apps/web/.next/standalone/apps/web/server.js', 'Next standalone server');
   requireFile('frequency-panel/apps/web/.next/static', 'Next static assets');
   requireFile('frequency-panel/apps/web/public/vortex-logo.png', 'public vortex-logo.png');
+  requireFile('frequency-panel/apps/web/src/app/health/route.ts', 'Next /health route');
 }
 
 function main() {
