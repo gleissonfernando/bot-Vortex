@@ -82,6 +82,7 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
   setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
   setRuntimeDefault('START_PUBLIC_PROXY', 'true');
+  setRuntimeDefault('SHARDCLOUD_REQUIRE_PORT_80', 'true');
   setRuntimeDefault('START_DISCORD_BOT', 'true');
   setRuntimeDefault('START_FREQUENCY_API', 'true');
   setRuntimeDefault('START_FREQUENCY_WEB', 'true');
@@ -142,6 +143,22 @@ function uniquePortList(values) {
     if (!ports.includes(text)) ports.push(text);
   }
   return ports;
+}
+
+function shouldForcePublicProxy() {
+  return !envFlag('SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE', false);
+}
+
+function shouldBindPort80() {
+  return envFlag('SHARDCLOUD_REQUIRE_PORT_80', true)
+    || envFlag('SHARDCLOUD_BIND_PORT_80_FALLBACK', true);
+}
+
+function getPublicProxyPorts() {
+  return uniquePortList([
+    webPort,
+    shouldBindPort80() ? '80' : null,
+  ]);
 }
 
 function canConnect(port, host) {
@@ -303,10 +320,7 @@ function runtimeHealth() {
     mode: process.env.SHARDCLOUD_DEPLOY_MODE || 'git',
     publicBaseUrl,
     ports: {
-      public: uniquePortList([
-        webPort,
-        envFlag('SHARDCLOUD_BIND_PORT_80_FALLBACK', true) ? '80' : null,
-      ]),
+      public: getPublicProxyPorts(),
       api: apiPort,
       botApi: botApiPort,
       webInternal: webInternalPort,
@@ -412,11 +426,10 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
 }
 
 function startProxy() {
-  const ports = uniquePortList([
-    webPort,
-    envFlag('SHARDCLOUD_BIND_PORT_80_FALLBACK', true) ? '80' : null,
-  ]);
-  return ports.map((port, index) => createProxyServer(port, { fatalOnError: index === 0 }));
+  const ports = getPublicProxyPorts();
+  return ports.map((port, index) => createProxyServer(port, {
+    fatalOnError: port === '80' || ports.length === 1 || (index === 0 && !shouldBindPort80()),
+  }));
 }
 
 function copyIfExists(source, target) {
@@ -490,7 +503,7 @@ function ensureStandaloneWebAssets() {
 const shouldStartDiscordBot = envFlag('START_DISCORD_BOT', true);
 const shouldStartFrequencyApi = envFlag('START_FREQUENCY_API', true);
 const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', true);
-const shouldStartPublicProxy = envFlag('START_PUBLIC_PROXY', true);
+const shouldStartPublicProxy = shouldForcePublicProxy() || envFlag('START_PUBLIC_PROXY', true);
 const requireBuiltAssets = envFlag('REQUIRE_BUILT_ASSETS', false);
 
 let web = null;
@@ -504,6 +517,9 @@ function exitMissingBuiltAsset(label, relativePath) {
 
 async function main() {
   if (shouldStartPublicProxy) {
+    if (shouldForcePublicProxy() && isFalseValue(process.env.START_PUBLIC_PROXY)) {
+      console.warn('[shardcloud] START_PUBLIC_PROXY=false ignorado; defina SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE=true apenas se quiser desligar a porta publica.');
+    }
     proxyServers = startProxy();
   } else {
     console.log('[shardcloud] Public proxy disabled by START_PUBLIC_PROXY=false.');

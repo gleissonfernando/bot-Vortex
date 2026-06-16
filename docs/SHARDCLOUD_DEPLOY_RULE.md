@@ -43,7 +43,7 @@ O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem semp
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
 - recompila API e web em todo restart no modo Git para evitar `.next`/`dist` antigo ou ausente na hospedagem;
 - inicia o bot Discord, a Frequency API e o Next standalone;
-- abre o proxy publico na porta configurada e tambem tenta manter a porta `80` como fallback da ShardCloud;
+- abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
 - expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
 - reinicia processos internos que cairem;
 - gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados, para impedir loop de crash. Para sessoes estaveis, configure secrets fixos na ShardCloud.
@@ -55,8 +55,9 @@ Quando `https://bot-vortex.shardweb.app/health` retorna a pagina `502 Bad Gatewa
 Verifique nesta ordem:
 
 - `CUSTOM_COMMAND=PORT=80 npm start` no `.shardcloud`;
-- `START_PUBLIC_PROXY` ausente ou diferente de `false`;
-- `PORT=80` e `WEB_PORT=80` na hospedagem, ou deixe o fallback `SHARDCLOUD_BIND_PORT_80_FALLBACK` sem `false`;
+- `SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE` ausente ou diferente de `true`;
+- `SHARDCLOUD_REQUIRE_PORT_80` ausente ou diferente de `false`;
+- `PORT=80` e `WEB_PORT=80` na hospedagem;
 - `START_DISCORD_BOT` ausente ou diferente de `false`;
 - `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI` configurados na ShardCloud.
 
