@@ -105,4 +105,10 @@ jobs:
           curl -i --max-time 20 "$url/health" || true
           curl -i --max-time 20 "$url/_shardcloud/health" || true
           curl -i --max-time 20 "$url/api/health" || true
+          status_body="$(curl -fsS --max-time 20 -H "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" "https://shardcloud.app/api/apps/${{ steps.shardcloud.outputs.app_id }}?q=true" || true)"
+          if [ -n "$status_body" ]; then
+            STATUS_BODY="$status_body" node -e "try{const data=JSON.parse(process.env.STATUS_BODY||'{}');const app=data.app||{};const parts=['status='+String(data.status||'unknown'),'name='+String(app.name||'unknown'),'ram='+String(data.real_time_ram??'unknown'),'vcpu='+String(data.real_time_vcpu??'unknown')];console.log('::error::ShardCloud API app '+parts.join(' '));}catch(error){console.log('::error::ShardCloud API status response was not valid JSON');}"
+          else
+            echo "::error::ShardCloud API status lookup failed."
+          fi
           exit 1

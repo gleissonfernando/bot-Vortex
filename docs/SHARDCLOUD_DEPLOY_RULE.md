@@ -64,6 +64,7 @@ Verifique nesta ordem:
 Se `/health` voltar JSON, confira `config.startDiscordBot`, `config.hasDiscordToken` e `children.discord-bot` para saber se o bot iniciou, foi pulado por falta de token, ou foi desligado por variavel de ambiente.
 
 O arquivo `.shardignore` tambem deve continuar versionado como contrato do pacote, mas a CLI oficial da ShardCloud nao le esse arquivo. Por isso o workflow precisa remover explicitamente cache, segredos e JSONs de runtime antes do `commit`.
+Quando a validacao publica falhar, o workflow consulta o status do app pela API da ShardCloud e publica apenas `status`, `name`, `ram` e `vcpu` como anotacao do check. Nao use `logs`/`status` do CLI dentro da Action porque esses comandos ficam em streaming/interativos.
 
 ## Variaveis obrigatorias no GitHub Actions
 

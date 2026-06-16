@@ -360,6 +360,7 @@ function checkWorkflow() {
     '$url$endpoint',
     '/api/health',
     'vortex-frequency-api',
+    'https://shardcloud.app/api/apps/',
     'rm -rf node_modules',
     'rm -f .env .env.*',
     'rm -f commands/perfis.json',
