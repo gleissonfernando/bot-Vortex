@@ -6,10 +6,25 @@ import { collection, serializeDoc, toDate } from '../db.js';
 import { requireIngestSecret } from '../middleware.js';
 import { publishDashboardEvent } from '../events.js';
 import { registerPoint } from '../services/attendance.js';
-import { getMemberByDiscord, upsertMember } from '../services/members.js';
+import { getMemberByDiscord, pruneMissingMembers, upsertMember } from '../services/members.js';
 export const ingestRouter = Router();
 ingestRouter.use(requireIngestSecret);
 const DEFAULT_LIVE_MESSAGE = '@{streamer} {title}';
+const memberSchema = z.object({
+    guildId: z.string(),
+    discordUserId: z.string(),
+    username: z.string(),
+    globalName: z.string().nullable().optional(),
+    displayName: z.string(),
+    avatarUrl: z.string().nullable().optional(),
+    bannerUrl: z.string().nullable().optional(),
+    highestRoleId: z.string().nullable().optional(),
+    highestRoleName: z.string().nullable().optional(),
+    roles: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+    joinedAt: z.string().nullable().optional(),
+    status: z.enum(['active', 'inactive']).optional(),
+    lastSeenAt: z.string().nullable().optional()
+});
 function detectLivePlatform(url) {
     try {
         const host = new URL(url.includes('://') ? url : `https://${url}`).hostname.toLowerCase();
@@ -51,21 +66,7 @@ function ingestUnavailable(res, error) {
 }
 ingestRouter.post('/members', async (req, res) => {
     const parsed = z.object({
-        members: z.array(z.object({
-            guildId: z.string(),
-            discordUserId: z.string(),
-            username: z.string(),
-            globalName: z.string().nullable().optional(),
-            displayName: z.string(),
-            avatarUrl: z.string().nullable().optional(),
-            bannerUrl: z.string().nullable().optional(),
-            highestRoleId: z.string().nullable().optional(),
-            highestRoleName: z.string().nullable().optional(),
-            roles: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
-            joinedAt: z.string().nullable().optional(),
-            status: z.enum(['active', 'inactive']).optional(),
-            lastSeenAt: z.string().nullable().optional()
-        }))
+        members: z.array(memberSchema)
     }).safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ ok: false, error: 'Invalid members payload' });
@@ -82,6 +83,31 @@ ingestRouter.post('/members', async (req, res) => {
         return res.json({ ok: true, count: saved.length });
     }
     catch (error) {
+        return ingestUnavailable(res, error);
+    }
+});
+ingestRouter.post('/members/prune', async (req, res) => {
+    const parsed = z.object({
+        guildId: z.string().regex(/^\d{5,32}$/),
+        presentDiscordUserIds: z.array(z.string().regex(/^\d{5,32}$/)).min(1)
+    }).safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ ok: false, error: 'Invalid member snapshot payload' });
+    try {
+        const result = await pruneMissingMembers(parsed.data.guildId, parsed.data.presentDiscordUserIds);
+        await (await collection('audit_events')).insertOne({
+            guild_id: parsed.data.guildId,
+            action: 'members.pruned',
+            payload: result,
+            created_at: new Date()
+        });
+        publishDashboardEvent({ type: 'members.pruned', payload: result });
+        return res.json({ ok: true, ...result });
+    }
+    catch (error) {
+        if (String(error?.message || '').includes('Snapshot de membros vazio')) {
+            return res.status(400).json({ ok: false, error: error.message });
+        }
         return ingestUnavailable(res, error);
     }
 });
@@ -178,21 +204,6 @@ ingestRouter.post('/presence', async (req, res) => {
     }
 });
 ingestRouter.post('/point-snapshot', async (req, res) => {
-    const memberSchema = z.object({
-        guildId: z.string(),
-        discordUserId: z.string(),
-        username: z.string(),
-        globalName: z.string().nullable().optional(),
-        displayName: z.string(),
-        avatarUrl: z.string().nullable().optional(),
-        bannerUrl: z.string().nullable().optional(),
-        highestRoleId: z.string().nullable().optional(),
-        highestRoleName: z.string().nullable().optional(),
-        roles: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
-        joinedAt: z.string().nullable().optional(),
-        status: z.enum(['active', 'inactive']).optional(),
-        lastSeenAt: z.string().nullable().optional()
-    });
     const parsed = z.object({
         members: z.array(memberSchema).optional(),
         sessions: z.array(z.object({

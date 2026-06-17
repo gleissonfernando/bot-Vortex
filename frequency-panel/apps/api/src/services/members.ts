@@ -22,6 +22,132 @@ export type MemberInput = {
   lastSeenAt?: string | null;
 };
 
+const USER_ID_ARRAY_KEYS = new Set([
+  'billingExemptUserIds'
+]);
+const IDENTITY_FIELDS = [
+  'userId',
+  'discordUserId',
+  'targetUserId',
+  'targetId',
+  'memberId',
+  'discordId',
+  'discord_user_id',
+  'target_user_id'
+];
+const GUILD_FIELDS = ['guildId', 'guild_id'];
+const REMOVED = Symbol('removed-user-record');
+
+function normalizeDiscordId(value: unknown) {
+  const text = String(value || '').trim();
+  return /^\d{15,25}$/.test(text) ? text : null;
+}
+
+function uniqueDiscordIds(values: unknown[]) {
+  return [...new Set(values.map(normalizeDiscordId).filter(Boolean) as string[])];
+}
+
+function cloneJson(value: unknown) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getRecordGuildId(record: unknown) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  for (const field of GUILD_FIELDS) {
+    const guildId = normalizeDiscordId((record as Record<string, unknown>)[field]);
+    if (guildId) return guildId;
+  }
+  return null;
+}
+
+function recordBelongsToGuild(record: unknown, guildId: string) {
+  const recordGuildId = getRecordGuildId(record);
+  return !recordGuildId || recordGuildId === guildId;
+}
+
+function recordHasRemovedIdentity(record: unknown, removedUserIds: Set<string>) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  return IDENTITY_FIELDS.some((field) => removedUserIds.has(String((record as Record<string, unknown>)[field] || '').trim()));
+}
+
+function isRemovedUserRecord(record: unknown, guildId: string, removedUserIds: Set<string>) {
+  return recordHasRemovedIdentity(record, removedUserIds) && recordBelongsToGuild(record, guildId);
+}
+
+function isRemovedUserScopedKey(key: unknown, guildId: string, removedUserIds: Set<string>) {
+  const text = String(key || '');
+  for (const userId of removedUserIds) {
+    if (
+      text === userId
+      || text === `${guildId}:${userId}`
+      || text.startsWith(`${guildId}:${userId}:`)
+      || text.includes(`:${userId}:`)
+      || text.endsWith(`:${userId}`)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function stripRemovedUserRecords(value: unknown, guildId: string, removedUserIds: Set<string>, keyName: string | null = null): {
+  value: unknown | typeof REMOVED;
+  removed: boolean;
+} {
+  if (Array.isArray(value)) {
+    if (USER_ID_ARRAY_KEYS.has(String(keyName || ''))) {
+      const next = value.filter((item) => !removedUserIds.has(String(item || '').trim()));
+      return { value: next, removed: next.length !== value.length };
+    }
+
+    let removed = false;
+    const next = [];
+    for (const item of value) {
+      if (isRemovedUserRecord(item, guildId, removedUserIds)) {
+        removed = true;
+        continue;
+      }
+      const cleaned = stripRemovedUserRecords(item, guildId, removedUserIds, keyName);
+      if (cleaned.value === REMOVED) {
+        removed = true;
+        continue;
+      }
+      removed ||= cleaned.removed;
+      next.push(cleaned.value);
+    }
+    return { value: next, removed };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return { value, removed: false };
+  }
+
+  if (isRemovedUserRecord(value, guildId, removedUserIds)) {
+    return { value: REMOVED, removed: true };
+  }
+
+  let removed = false;
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (isRemovedUserScopedKey(key, guildId, removedUserIds)) {
+      removed = true;
+      continue;
+    }
+
+    const cleaned = stripRemovedUserRecords(item, guildId, removedUserIds, key);
+    if (cleaned.value === REMOVED) {
+      removed = true;
+      continue;
+    }
+
+    removed ||= cleaned.removed;
+    next[key] = cleaned.value;
+  }
+
+  return { value: next, removed };
+}
+
 export async function upsertMember(input: MemberInput) {
   const members = await collection('discord_members');
   const now = new Date();
@@ -183,4 +309,124 @@ export async function getMember(memberId: string) {
 export async function getMemberByDiscord(guildId: string, discordUserId: string) {
   const members = await collection('discord_members');
   return serializeDoc(await members.findOne({ guild_id: guildId, discord_user_id: discordUserId }));
+}
+
+export async function pruneMissingMembers(guildId: string, presentDiscordUserIds: unknown[]) {
+  const normalizedGuildId = normalizeDiscordId(guildId);
+  if (!normalizedGuildId) throw new Error('Guild ID invalido');
+
+  const presentIds = uniqueDiscordIds(presentDiscordUserIds);
+  if (!presentIds.length) throw new Error('Snapshot de membros vazio; limpeza cancelada.');
+
+  const members = await collection('discord_members');
+  const missingMembers = await members.find(
+    {
+      guild_id: normalizedGuildId,
+      discord_user_id: { $nin: presentIds }
+    },
+    { projection: { id: 1, discord_user_id: 1 } }
+  ).toArray();
+
+  const removedDiscordIds = uniqueDiscordIds(missingMembers.map((member: any) => member.discord_user_id));
+  const removedUserSet = new Set(removedDiscordIds);
+  if (!removedDiscordIds.length) {
+    return {
+      guildId: normalizedGuildId,
+      presentMembers: presentIds.length,
+      removedMembers: 0,
+      deleted: {},
+      jsonDocumentsUpdated: 0
+    };
+  }
+
+  const memberIds = [...new Set(missingMembers.map((member: any) => String(member.id || '').trim()).filter(Boolean))];
+  const now = new Date();
+  const memberIdOrUserFilter = [
+    ...(memberIds.length ? [{ member_id: { $in: memberIds } }] : []),
+    { guild_id: normalizedGuildId, discord_user_id: { $in: removedDiscordIds } }
+  ];
+  const deleted: Record<string, number> = {};
+
+  deleted.discord_members = (await members.deleteMany({
+    guild_id: normalizedGuildId,
+    discord_user_id: { $in: removedDiscordIds }
+  })).deletedCount || 0;
+
+  deleted.city_presence = (await (await collection('city_presence')).deleteMany({
+    guild_id: normalizedGuildId,
+    discord_user_id: { $in: removedDiscordIds }
+  })).deletedCount || 0;
+
+  deleted.attendance_sessions = (await (await collection('attendance_sessions')).deleteMany({
+    $or: memberIdOrUserFilter
+  })).deletedCount || 0;
+
+  deleted.absence_records = (await (await collection('absence_records')).deleteMany({
+    $or: memberIdOrUserFilter
+  })).deletedCount || 0;
+
+  deleted.site_users = (await (await collection('site_users')).deleteMany({
+    guild_id: normalizedGuildId,
+    discord_id: { $in: removedDiscordIds }
+  })).deletedCount || 0;
+
+  deleted.site_user_audit_logs = (await (await collection('site_user_audit_logs')).deleteMany({
+    guild_id: normalizedGuildId,
+    $or: [
+      { target_discord_id: { $in: removedDiscordIds } },
+      { actor_id: { $in: removedDiscordIds } }
+    ]
+  })).deletedCount || 0;
+
+  const auditEventFilter = [
+    { guild_id: normalizedGuildId, actor_id: { $in: removedDiscordIds } },
+    { 'payload.guildId': normalizedGuildId, 'payload.discordUserId': { $in: removedDiscordIds } },
+    { 'payload.member.guildId': normalizedGuildId, 'payload.member.discordUserId': { $in: removedDiscordIds } },
+    ...(memberIds.length ? [{ 'payload.session.member_id': { $in: memberIds } }] : [])
+  ];
+  deleted.audit_events = (await (await collection('audit_events')).deleteMany({ $or: auditEventFilter })).deletedCount || 0;
+
+  const orderFamilies = await collection<any>('order_families');
+  const familyMemberPull = await orderFamilies.updateMany(
+    { guild_id: normalizedGuildId, 'members.discord_id': { $in: removedDiscordIds } },
+    { $pull: { members: { discord_id: { $in: removedDiscordIds } } }, $set: { updated_at: now } } as any
+  );
+  const familyLeaderCleanup = await orderFamilies.updateMany(
+    { guild_id: normalizedGuildId, leader_id: { $in: removedDiscordIds } },
+    { $set: { leader_id: null, leader_name: null, updated_at: now } }
+  );
+  deleted.order_family_links = (familyMemberPull.modifiedCount || 0) + (familyLeaderCleanup.modifiedCount || 0);
+
+  deleted.order_favorites = (await (await collection('order_favorites')).deleteMany({
+    guild_id: normalizedGuildId,
+    created_by_id: { $in: removedDiscordIds }
+  })).deletedCount || 0;
+
+  const jsonDocuments = await collection('jsondocuments');
+  const documents = await jsonDocuments.find({}).toArray();
+  let jsonDocumentsUpdated = 0;
+  for (const document of documents as any[]) {
+    const cleaned = stripRemovedUserRecords(cloneJson(document.data || {}), normalizedGuildId, removedUserSet);
+    if (!cleaned.removed || cleaned.value === REMOVED) continue;
+
+    await jsonDocuments.updateOne(
+      { _id: document._id },
+      {
+        $set: {
+          data: cleaned.value,
+          updatedAt: now,
+          updated_at: now
+        }
+      }
+    );
+    jsonDocumentsUpdated += 1;
+  }
+
+  return {
+    guildId: normalizedGuildId,
+    presentMembers: presentIds.length,
+    removedMembers: removedDiscordIds.length,
+    deleted,
+    jsonDocumentsUpdated
+  };
 }

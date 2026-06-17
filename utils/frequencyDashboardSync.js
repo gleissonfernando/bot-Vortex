@@ -104,9 +104,21 @@ function getPrimaryGuilds(client) {
 async function syncGuildMembers(client) {
   if (!isEnabled()) return { skipped: true };
   let total = 0;
+  let presentTotal = 0;
+  let removedTotal = 0;
   for (const guild of getPrimaryGuilds(client).values()) {
-    const members = await guild.members.fetch().catch(() => guild.members.cache);
-    const payload = await Promise.all(Array.from(members.values())
+    let fetchedFullSnapshot = false;
+    let members = guild.members.cache;
+    try {
+      members = await guild.members.fetch();
+      fetchedFullSnapshot = true;
+    } catch (error) {
+      logger.warn(`Frequency dashboard: nao foi possivel buscar todos os membros de ${guild.id}; limpeza de ausentes ignorada: ${error.message}`);
+    }
+
+    const humanMembers = Array.from(members.values()).filter((member) => !member.user?.bot);
+    const presentDiscordUserIds = humanMembers.map((member) => member.user?.id).filter(Boolean);
+    const payload = await Promise.all(humanMembers
       .filter((member) => !member.user?.bot && hasRegisteredProfile(guild.id, member.id))
       .map(mapMember));
 
@@ -114,10 +126,20 @@ async function syncGuildMembers(client) {
       const chunk = payload.slice(index, index + MEMBER_CHUNK_SIZE);
       await postToFrequencyApi('/ingest/members', { members: chunk });
     }
+    if (fetchedFullSnapshot && presentDiscordUserIds.length) {
+      const result = await postToFrequencyApi('/ingest/members/prune', {
+        guildId: guild.id,
+        presentDiscordUserIds,
+      });
+      removedTotal += Number(result?.removedMembers || 0);
+    } else if (fetchedFullSnapshot) {
+      logger.warn(`Frequency dashboard: snapshot de ${guild.id} sem membros humanos; limpeza de ausentes ignorada.`);
+    }
     total += payload.length;
+    presentTotal += presentDiscordUserIds.length;
   }
-  logger.info(`Frequency dashboard: ${total} membro(s) sincronizado(s).`);
-  return { total };
+  logger.info(`Frequency dashboard: ${total} membro(s) sincronizado(s), ${presentTotal} presente(s) no Discord, ${removedTotal} removido(s) do painel.`);
+  return { total, present: presentTotal, removed: removedTotal };
 }
 
 function queuePointSnapshotSync(client, delayMs = 1500) {
