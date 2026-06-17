@@ -5,7 +5,7 @@ const { safeReply } = require('../../utils/safeReply');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('encomenda')
-    .setDescription('Abre o Sistema de Encomendas V2.'),
+    .setDescription('Abre o Sistema de Encomendas Vortex.'),
 
   async execute(interaction) {
     if (!hasOrderUserPermission(interaction.member)) {

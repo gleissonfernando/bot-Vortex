@@ -35,6 +35,8 @@ const ORDER_TICKET_CURRENCY_FIELD = 'order_ticket_currency';
 const ORDER_TICKET_TEXT_MODAL_ID = 'modal_order_ticket_text';
 const ORDER_TICKET_FAMILY_TEXT_FIELD = 'order_ticket_family_text';
 const ORDER_TICKET_CURRENCY_TEXT_FIELD = 'order_ticket_currency_text';
+const FAMILY_MUNITION_PRICES_FIELD = 'munition_prices';
+const FAMILY_DEFAULT_DISCOUNT_FIELD = 'default_discount';
 
 const orderSessions = new Map();
 const familySelections = new Map();
@@ -89,7 +91,7 @@ function isMongoReady() {
 
 function getCollection(name) {
   if (!isMongoReady()) {
-    throw new Error('MongoDB nao esta conectado. O Sistema de Encomendas V2 nao grava dados locais.');
+    throw new Error('MongoDB nao esta conectado. O Sistema de Encomendas Vortex nao grava dados locais.');
   }
   return mongoose.connection.db.collection(name);
 }
@@ -129,6 +131,18 @@ function cents(value) {
 
 function moneyFromCents(value) {
   return Math.round(Number(value || 0)) / 100;
+}
+
+function clampPercentage(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(100, number));
+}
+
+function parsePercentage(value, fallback = 0) {
+  const raw = String(value || '').trim().replace('%', '').replace(',', '.');
+  if (!raw) return fallback;
+  return clampPercentage(raw);
 }
 
 function formatMoney(valueCents) {
@@ -177,7 +191,7 @@ function groupedOrderLines(session) {
 function groupedOrderTotals(session) {
   const subtotal = groupedOrderLines(session).reduce((total, item) => total + Number(item.valueCents || 0), 0);
   const percent = Math.max(0, Math.min(100, Number(session.couponPercentage || 0)));
-  const discount = session.couponMode === 'yes' ? Math.round(subtotal * (percent / 100)) : 0;
+  const discount = hasSessionDiscount(session) ? Math.round(subtotal * (percent / 100)) : 0;
   return {
     subtotal,
     discount,
@@ -203,7 +217,7 @@ function groupedOrderSummary(session) {
     '',
     itemLines,
     '',
-    `**Cupom:** ${session.couponMode === 'yes' ? (session.couponCode || 'Selecione') : 'Nao'}`,
+    `**Cupom/Desconto:** ${discountSummaryLabel(session)}`,
     `**Desconto:** ${Number(session.couponPercentage || 0)}%`,
     `**Valor do Desconto:** ${formatOrderMoney(totals.discount, currency)}`,
     `**Total Final:** ${formatOrderMoney(totals.final, currency)}`,
@@ -260,6 +274,117 @@ function normalizeSearchText(value) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function modalTextValue(fields, customId) {
+  try {
+    return String(fields.getTextInputValue(customId) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function matchGroupedOrderItem(value) {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return null;
+  return GROUPED_ORDER_ITEMS.find((item) => {
+    const label = normalizeSearchText(item.label);
+    const key = normalizeSearchText(item.key);
+    return normalized.includes(label) || normalized.includes(key) || label.includes(normalized) || key.includes(normalized);
+  }) || null;
+}
+
+function parseMunitionUnitPrices(value) {
+  const result = {};
+  const segments = String(value || '')
+    .split(/\r?\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    const meta = matchGroupedOrderItem(segment);
+    if (!meta) continue;
+    const explicit = segment.split(/[=:|]/).slice(1).join(' ').trim();
+    const numbers = segment.match(/\d[\d.,]*/g) || [];
+    const priceText = explicit || numbers[numbers.length - 1] || '';
+    if (!priceText) continue;
+    const price = parseMoney(priceText, 0);
+    if (price === null) continue;
+    result[meta.key] = cents(price);
+  }
+
+  return result;
+}
+
+function familyMunitionUnitPrices(family) {
+  const source = family?.munition_unit_prices || family?.munition_prices || {};
+  return GROUPED_ORDER_ITEMS.reduce((prices, item) => {
+    prices[item.key] = Math.max(0, Number(source?.[item.key] || 0));
+    return prices;
+  }, {});
+}
+
+function formatFamilyPriceInput(family) {
+  const prices = familyMunitionUnitPrices(family);
+  return GROUPED_ORDER_ITEMS
+    .map((item) => `${item.label}=${moneyFromCents(prices[item.key] || 0)}`)
+    .join('; ');
+}
+
+function formatFamilyPricesShort(family, currency = 'BRL') {
+  const prices = familyMunitionUnitPrices(family);
+  const configured = GROUPED_ORDER_ITEMS
+    .filter((item) => Number(prices[item.key] || 0) > 0)
+    .map((item) => `${item.label}: ${formatOrderMoney(prices[item.key], currency)}`);
+  return configured.length ? configured.join(' | ') : 'nao configurado';
+}
+
+function familyDefaultDiscountPercentage(family) {
+  return clampPercentage(family?.default_discount_percentage ?? family?.default_discount_percent ?? 0) ?? 0;
+}
+
+function applyFamilyDefaultDiscount(session, family) {
+  const percentage = familyDefaultDiscountPercentage(family);
+  session.familyDiscountPercentage = percentage;
+  session.couponId = '';
+  session.couponCode = '';
+  if (percentage > 0) {
+    session.discountSource = 'family';
+    session.couponMode = 'no';
+    session.couponPercentage = percentage;
+  } else {
+    session.discountSource = 'none';
+    session.couponMode = 'no';
+    session.couponPercentage = 0;
+  }
+}
+
+function hasSessionDiscount(session) {
+  return Number(session?.couponPercentage || 0) > 0
+    && ['coupon', 'family'].includes(String(session?.discountSource || ''));
+}
+
+function discountSummaryLabel(session) {
+  if (session?.discountSource === 'coupon') return session.couponCode || 'Selecione';
+  if (session?.discountSource === 'family') return `Desconto da familia (${Number(session.couponPercentage || 0)}%)`;
+  return 'Nao';
+}
+
+function applyFamilyPricesToGroupedItems(groupedItems, family) {
+  const prices = familyMunitionUnitPrices(family);
+  const missing = [];
+  for (const item of GROUPED_ORDER_ITEMS) {
+    const line = groupedItems[item.key];
+    if (!line || !Number(line.quantity || 0)) continue;
+    if (Number(line.valueCents || 0) > 0) continue;
+    const unitPrice = Number(prices[item.key] || 0);
+    if (unitPrice > 0) {
+      line.valueCents = unitPrice * Number(line.quantity || 0);
+    } else {
+      missing.push(item.label);
+    }
+  }
+  return missing;
+}
+
 function parseOrderTicketSubject(subject) {
   const grouped = emptyGroupedItems();
   const segments = String(subject || '')
@@ -277,7 +402,7 @@ function parseOrderTicketSubject(subject) {
     if (!meta) continue;
 
     const parsed = parseGroupedProductInput(segment);
-    if (!parsed.quantity || !parsed.valueCents) continue;
+    if (!parsed.quantity) continue;
     grouped[meta.key] = {
       key: meta.key,
       label: meta.label,
@@ -472,6 +597,11 @@ function buildOrderApprovalPayload(order) {
   const subtotal = Number(order.subtotal_value_cents ?? order.total_value_cents ?? 0);
   const discount = Number(order.discount_value_cents ?? 0);
   const final = Number(order.final_value_cents ?? order.total_value_cents ?? Math.max(0, subtotal - discount));
+  const discountLabel = order.coupon_code
+    ? `${order.coupon_code} (${Number(order.coupon_percentage || 0)}%)`
+    : Number(order.coupon_percentage || 0) > 0
+      ? `Desconto da familia (${Number(order.coupon_percentage || 0)}%)`
+      : 'Sem desconto';
   const embed = new EmbedBuilder()
     .setColor(Number.parseInt(String(order.family_color || '#0EA5E9').replace('#', ''), 16) || 0x0ea5e9)
     .setTitle(`${ORDER_PANEL_EMOJI} Nova Encomenda`)
@@ -486,13 +616,13 @@ function buildOrderApprovalPayload(order) {
       items ? '**Itens da Encomenda:**' : '**Itens da Encomenda:**',
       items || 'Nenhum item',
       '',
-      `**\u{1F3DF} Cupom:** ${order.coupon_code ? `${order.coupon_code} (${Number(order.coupon_percentage || 0)}%)` : 'Sem desconto'}`,
+      `**\u{1F3DF} Cupom/Desconto:** ${discountLabel}`,
       `**\u{1F4B8} Desconto:** ${formatOrderMoney(discount, currency)}`,
       `**\u{1F4B0} Total Final:** ${formatOrderMoney(final, currency)}`,
       `**\u{1F4C5} Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`,
       `**Status:** ${order.status === 'pending' ? '\u{1F7E1} Pendente' : statusLabel(order.status)}`,
     ].filter(Boolean).join('\n'))
-    .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
+    .setFooter({ text: 'Vortex | Sistema de Encomendas' })
     .setTimestamp(order.created_at);
 
   return {
@@ -547,6 +677,8 @@ function getSession(interaction) {
       couponId: '',
       couponCode: '',
       couponPercentage: 0,
+      discountSource: 'none',
+      familyDiscountPercentage: 0,
       subject: '',
       couponInput: '',
       groupedItems: emptyGroupedItems(),
@@ -570,7 +702,8 @@ function upsertCartLine(session, line) {
 function cartTotal(session) {
   if (session.productId && session.quantity > 0 && Number.isFinite(session.unitPriceCents)) {
     const gross = session.unitPriceCents * session.quantity;
-    return Math.max(0, gross - Math.round(gross * (Number(session.couponPercentage || 0) / 100)));
+    const discount = hasSessionDiscount(session) ? Math.round(gross * (Number(session.couponPercentage || 0) / 100)) : 0;
+    return Math.max(0, gross - discount);
   }
   return session.cart.reduce((total, item) => total + item.total_value_cents, 0);
 }
@@ -580,7 +713,7 @@ function orderPreviewTotals(session) {
   const unit = Number(session.unitPriceCents || 0);
   const gross = unit * quantity;
   const percent = Math.max(0, Math.min(100, Number(session.couponPercentage || 0)));
-  const discount = Math.round(gross * (percent / 100));
+  const discount = hasSessionDiscount(session) ? Math.round(gross * (percent / 100)) : 0;
   return {
     gross,
     discount,
@@ -596,7 +729,7 @@ function cartDescription(session) {
       `Quantidade: **${Number(session.quantity || 0).toLocaleString('pt-BR')}**`,
       `Unitario: **${formatOrderMoney(session.unitPriceCents || 0, session.currency)}**`,
       `Bruto: **${formatOrderMoney(totals.gross, session.currency)}**`,
-      `Cupom: **${session.couponCode || 'Sem desconto'}**`,
+      `Cupom/Desconto: **${discountSummaryLabel(session)}**`,
       `Desconto: **${formatOrderMoney(totals.discount, session.currency)}**`,
       `Final: **${formatOrderMoney(totals.final, session.currency)}**`,
     ].join('\n');
@@ -611,15 +744,15 @@ function cartDescription(session) {
 function buildOrderPanelPayload(interaction = null) {
   const embed = new EmbedBuilder()
     .setColor('#0EA5E9')
-    .setAuthor({ name: 'VORTEX | Encomendas V2', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
-    .setTitle('Sistema de Encomendas V2')
+    .setAuthor({ name: 'VORTEX | Encomendas', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
+    .setTitle('Sistema de Encomendas Vortex')
     .setDescription([
       `\u{2795} **Abrir Nova Encomenda** abre o formulario no modelo de ticket.`,
       'Selecione a familia, descreva os produtos no assunto, informe cupom se tiver e envie.',
       '',
       'Todas as familias, cupons, produtos e pedidos usam MongoDB. Nada e salvo em JSON local.',
     ].join('\n'))
-    .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
+    .setFooter({ text: 'Vortex | Sistema de Encomendas' })
     .setTimestamp();
 
   const components = [
@@ -650,7 +783,7 @@ function buildOrderTicketModal(families) {
     .setRequired(true)
     .setMinLength(10)
     .setMaxLength(1000)
-    .setPlaceholder('Ex: HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000');
+    .setPlaceholder('Ex: HK/MAG 100; TEC/FIVE 50. Valor manual opcional: HK/MAG 100 | R$ 50000');
 
   const couponInput = new TextInputBuilder()
     .setCustomId(ORDER_TICKET_COUPON_FIELD)
@@ -672,7 +805,7 @@ function buildOrderTicketModal(families) {
     .setTitle('Abrir Nova Encomenda');
 
   modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    '\u{26A0}\u{FE0F} Este formulario sera enviado ao Sistema de Encomendas V2. Nao compartilhe informacoes confidenciais.',
+    '\u{26A0}\u{FE0F} Este formulario sera enviado ao Sistema de Encomendas Vortex. Nao compartilhe informacoes confidenciais.',
   ));
   modal.addLabelComponents(
     new LabelBuilder()
@@ -680,7 +813,7 @@ function buildOrderTicketModal(families) {
       .setStringSelectMenuComponent(familySelect),
     new LabelBuilder()
       .setLabel('Assunto da Encomenda *')
-      .setDescription('Informe os produtos com quantidade e valor total. Minimo de 10 caracteres.')
+      .setDescription('Informe produtos e quantidades. O valor vem da familia se nao for digitado.')
       .setTextInputComponent(subjectInput),
     new LabelBuilder()
       .setLabel('Insira seu CUPOM')
@@ -720,7 +853,7 @@ function buildOrderTicketTextModal(families) {
     row(new TextInputBuilder()
       .setCustomId(ORDER_TICKET_SUBJECT_FIELD)
       .setLabel('Assunto da Encomenda *')
-      .setPlaceholder('Ex: HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000')
+      .setPlaceholder('Ex: HK/MAG 100; TEC/FIVE 50. Valor manual opcional: HK/MAG 100 | R$ 50000')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(true)
       .setMinLength(10)
@@ -784,7 +917,7 @@ async function buildOrderAdminPanelPayload(interaction = null) {
       '',
       'Use o painel web para editar familias, cupons, valores BRL/USD e status. Use os botoes abaixo para publicar o painel publico ou acessar atalhos de gerenciamento.',
     ].join('\n'))
-    .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
+    .setFooter({ text: 'Vortex | Sistema de Encomendas' })
     .setTimestamp();
 
   return buildPayload('orders', embed, [
@@ -1235,19 +1368,21 @@ function buildFamilyModal(mode, family = null) {
         .setRequired(false)
         .setMaxLength(80)),
       row(new TextInputBuilder()
-        .setCustomId('webhook')
-        .setLabel('Webhook de logs')
-        .setValue(String(family?.log_webhook_url || '').slice(0, 200))
-        .setStyle(TextInputStyle.Short)
+        .setCustomId(FAMILY_MUNITION_PRICES_FIELD)
+        .setLabel('Valor unidade muni')
+        .setPlaceholder('HK/MAG=500; TEC/FIVE=500; MTAR/MP7=500')
+        .setValue(formatFamilyPriceInput(family).slice(0, 200))
+        .setStyle(TextInputStyle.Paragraph)
         .setRequired(false)
         .setMaxLength(200)),
       row(new TextInputBuilder()
-        .setCustomId('members')
-        .setLabel('Membros: ID - nome, um por linha')
-        .setValue((family?.members || []).map((member) => `${member.discord_id}${member.name ? ` - ${member.name}` : ''}`).join('\n').slice(0, 900))
-        .setStyle(TextInputStyle.Paragraph)
+        .setCustomId(FAMILY_DEFAULT_DISCOUNT_FIELD)
+        .setLabel('Desconto padrao (%)')
+        .setPlaceholder('Ex: 10')
+        .setValue(String(familyDefaultDiscountPercentage(family) || '').slice(0, 8))
+        .setStyle(TextInputStyle.Short)
         .setRequired(false)
-        .setMaxLength(900)),
+        .setMaxLength(8)),
     );
 }
 
@@ -1355,7 +1490,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
   if (!session.familyId || !lines.length) {
     return safeEdit(interaction, { content: 'Selecione familia e preencha pelo menos um produto antes de confirmar.' });
   }
-  if (session.couponMode === 'yes' && !session.couponId) {
+  if (session.discountSource === 'coupon' && !session.couponId) {
     return safeEdit(interaction, { content: 'Selecione o cupom ou marque Cupom: Nao antes de confirmar.' });
   }
 
@@ -1364,7 +1499,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
   if (!family) return safeEdit(interaction, { content: 'Familia ativa nao encontrada.' });
 
   let coupon = null;
-  if (session.couponMode === 'yes' && session.couponId) {
+  if (session.discountSource === 'coupon' && session.couponId) {
     const couponId = objectId(session.couponId);
     coupon = couponId ? await getCollection('order_coupons').findOne({ _id: couponId, guild_id: session.guildId, active: true }) : null;
     if (!coupon) return safeEdit(interaction, { content: 'Cupom nao encontrado ou inativo.' });
@@ -1374,10 +1509,19 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
     if (familyIds.length && !familyIds.includes(String(family._id))) return safeEdit(interaction, { content: 'Cupom nao liberado para esta familia.' });
     session.couponCode = coupon.code || coupon.name || '';
     session.couponPercentage = Number(coupon.percentage || 0);
-  } else {
+  } else if (session.discountSource !== 'family') {
     session.couponId = '';
     session.couponCode = '';
     session.couponPercentage = 0;
+    session.discountSource = 'none';
+  }
+
+  if (!coupon && session.discountSource === 'family') {
+    const defaultDiscount = familyDefaultDiscountPercentage(family);
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = defaultDiscount;
+    session.discountSource = defaultDiscount > 0 ? 'family' : 'none';
   }
 
   const currency = resolveCurrency(session.currency);
@@ -1416,7 +1560,8 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
     final_value_cents: totals.final,
     coupon_id: coupon?._id ? String(coupon._id) : null,
     coupon_code: coupon?.code || null,
-    coupon_percentage: coupon ? Number(coupon.percentage || 0) : 0,
+    coupon_percentage: Number(session.couponPercentage || 0),
+    discount_source: session.discountSource || (coupon ? 'coupon' : 'none'),
     total_value_cents: totals.final,
     status: 'pending',
     stock_applied: false,
@@ -1464,6 +1609,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
       subtotalValue: moneyFromCents(totals.subtotal),
       couponInput: session.couponInput || null,
       coupon: coupon?.code || null,
+      discountSource: session.discountSource || 'none',
       discountValue: moneyFromCents(totals.discount),
       totalValue: moneyFromCents(totals.final),
     },
@@ -1515,7 +1661,11 @@ async function finalizeOrder(interaction) {
     const unitPriceCents = inventoryPrice(product, currency);
     const quantity = Math.max(1, Number(session.quantity || 1));
     const subtotal = unitPriceCents * quantity;
-    const couponPercentage = coupon ? Math.max(0, Math.min(100, Number(coupon.percentage || 0))) : 0;
+    const couponPercentage = coupon
+      ? Math.max(0, Math.min(100, Number(coupon.percentage || 0)))
+      : session.discountSource === 'family'
+        ? familyDefaultDiscountPercentage(family)
+        : 0;
     const discount = Math.round(subtotal * (couponPercentage / 100));
     const final = Math.max(0, subtotal - discount);
     const actor = getActor(interaction);
@@ -1552,6 +1702,7 @@ async function finalizeOrder(interaction) {
       coupon_id: coupon?._id ? String(coupon._id) : null,
       coupon_code: coupon?.code || null,
       coupon_percentage: couponPercentage,
+      discount_source: coupon ? 'coupon' : (couponPercentage > 0 ? 'family' : 'none'),
       total_value_cents: final,
       status: 'pending',
       stock_applied: false,
@@ -1612,7 +1763,7 @@ async function finalizeOrder(interaction) {
         `Quantidade: **${quantity.toLocaleString('pt-BR')}**`,
         `Moeda: **${currencyLabel(currency)}**`,
         `Valor Bruto: **${formatOrderMoney(subtotal, currency)}**`,
-        `Cupom: **${coupon?.code || 'Sem desconto'}**`,
+        `Cupom/Desconto: **${coupon?.code || (couponPercentage > 0 ? `Desconto da familia (${couponPercentage}%)` : 'Sem desconto')}**`,
         `Desconto: **${formatOrderMoney(discount, currency)}**`,
         `Valor Final: **${formatOrderMoney(final, currency)}**`,
         order.approval_channel_id ? `Canal de registro: <#${order.approval_channel_id}>` : 'Canal de registro nao configurado no painel web.',
@@ -1756,6 +1907,8 @@ async function showFamilyManager(interaction) {
       `Lider: **${selected.leader_name || selected.leader_id || 'N/A'}**`,
       `Status: **${selected.active ? 'Ativa' : 'Inativa'}**`,
       `Membros: **${selected.members?.length || 0}**`,
+      `Valor un. muni: **${formatFamilyPricesShort(selected)}**`,
+      `Desconto padrao: **${familyDefaultDiscountPercentage(selected)}%**`,
       `Webhook: **${selected.log_webhook_url ? 'configurado' : 'nao configurado'}**`,
     ].join('\n') : 'Nenhuma familia cadastrada ainda.');
 
@@ -1939,7 +2092,7 @@ function parseOrderId(customId, prefix) {
 
 async function handleOrderButton(interaction) {
   if (!isMongoReady()) {
-    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas V2 nao salva dados locais.', ephemeral: true });
+    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas Vortex nao salva dados locais.', ephemeral: true });
   }
 
   if (interaction.customId === 'order_start') {
@@ -1964,6 +2117,8 @@ async function handleOrderButton(interaction) {
       couponId: '',
       couponCode: '',
       couponPercentage: 0,
+      discountSource: 'none',
+      familyDiscountPercentage: 0,
       subject: '',
       couponInput: '',
       groupedItems: emptyGroupedItems(),
@@ -2001,14 +2156,25 @@ async function handleOrderButton(interaction) {
   if (interaction.customId === 'order_coupon_yes') {
     const session = getSession(interaction);
     session.couponMode = 'yes';
+    session.discountSource = 'coupon';
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = 0;
     return showGroupedOrderForm(interaction);
   }
   if (interaction.customId === 'order_coupon_no') {
     const session = getSession(interaction);
-    session.couponMode = 'no';
-    session.couponId = '';
-    session.couponCode = '';
-    session.couponPercentage = 0;
+    if (session.familyId) {
+      const familyId = objectId(session.familyId);
+      const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
+      if (family) applyFamilyDefaultDiscount(session, family);
+    } else {
+      session.couponMode = 'no';
+      session.couponId = '';
+      session.couponCode = '';
+      session.couponPercentage = 0;
+      session.discountSource = 'none';
+    }
     return showGroupedOrderForm(interaction);
   }
   if (interaction.customId === 'order_grouped_items') {
@@ -2090,7 +2256,7 @@ async function handleOrderButton(interaction) {
 
 async function handleOrderSelect(interaction) {
   if (!isMongoReady()) {
-    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas V2 nao salva dados locais.', ephemeral: true });
+    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas Vortex nao salva dados locais.', ephemeral: true });
   }
 
   if (interaction.customId === 'order_select_family') {
@@ -2103,9 +2269,7 @@ async function handleOrderSelect(interaction) {
     session.familyLeaderName = family.leader_name || '';
     session.familyOrderChannelId = family.order_channel_id || '';
     session.familyResponsibleRoleId = family.responsible_role_id || '';
-    session.couponId = '';
-    session.couponCode = '';
-    session.couponPercentage = 0;
+    applyFamilyDefaultDiscount(session, family);
     if (session.mode === 'grouped') return showGroupedOrderForm(interaction);
     return showOrderBuilder(interaction);
   }
@@ -2140,9 +2304,16 @@ async function handleOrderSelect(interaction) {
     const session = getSession(interaction);
     const value = String(interaction.values[0] || '');
     if (value === 'none') {
-      session.couponId = '';
-      session.couponCode = '';
-      session.couponPercentage = 0;
+      if (session.familyId) {
+        const familyId = objectId(session.familyId);
+        const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
+        if (family) applyFamilyDefaultDiscount(session, family);
+      } else {
+        session.couponId = '';
+        session.couponCode = '';
+        session.couponPercentage = 0;
+        session.discountSource = 'none';
+      }
       return session.mode === 'grouped' ? showGroupedOrderForm(interaction) : showOrderBuilder(interaction);
     }
     const id = objectId(value);
@@ -2161,6 +2332,7 @@ async function handleOrderSelect(interaction) {
     session.couponId = String(coupon._id);
     session.couponCode = coupon.code || coupon.name;
     session.couponPercentage = Number(coupon.percentage || 0);
+    session.discountSource = 'coupon';
     return session.mode === 'grouped' ? showGroupedOrderForm(interaction) : showOrderBuilder(interaction);
   }
 
@@ -2226,13 +2398,20 @@ async function submitOrderTicketModal(interaction, {
   if (!family) return safeEdit(interaction, { content: 'Categoria/familia de encomenda nao encontrada.' });
 
   const groupedItems = parseOrderTicketSubject(subject);
+  const missingPrices = applyFamilyPricesToGroupedItems(groupedItems, family);
   const parsedLines = groupedOrderLines({ groupedItems });
   if (!parsedLines.length) {
     return safeEdit(interaction, {
       content: [
-        'Informe pelo menos um produto no assunto usando o modelo:',
-        '`HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000; MTAR/MP7 25 | R$ 30000`',
+        'Informe pelo menos um produto no assunto e cadastre o valor unitario da muni na familia.',
+        'Modelo com valor automatico: `HK/MAG 100; TEC/FIVE 50; MTAR/MP7 25`',
+        'Ou informe valor manual: `HK/MAG 100 | R$ 50000`',
       ].join('\n'),
+    });
+  }
+  if (missingPrices.length) {
+    return safeEdit(interaction, {
+      content: `Cadastre o valor unitario de ${missingPrices.join(', ')} nessa familia ou informe o valor manual no assunto.`,
     });
   }
 
@@ -2258,11 +2437,9 @@ async function submitOrderTicketModal(interaction, {
     session.couponId = String(coupon._id);
     session.couponCode = coupon.code || coupon.name || session.couponInput;
     session.couponPercentage = Number(coupon.percentage || 0);
+    session.discountSource = 'coupon';
   } else {
-    session.couponMode = 'no';
-    session.couponId = '';
-    session.couponCode = '';
-    session.couponPercentage = 0;
+    applyFamilyDefaultDiscount(session, family);
   }
 
   return finalizeGroupedOrder(interaction, true);
@@ -2270,7 +2447,7 @@ async function submitOrderTicketModal(interaction, {
 
 async function handleOrderModal(interaction) {
   if (!isMongoReady()) {
-    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas V2 nao salva dados locais.', ephemeral: true });
+    return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas Vortex nao salva dados locais.', ephemeral: true });
   }
 
   if (interaction.customId === ORDER_TICKET_MODAL_ID) {
@@ -2338,8 +2515,13 @@ async function handleOrderModal(interaction) {
         valueCents: parsed.valueCents,
       };
     }
+    if (session.familyId) {
+      const familyId = objectId(session.familyId);
+      const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
+      if (family) applyFamilyPricesToGroupedItems(session.groupedItems, family);
+    }
     if (!groupedOrderLines(session).length) {
-      return safeEdit(interaction, { content: 'Preencha pelo menos um produto com quantidade e valor maior que zero.' });
+      return safeEdit(interaction, { content: 'Preencha pelo menos um produto com quantidade e valor maior que zero, ou cadastre o valor unitario da muni na familia.' });
     }
     return showGroupedConfirmation(interaction);
   }
@@ -2376,8 +2558,8 @@ async function handleOrderModal(interaction) {
     const name = interaction.fields.getTextInputValue('name').trim().slice(0, 80);
     const leaderText = interaction.fields.getTextInputValue('leader').trim();
     const visualText = interaction.fields.getTextInputValue('visual').trim();
-    const webhook = interaction.fields.getTextInputValue('webhook').trim();
-    const members = normalizeMemberLines(interaction.fields.getTextInputValue('members'));
+    const munitionUnitPrices = parseMunitionUnitPrices(modalTextValue(interaction.fields, FAMILY_MUNITION_PRICES_FIELD));
+    const defaultDiscount = parsePercentage(modalTextValue(interaction.fields, FAMILY_DEFAULT_DISCOUNT_FIELD), 0);
     const [leaderIdRaw, ...leaderNameParts] = leaderText.split(/\s*-\s*/);
     const leaderId = /^\d{5,32}$/.test(leaderIdRaw || '') ? leaderIdRaw : '';
     const leaderName = leaderNameParts.join(' - ').trim() || (!leaderId ? leaderText : '');
@@ -2385,6 +2567,7 @@ async function handleOrderModal(interaction) {
     const color = /^#[0-9a-f]{6}$/i.test(colorRaw || '') ? colorRaw.toUpperCase() : '#0EA5E9';
     const icon = (iconRaw || ORDER_PANEL_EMOJI).slice(0, 32);
     if (!name || name.length < 2) return safeEdit(interaction, { content: 'Informe o nome da familia.' });
+    if (defaultDiscount === null) return safeEdit(interaction, { content: 'Informe um desconto entre 0 e 100.' });
 
     const editId = interaction.customId.startsWith('modal_order_family_edit_')
       ? objectId(interaction.customId.replace('modal_order_family_edit_', ''))
@@ -2401,8 +2584,8 @@ async function handleOrderModal(interaction) {
             leader_name: leaderName || null,
             color,
             icon,
-            log_webhook_url: webhook || null,
-            members,
+            munition_unit_prices: munitionUnitPrices,
+            default_discount_percentage: defaultDiscount,
             active: true,
             updated_at: now,
           },
@@ -2417,7 +2600,7 @@ async function handleOrderModal(interaction) {
         action: 'family_updated',
         actor_id: actor.id,
         actor_name: actor.name,
-        details: { source: 'discord' },
+        details: { source: 'discord', munitionPrices: Object.keys(munitionUnitPrices).length, defaultDiscount },
         created_at: now,
       }, result, await getSettings(guildId));
       return safeEdit(interaction, { content: `Familia ${result.name} atualizada.` });
@@ -2432,8 +2615,10 @@ async function handleOrderModal(interaction) {
       leader_name: leaderName || null,
       color,
       icon,
-      log_webhook_url: webhook || null,
-      members,
+      log_webhook_url: null,
+      members: [],
+      munition_unit_prices: munitionUnitPrices,
+      default_discount_percentage: defaultDiscount,
       active: true,
       created_by_id: actor.id,
       created_by_name: actor.name,
@@ -2449,7 +2634,7 @@ async function handleOrderModal(interaction) {
       action: 'family_created',
       actor_id: actor.id,
       actor_name: actor.name,
-      details: { source: 'discord' },
+      details: { source: 'discord', munitionPrices: Object.keys(munitionUnitPrices).length, defaultDiscount },
       created_at: now,
     }, doc, await getSettings(guildId));
     return safeEdit(interaction, { content: `Familia ${doc.name} criada.` });

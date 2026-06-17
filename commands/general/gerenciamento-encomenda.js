@@ -5,7 +5,7 @@ const { safeReply } = require('../../utils/safeReply');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('gerenciamento-encomenda')
-    .setDescription('Abre o painel administrativo do Sistema de Encomendas V2.'),
+    .setDescription('Abre o painel administrativo do Sistema de Encomendas Vortex.'),
 
   async execute(interaction) {
     if (!hasOrderManagerPermission(interaction.member)) {

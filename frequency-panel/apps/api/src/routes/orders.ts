@@ -17,6 +17,7 @@ const currencies = ['BRL', 'USD'] as const;
 type OrderStatus = typeof orderStatuses[number];
 type ItemCategory = typeof itemCategories[number];
 type OrderCurrency = typeof currencies[number];
+type FamilyMunitionPrices = Partial<Record<'hk_mag' | 'tec_five' | 'mtar_mp7', number>>;
 
 type OrderSettingsDoc = {
   _id?: ObjectId;
@@ -44,6 +45,8 @@ type OrderFamilyDoc = {
   registered_at?: Date | null;
   internal_notes?: string | null;
   log_webhook_url?: string | null;
+  munition_unit_prices?: FamilyMunitionPrices;
+  default_discount_percentage?: number;
   members: Array<{ discord_id: string; name?: string | null }>;
   active: boolean;
   created_by_id?: string | null;
@@ -189,6 +192,12 @@ const familySchema = z.object({
   registeredAt: z.coerce.date().optional(),
   internalNotes: z.string().trim().max(1000).default('Sem observacoes.'),
   logWebhookUrl: urlSchema,
+  munitionPrices: z.object({
+    hk_mag: z.coerce.number().min(0).max(1_000_000_000).optional(),
+    tec_five: z.coerce.number().min(0).max(1_000_000_000).optional(),
+    mtar_mp7: z.coerce.number().min(0).max(1_000_000_000).optional()
+  }).default({}),
+  defaultDiscountPercentage: z.coerce.number().min(0).max(100).default(0),
   active: z.boolean().default(true),
   members: z.array(z.object({
     discordId: discordId,
@@ -356,6 +365,24 @@ function moneyFromCents(value: number) {
   return Math.round(Number(value || 0)) / 100;
 }
 
+function familyMunitionPricesToCents(prices?: FamilyMunitionPrices) {
+  const source = prices || {};
+  return {
+    hk_mag: cents(Number(source.hk_mag || 0)),
+    tec_five: cents(Number(source.tec_five || 0)),
+    mtar_mp7: cents(Number(source.mtar_mp7 || 0))
+  };
+}
+
+function familyMunitionPricesFromCents(prices?: FamilyMunitionPrices) {
+  const source = prices || {};
+  return {
+    hk_mag: moneyFromCents(Number(source.hk_mag || 0)),
+    tec_five: moneyFromCents(Number(source.tec_five || 0)),
+    mtar_mp7: moneyFromCents(Number(source.mtar_mp7 || 0))
+  };
+}
+
 function formatMoney(valueCents: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(moneyFromCents(valueCents));
 }
@@ -436,6 +463,8 @@ function normalizeFamily(doc: OrderFamilyDoc) {
     registeredAt: row.registered_at || row.created_at,
     internalNotes: doc.internal_notes || '',
     logWebhookUrl: doc.log_webhook_url || '',
+    munitionPrices: familyMunitionPricesFromCents(doc.munition_unit_prices),
+    defaultDiscountPercentage: Number(doc.default_discount_percentage || 0),
     members: doc.members || [],
     active: doc.active,
     createdAt: row.created_at,
@@ -704,7 +733,7 @@ function buildDiscordOrderPayload(order: OrderDoc) {
           `**Status:** ${statusLabel(order.status)}`,
           `**Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`
         ].join('\n'),
-        footer: { text: 'Vortex | Sistema de Encomendas V2' },
+        footer: { text: 'Vortex | Sistema de Encomendas' },
         timestamp: new Date(order.created_at).toISOString()
       }
     ],
@@ -1037,6 +1066,8 @@ ordersRouter.post('/families', asyncRoute(async (req, res) => {
     registered_at: input.registeredAt || now,
     internal_notes: input.internalNotes || 'Sem observacoes.',
     log_webhook_url: input.logWebhookUrl || null,
+    munition_unit_prices: familyMunitionPricesToCents(input.munitionPrices),
+    default_discount_percentage: Number(input.defaultDiscountPercentage || 0),
     members: input.members.map((member) => ({ discord_id: member.discordId, name: member.name || null })),
     active: input.active,
     created_by_id: actor.id,
@@ -1082,6 +1113,8 @@ ordersRouter.put('/families/:id', asyncRoute(async (req, res) => {
   if (input.registeredAt !== undefined) update.registered_at = input.registeredAt || now;
   if (input.internalNotes !== undefined) update.internal_notes = input.internalNotes || '';
   if (input.logWebhookUrl !== undefined) update.log_webhook_url = input.logWebhookUrl || null;
+  if (input.munitionPrices !== undefined) update.munition_unit_prices = familyMunitionPricesToCents(input.munitionPrices);
+  if (input.defaultDiscountPercentage !== undefined) update.default_discount_percentage = Number(input.defaultDiscountPercentage || 0);
   if (input.active !== undefined) update.active = input.active;
   if (input.members !== undefined) update.members = input.members.map((member) => ({ discord_id: member.discordId, name: member.name || null }));
 

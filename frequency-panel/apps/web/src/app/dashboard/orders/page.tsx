@@ -33,6 +33,7 @@ type OrderStatus = 'pending' | 'separating' | 'transport' | 'delivered' | 'cance
 type ItemCategory = 'munitions' | 'weapons' | 'general' | 'drugs' | 'custom';
 type OrderCurrency = 'BRL' | 'USD';
 type TabKey = 'dashboard' | 'families' | 'discounts' | 'orders' | 'logs' | 'stock' | 'settings';
+type FamilyMunitionPrices = { hk_mag?: number; tec_five?: number; mtar_mp7?: number };
 
 type DiscordCategory = { id: string; name: string; position: number };
 type DiscordTextChannel = { id: string; name: string; parentId?: string | null; position: number };
@@ -61,6 +62,8 @@ type OrderFamily = {
   registeredAt: string;
   internalNotes: string;
   logWebhookUrl: string;
+  munitionPrices: FamilyMunitionPrices;
+  defaultDiscountPercentage: number;
   members: Array<{ discord_id: string; name?: string | null }>;
   active: boolean;
   createdAt: string;
@@ -232,6 +235,10 @@ const initialFamilyForm = {
   color: '#0EA5E9',
   icon: '📦',
   logWebhookUrl: '',
+  munitionPriceHkMag: '0',
+  munitionPriceTecFive: '0',
+  munitionPriceMtarMp7: '0',
+  defaultDiscountPercentage: '0',
   active: true,
   membersText: ''
 };
@@ -429,6 +436,12 @@ export default function OrdersPage() {
         color: familyForm.color,
         icon: familyForm.icon,
         logWebhookUrl: familyForm.logWebhookUrl,
+        munitionPrices: {
+          hk_mag: Number(familyForm.munitionPriceHkMag || 0),
+          tec_five: Number(familyForm.munitionPriceTecFive || 0),
+          mtar_mp7: Number(familyForm.munitionPriceMtarMp7 || 0)
+        },
+        defaultDiscountPercentage: Number(familyForm.defaultDiscountPercentage || 0),
         active: familyForm.active,
         members: parseMembers(familyForm.membersText)
       };
@@ -473,6 +486,10 @@ export default function OrdersPage() {
       color: family.color || '#0EA5E9',
       icon: family.icon || '📦',
       logWebhookUrl: family.logWebhookUrl || '',
+      munitionPriceHkMag: String(family.munitionPrices?.hk_mag ?? 0),
+      munitionPriceTecFive: String(family.munitionPrices?.tec_five ?? 0),
+      munitionPriceMtarMp7: String(family.munitionPrices?.mtar_mp7 ?? 0),
+      defaultDiscountPercentage: String(family.defaultDiscountPercentage ?? 0),
       active: family.active,
       membersText: (family.members || []).map((member) => `${member.discord_id}${member.name ? ` - ${member.name}` : ''}`).join('\n')
     });
@@ -756,7 +773,7 @@ export default function OrdersPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-100">
               <PackageCheck size={14} />
-              Sistema de Encomendas V2
+              Sistema de Encomendas Vortex
             </div>
             <h1 className="mt-3 text-3xl font-semibold text-white">Encomendas</h1>
           </div>
@@ -1032,6 +1049,12 @@ function FamiliesTab(props: {
             <textarea value={props.familyForm.internalNotes} onChange={(event) => props.setFamilyField('internalNotes', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none" />
           </label>
           <Input label="Webhook de logs" value={props.familyForm.logWebhookUrl} onChange={(value) => props.setFamilyField('logWebhookUrl', value)} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Input label="Valor HK/MAG" type="number" value={props.familyForm.munitionPriceHkMag} onChange={(value) => props.setFamilyField('munitionPriceHkMag', value)} />
+            <Input label="Valor TEC/FIVE" type="number" value={props.familyForm.munitionPriceTecFive} onChange={(value) => props.setFamilyField('munitionPriceTecFive', value)} />
+            <Input label="Valor MTAR/MP7" type="number" value={props.familyForm.munitionPriceMtarMp7} onChange={(value) => props.setFamilyField('munitionPriceMtarMp7', value)} />
+          </div>
+          <Input label="Desconto padrao (%)" type="number" value={props.familyForm.defaultDiscountPercentage} onChange={(value) => props.setFamilyField('defaultDiscountPercentage', value)} />
           <label className="block">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Membros</span>
             <textarea value={props.familyForm.membersText} onChange={(event) => props.setFamilyField('membersText', event.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none" />
@@ -1056,7 +1079,7 @@ function FamiliesTab(props: {
       <section className="panel overflow-hidden">
         <TableHeader title="Familias Cadastradas" count={props.families.length} />
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1240px] text-left text-sm">
+          <table className="w-full min-w-[1380px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Familia</th>
@@ -1066,6 +1089,7 @@ function FamiliesTab(props: {
                 <th className="px-4 py-3">Cadastro</th>
                 <th className="px-4 py-3">Observacoes</th>
                 <th className="px-4 py-3">Membros</th>
+                <th className="px-4 py-3">Valores</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Acoes</th>
               </tr>
@@ -1088,6 +1112,12 @@ function FamiliesTab(props: {
                   <td className="px-4 py-3 text-slate-300">{family.registeredAt ? formatDate(family.registeredAt) : 'N/A'}</td>
                   <td className="max-w-[260px] truncate px-4 py-3 text-slate-400">{family.internalNotes || 'N/A'}</td>
                   <td className="px-4 py-3 text-slate-300">{family.members?.length || 0}</td>
+                  <td className="px-4 py-3 text-slate-300">
+                    <p>HK/MAG {formatMoney(family.munitionPrices?.hk_mag || 0)}</p>
+                    <p>TEC/FIVE {formatMoney(family.munitionPrices?.tec_five || 0)}</p>
+                    <p>MTAR/MP7 {formatMoney(family.munitionPrices?.mtar_mp7 || 0)}</p>
+                    <p className="text-xs text-emerald-200">{family.defaultDiscountPercentage || 0}% desconto</p>
+                  </td>
                   <td className="px-4 py-3"><StatePill active={family.active} /></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
