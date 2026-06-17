@@ -95,8 +95,9 @@ function applyShardCloudRuntimeDefaults() {
     if (detectedMem <= 1024) {
       setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
       setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
-      // disable web entirely on tight runtimes
-      process.env.START_FREQUENCY_WEB = 'false';
+      // Keep the public dashboard online by starting the prebuilt Next standalone
+      // app, but avoid rebuilding it inside the constrained ShardCloud runtime.
+      setRuntimeDefault('START_FREQUENCY_WEB', 'true');
       // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');

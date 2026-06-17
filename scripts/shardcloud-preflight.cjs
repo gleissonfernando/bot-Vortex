@@ -403,6 +403,12 @@ function checkShardCloudRuntime() {
       fail(`runtime ShardCloud precisa conter ${snippet}`);
     }
   }
+
+  if (/detectedMem <= 1024[\s\S]{0,700}START_FREQUENCY_WEB\s*=\s*['"]false['"]/.test(runtime)) {
+    fail('runtime ShardCloud nao pode desligar START_FREQUENCY_WEB automaticamente em MEMORY<=1024; isso deixa o site preso em "Vortex iniciando"');
+  } else {
+    ok('runtime ShardCloud mantem o painel web ligado em MEMORY<=1024');
+  }
 }
 
 function checkEnvExamples() {
