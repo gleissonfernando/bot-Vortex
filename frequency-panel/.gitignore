@@ -1,6 +1,10 @@
 node_modules
 .next
 dist
+!apps/api/dist/
+!apps/api/dist/**
+!apps/bot/dist/
+!apps/bot/dist/**
 !apps/web/dist/
 !apps/web/dist/**
 .env

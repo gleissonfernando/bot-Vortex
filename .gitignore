@@ -35,6 +35,12 @@ coverage/
 .cache/
 .tmp/
 temp/
+!frequency-panel/apps/api/dist/
+!frequency-panel/apps/api/dist/**
+!frequency-panel/apps/bot/dist/
+!frequency-panel/apps/bot/dist/**
+!frequency-panel/apps/web/dist/
+!frequency-panel/apps/web/dist/**
 
 # OS files
 .DS_Store
