@@ -150,15 +150,19 @@ function applyShardCloudRuntimeDefaults() {
       );
       const hasPackagedWebBuild = fs.existsSync(packagedStandaloneServer);
       process.env.BUILD_API_ON_STARTUP = 'false';
-      process.env.BUILD_WEB_ON_STARTUP = hasPackagedWebBuild ? 'false' : 'true';
+      process.env.BUILD_WEB_ON_STARTUP = 'false';
+      if (!hasPackagedWebBuild) {
+        console.warn('[shardcloud] Next standalone ausente em baixa memoria. Pulando build no startup e usando fallback web para manter a porta publica online.');
+      }
       // Keep the public dashboard online by starting the prebuilt Next standalone
-      // app when present, while recovering source-only deploys by building once.
+      // app when present. Source-only deploys fall back to the web dev server;
+      // building Next during startup in 1GB can make ShardCloud drop port 80.
       process.env.START_FREQUENCY_WEB = 'true';
       // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
       process.env.REGISTER_COMMANDS_ON_STARTUP = 'false';
-      setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '120000');
+      setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '600000');
       setRuntimeDefault('DISCORD_BOT_NODE_OPTIONS', '--max-old-space-size=160');
       setRuntimeDefault('FREQUENCY_API_NODE_OPTIONS', '--max-old-space-size=160');
       setRuntimeDefault('FREQUENCY_WEB_NODE_OPTIONS', '--max-old-space-size=192');

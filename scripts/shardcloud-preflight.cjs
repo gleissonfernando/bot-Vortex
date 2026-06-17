@@ -420,7 +420,7 @@ function checkShardCloudRuntime() {
     "process.env.BUILD_API_ON_STARTUP = 'false'",
     'packagedStandaloneServer',
     'hasPackagedWebBuild',
-    "process.env.BUILD_WEB_ON_STARTUP = hasPackagedWebBuild ? 'false' : 'true'",
+    "process.env.BUILD_WEB_ON_STARTUP = 'false'",
     "process.env.START_FREQUENCY_WEB = 'true'",
     "process.env.REGISTER_COMMANDS_ON_STARTUP = 'false'",
     'DISCORD_BOT_START_DELAY_MS',
