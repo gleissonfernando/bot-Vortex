@@ -1522,7 +1522,7 @@ function getAntiAbuse(config: BotConfig | null) {
     }];
   }));
   return {
-    enabled: raw.enabled !== false,
+    enabled: raw.enabled === true,
     shieldedDisconnect: raw.shieldedDisconnect === undefined
       ? protections.antiDisconnect?.enabled === true
       : raw.shieldedDisconnect === true,

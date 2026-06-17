@@ -149,7 +149,7 @@ function normalizeAntiAbuseConfig(value: any = {}) {
   ];
   const protections = Object.fromEntries(protectionKeys.map((key) => [key, normalizeProtection(value?.protections?.[key])]));
   return {
-    enabled: value?.enabled !== false,
+    enabled: value?.enabled === true,
     shieldedDisconnect: value?.shieldedDisconnect === undefined
       ? protections.antiDisconnect?.enabled === true
       : value.shieldedDisconnect === true,

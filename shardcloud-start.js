@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
+const os = require('node:os');
 require('./utils/safeConsole').patchConsole();
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0'
@@ -72,6 +73,45 @@ function ensureEphemeralSecret(name, minLength) {
   console.warn(`[shardcloud] ${name} ausente/fraco. Usando segredo efemero forte para manter o runtime online; configure um valor fixo na ShardCloud para sessoes estaveis.`);
 }
 
+function toPositiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function readMemoryLimitMbFromCgroup() {
+  const candidates = [
+    '/sys/fs/cgroup/memory.max',
+    '/sys/fs/cgroup/memory/memory.limit_in_bytes'
+  ];
+
+  for (const filePath of candidates) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const raw = fs.readFileSync(filePath, 'utf8').trim();
+      if (!raw || raw === 'max') continue;
+      const bytes = toPositiveNumber(raw);
+      if (!bytes || bytes > 1024 ** 5) continue;
+      return Math.floor(bytes / 1024 / 1024);
+    } catch {
+      // Ignore host-specific cgroup files; environment/os fallback below handles it.
+    }
+  }
+
+  return null;
+}
+
+function detectAvailableMemoryMb() {
+  const values = [
+    toPositiveNumber(process.env.MEMORY),
+    toPositiveNumber(process.env.SHARDCLOUD_MEMORY_MB),
+    toPositiveNumber(process.env.CONTAINER_MEMORY_MB),
+    readMemoryLimitMbFromCgroup(),
+    Math.floor(os.totalmem() / 1024 / 1024)
+  ].filter((value) => Number.isFinite(value) && value > 0);
+
+  return values.length ? Math.min(...values) : 1024;
+}
+
 function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('NODE_ENV', 'production');
   setRuntimeDefault('SHARDCLOUD_DEPLOY_MODE', 'git');
@@ -84,7 +124,7 @@ function applyShardCloudRuntimeDefaults() {
   // Usamos um teto conservador porque a ShardCloud roda proxy + API + bot + web
   // no mesmo container. Em 1GB, heaps grandes demais derrubam a porta publica.
   try {
-    const detectedMem = Number(process.env.MEMORY) || 1024;
+    const detectedMem = detectAvailableMemoryMb();
     let calculated = Math.floor(detectedMem * 0.45);
     // Nunca exceder a memoria fisica minus uma margem (64MB)
     if (calculated > detectedMem - 64) calculated = Math.max(Math.floor(detectedMem - 64), 256);
