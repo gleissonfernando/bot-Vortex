@@ -30,10 +30,10 @@ APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
-CUSTOM_COMMAND=PORT=80 npm start
+CUSTOM_COMMAND=MEMORY=1024 PORT=80 npm start
 ```
 
-O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. Mantenha `PORT=80 npm start` para garantir que a hospedagem encaminhe para a porta publica correta; as demais flags de hospedagem ficam no `shardcloud-start.js` e nas variaveis do painel.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. Mantenha `MEMORY=1024 PORT=80 npm start` para garantir que o runtime Node tambem enxergue o limite de memoria e que a hospedagem encaminhe para a porta publica correta; as demais flags de hospedagem ficam no `shardcloud-start.js` e nas variaveis do painel.
 O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud. Nao deixe um fallback de app id escondido no workflow.
 
 ## Runtime da hospedagem
@@ -55,7 +55,7 @@ Quando `https://bot-vortex.shardweb.app/health` retorna a pagina `502 Bad Gatewa
 
 Verifique nesta ordem:
 
-- `CUSTOM_COMMAND=PORT=80 npm start` no `.shardcloud`;
+- `CUSTOM_COMMAND=MEMORY=1024 PORT=80 npm start` no `.shardcloud`;
 - `SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE` ausente ou diferente de `true`;
 - `SHARDCLOUD_REQUIRE_PORT_80` ausente ou diferente de `false`;
 - `PORT=80` e `WEB_PORT=80` na hospedagem;
