@@ -43,6 +43,7 @@ O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem semp
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
 - recompila API e web em todo restart no modo Git para evitar `.next`/`dist` antigo ou ausente na hospedagem;
 - inicia o bot Discord, a Frequency API e o Next standalone;
+- permite desabilitar o Next/web em runtime com `NO_NEXT=true` ou `SKIP_FREQUENCY_WEB=true`, mantendo apenas o backend Node.js;
 - abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
 - expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
 - reinicia processos internos que cairem;
