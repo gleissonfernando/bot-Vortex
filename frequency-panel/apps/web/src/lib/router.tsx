@@ -63,11 +63,11 @@ export function useParams<T extends Record<string, string> = Record<string, stri
 
 export function useRouter() {
   const router = useContext(RouterContext);
-  return {
+  return useMemo(() => ({
     push: router?.push || ((href: string) => navigate(href, false)),
     replace: router?.replace || ((href: string) => navigate(href, true)),
     refresh: () => window.dispatchEvent(new Event('vortex:navigate'))
-  };
+  }), [router]);
 }
 
 export function Link({
