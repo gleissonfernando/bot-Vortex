@@ -30,10 +30,10 @@ APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
-CUSTOM_COMMAND=MEMORY=1024 PORT=80 npm start
+CUSTOM_COMMAND=NO_NEXT=true PORT=80 npm start
 ```
 
-O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. Mantenha `MEMORY=1024 PORT=80 npm start` para garantir que o runtime Node tambem enxergue o limite de memoria e que a hospedagem encaminhe para a porta publica correta; as demais flags de hospedagem ficam no `shardcloud-start.js` e nas variaveis do painel.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. Mantenha `NO_NEXT=true PORT=80 npm start` quando a hospedagem estiver em modo Node-only para garantir que o proxy/API e arquivos runtime, como transcripts, fiquem online sem subir o Next em 1GB; as demais flags de hospedagem ficam no `shardcloud-start.js` e nas variaveis do painel.
 O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud. Nao deixe um fallback de app id escondido no workflow.
 
 ## Runtime da hospedagem
@@ -41,9 +41,9 @@ O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem semp
 `shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
 
 - aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
-- evita build pesado do web no startup quando a hospedagem esta em 1GB, mantendo proxy/API vivos e usando o fallback web se o standalone nao estiver no pacote;
-- inicia o bot Discord, a Frequency API e o Next standalone;
-- permite desabilitar o Next/web em runtime com `NO_NEXT=true` ou `SKIP_FREQUENCY_WEB=true`, mantendo apenas o backend Node.js;
+- evita build pesado do web no startup quando a hospedagem esta em 1GB;
+- inicia o bot Discord e a Frequency API; o Next standalone fica desabilitado no modo Node-only;
+- serve arquivos runtime usados pelo site, como `/transcripts`, `/assets` e `/vendor/fontawesome`, direto pelo proxy publico;
 - abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
 - expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
 - reinicia processos internos que cairem;
@@ -55,7 +55,7 @@ Quando `https://bot-vortex.shardweb.app/health` retorna a pagina `502 Bad Gatewa
 
 Verifique nesta ordem:
 
-- `CUSTOM_COMMAND=MEMORY=1024 PORT=80 npm start` no `.shardcloud`;
+- `CUSTOM_COMMAND=NO_NEXT=true PORT=80 npm start` no `.shardcloud`;
 - `SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE` ausente ou diferente de `true`;
 - `SHARDCLOUD_REQUIRE_PORT_80` ausente ou diferente de `false`;
 - `PORT=80` e `WEB_PORT=80` na hospedagem;

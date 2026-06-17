@@ -316,10 +316,10 @@ function checkShardCloudFile() {
   }
 
   const customCommand = shard.CUSTOM_COMMAND || '';
-  if (customCommand === 'MEMORY=1024 PORT=80 npm start') {
-    ok('.shardcloud CUSTOM_COMMAND curto chama npm start na porta 80 com memoria explicita');
+  if (customCommand === 'NO_NEXT=true PORT=80 npm start') {
+    ok('.shardcloud CUSTOM_COMMAND curto chama npm start na porta 80 em modo Node-only');
   } else {
-    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: MEMORY=1024 PORT=80 npm start');
+    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: NO_NEXT=true PORT=80 npm start');
   }
 
   if (customCommand.length <= 250) {
