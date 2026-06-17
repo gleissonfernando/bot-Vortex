@@ -80,7 +80,18 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('REQUIRE_BUILT_ASSETS', 'false');
   setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
   setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
-  setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
+  // Calcular NODE_OPTIONS com base na memoria atribuida pela ShardCloud (process.env.MEMORY)
+  // Tentamos usar 80% da memoria disponivel, com um limite inferior seguro.
+  try {
+    const detectedMem = Number(process.env.MEMORY) || 1024;
+    let calculated = Math.floor(detectedMem * 0.8);
+    // Nunca exceder a memoria fisica minus uma margem (64MB)
+    if (calculated > detectedMem - 64) calculated = Math.max( Math.floor(detectedMem - 64), 384 );
+    calculated = Math.max(384, calculated);
+    setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
+  } catch (err) {
+    setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
+  }
   setRuntimeDefault('START_PUBLIC_PROXY', 'true');
   setRuntimeDefault('SHARDCLOUD_REQUIRE_PORT_80', 'true');
   setRuntimeDefault('START_DISCORD_BOT', 'true');
