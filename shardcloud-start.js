@@ -91,8 +91,8 @@ function applyShardCloudRuntimeDefaults() {
     calculated = Math.max(256, calculated);
     setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
 
-    // If the runtime is constrained (<1GB), avoid heavy startup work
-    if (detectedMem < 1024) {
+    // If the runtime is constrained (<=1GB), avoid heavy startup work
+    if (detectedMem <= 1024) {
       setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
       setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
       // favor a lightweight bot mode on constrained runtimes
