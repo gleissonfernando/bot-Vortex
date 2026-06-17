@@ -111,6 +111,7 @@ await build({
   outfile: path.join(assetsDir, 'app.js'),
   bundle: true,
   format: 'esm',
+  minify: true,
   platform: 'browser',
   target: ['es2020'],
   jsx: 'automatic',
