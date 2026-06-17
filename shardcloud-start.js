@@ -95,9 +95,23 @@ function applyShardCloudRuntimeDefaults() {
     if (detectedMem <= 1024) {
       setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
       setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
-      // favor a lightweight bot mode on constrained runtimes
+      // disable web entirely on tight runtimes
+      process.env.START_FREQUENCY_WEB = 'false';
+      // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
+      setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'false');
+
+      // cap heap for low-memory to avoid OS swapping
+      if (calculated > 512) calculated = 512;
+
+      // aggressive cache/interval defaults to save RAM/CPU
+      setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '0');
+      setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '10');
+      setRuntimeDefault('DISCORD_CACHE_MAX_PRESENCES', '0');
+      setRuntimeDefault('LIVE_ALERT_CHECK_INTERVAL_MS', process.env.LIVE_ALERT_CHECK_INTERVAL_MS || '3600000');
+      setRuntimeDefault('FREQUENCY_MEMBER_SYNC_INTERVAL_MS', process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || '3600000');
+      setRuntimeDefault('POINT_AUTOMATION_INTERVAL_MS', process.env.POINT_AUTOMATION_INTERVAL_MS || '3600000');
     }
   } catch (err) {
     setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
