@@ -29,6 +29,15 @@ const orderSessions = new Map();
 const familySelections = new Map();
 
 const ORDER_STATUSES = new Set(['pending', 'separating', 'transport', 'delivered', 'cancelled']);
+const CURRENCY_OPTIONS = [
+  { label: 'Real (BRL)', value: 'BRL', description: 'Calcular em reais', emoji: '\u{1F4B8}' },
+  { label: 'Dolar (USD)', value: 'USD', description: 'Calcular em dolar', emoji: '\u{1F4B5}' },
+];
+const GROUPED_ORDER_ITEMS = [
+  { key: 'hk_mag', label: 'HK/MAG', emoji: '\u{1F52B}' },
+  { key: 'tec_five', label: 'TEC/FIVE', emoji: '\u{1F52B}' },
+  { key: 'mtar_mp7', label: 'MTAR/MP7', emoji: '\u{1F52B}' },
+];
 const CATEGORY_OPTIONS = [
   { label: 'Municoes', value: 'munitions', description: 'Balas e municoes por arma' },
   { label: 'Armas', value: 'weapons', description: 'Armas cadastradas no estoque' },
@@ -113,6 +122,94 @@ function moneyFromCents(value) {
 
 function formatMoney(valueCents) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(moneyFromCents(valueCents));
+}
+
+function resolveCurrency(value) {
+  return value === 'USD' ? 'USD' : 'BRL';
+}
+
+function currencyLabel(currency) {
+  return resolveCurrency(currency) === 'USD' ? 'Dolar (USD)' : 'Real (BRL)';
+}
+
+function formatOrderMoney(valueCents, currency = 'BRL') {
+  const resolved = resolveCurrency(currency);
+  return new Intl.NumberFormat(resolved === 'USD' ? 'en-US' : 'pt-BR', {
+    style: 'currency',
+    currency: resolved,
+  }).format(moneyFromCents(valueCents));
+}
+
+function inventoryPrice(item, currency = 'BRL') {
+  const fallback = Number(item?.unit_price_cents || 0);
+  return resolveCurrency(currency) === 'USD'
+    ? Number(item?.price_usd_cents ?? fallback)
+    : Number(item?.price_brl_cents ?? fallback);
+}
+
+function emptyGroupedItems() {
+  return Object.fromEntries(GROUPED_ORDER_ITEMS.map((item) => [item.key, {
+    key: item.key,
+    label: item.label,
+    quantity: 0,
+    valueCents: 0,
+  }]));
+}
+
+function groupedOrderLines(session) {
+  const groupedItems = session.groupedItems || {};
+  return GROUPED_ORDER_ITEMS
+    .map((meta) => ({ ...meta, ...(groupedItems[meta.key] || {}) }))
+    .filter((item) => Number(item.quantity || 0) > 0 && Number(item.valueCents || 0) > 0);
+}
+
+function groupedOrderTotals(session) {
+  const subtotal = groupedOrderLines(session).reduce((total, item) => total + Number(item.valueCents || 0), 0);
+  const percent = Math.max(0, Math.min(100, Number(session.couponPercentage || 0)));
+  const discount = session.couponMode === 'yes' ? Math.round(subtotal * (percent / 100)) : 0;
+  return {
+    subtotal,
+    discount,
+    final: Math.max(0, subtotal - discount),
+  };
+}
+
+function groupedOrderSummary(session) {
+  const currency = resolveCurrency(session.currency);
+  const lines = groupedOrderLines(session);
+  const totals = groupedOrderTotals(session);
+  const itemLines = lines.length
+    ? lines.flatMap((item) => [
+      `${item.emoji || '\u{1F52B}'} **${item.label}**`,
+      `Quantidade: **${Number(item.quantity || 0).toLocaleString('pt-BR')}**`,
+      `Valor: **${formatOrderMoney(item.valueCents || 0, currency)}**`,
+    ]).join('\n')
+    : 'Nenhum produto preenchido.';
+
+  return [
+    `**Familia:** ${session.familyName || 'Selecione'}`,
+    `**Moeda:** ${currencyLabel(currency)}`,
+    '',
+    itemLines,
+    '',
+    `**Cupom:** ${session.couponMode === 'yes' ? (session.couponCode || 'Selecione') : 'Nao'}`,
+    `**Desconto:** ${Number(session.couponPercentage || 0)}%`,
+    `**Valor do Desconto:** ${formatOrderMoney(totals.discount, currency)}`,
+    `**Total Final:** ${formatOrderMoney(totals.final, currency)}`,
+  ].join('\n');
+}
+
+function parseGroupedProductInput(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return { quantity: 0, valueCents: 0 };
+  const explicitParts = raw.split(/[|;]/).map((part) => part.trim()).filter(Boolean);
+  const parts = explicitParts.length >= 2 ? explicitParts : (raw.match(/\d[\d.,]*/g) || []);
+  const quantity = parsePositiveInt(parts[0] || '0') || 0;
+  const amount = parseMoney(parts.slice(1).join(' ') || '0', 0);
+  return {
+    quantity,
+    valueCents: cents(amount || 0),
+  };
 }
 
 function statusLabel(status) {
@@ -201,6 +298,29 @@ async function listInventory(guildId, category = '') {
     .toArray();
 }
 
+async function listCoupons(guildId, familyId = '') {
+  const now = new Date();
+  const rows = await getCollection('order_coupons')
+    .find({
+      guild_id: guildId,
+      active: true,
+      $or: [
+        { expires_at: null },
+        { expires_at: { $exists: false } },
+        { expires_at: { $gte: now } },
+      ],
+    })
+    .sort({ name: 1 })
+    .limit(24)
+    .toArray();
+
+  return rows.filter((coupon) => {
+    const familyIds = Array.isArray(coupon.family_ids) ? coupon.family_ids.map(String) : [];
+    if (coupon.usage_limit && Number(coupon.used_count || 0) >= Number(coupon.usage_limit)) return false;
+    return !familyIds.length || familyIds.includes(String(familyId || ''));
+  });
+}
+
 async function listFavorites(guildId, familyId = '') {
   const filter = { guild_id: guildId };
   if (familyId) filter.family_id = familyId;
@@ -262,25 +382,39 @@ async function applyStockDelta(guildId, items, direction) {
 }
 
 function buildOrderApprovalPayload(order) {
-  const items = (order.items || []).map((item) => `${item.quantity.toLocaleString('pt-BR')}x ${item.name}`).join('\n');
+  const currency = resolveCurrency(order.currency);
+  const items = (order.items || []).map((line) => [
+    `${line.emoji || '\u{1F52B}'} **${line.name}**`,
+    `Quantidade: ${Number(line.quantity || 0).toLocaleString('pt-BR')}`,
+    `Valor: ${formatOrderMoney(Number(line.total_value_cents || 0), currency)}`,
+  ].join('\n')).join('\n\n');
+  const subtotal = Number(order.subtotal_value_cents ?? order.total_value_cents ?? 0);
+  const discount = Number(order.discount_value_cents ?? 0);
+  const final = Number(order.final_value_cents ?? order.total_value_cents ?? Math.max(0, subtotal - discount));
   const embed = new EmbedBuilder()
     .setColor(Number.parseInt(String(order.family_color || '#0EA5E9').replace('#', ''), 16) || 0x0ea5e9)
-    .setTitle(`${ORDER_PANEL_EMOJI} Nova Encomenda #${order.order_number}`)
+    .setTitle(`${ORDER_PANEL_EMOJI} Nova Encomenda`)
     .setDescription([
-      `**Familia:** ${order.family_icon || ORDER_PANEL_EMOJI} ${order.family_name}`,
-      `**Solicitante:** ${order.responsible_name || order.created_by_name || 'N/A'}`,
+      `**ID da Encomenda:** #${order.order_number}`,
       '',
-      '**Itens:**',
+      `**\u{1F464} Solicitante:** ${order.responsible_mention || order.responsible_name || order.created_by_name || 'N/A'}`,
+      `**\u{1F3E0} Familia:** ${order.family_icon || ORDER_PANEL_EMOJI} ${order.family_name}`,
+      `**\u{1F4B1} Moeda:** ${currencyLabel(currency)}`,
+      '',
+      items ? '**Itens da Encomenda:**' : '**Itens da Encomenda:**',
       items || 'Nenhum item',
       '',
-      `**Valor Total:** ${formatMoney(order.total_value_cents)}`,
-      `**Status:** ${statusLabel(order.status)}`,
-      `**Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`,
+      `**\u{1F3DF} Cupom:** ${order.coupon_code ? `${order.coupon_code} (${Number(order.coupon_percentage || 0)}%)` : 'Sem desconto'}`,
+      `**\u{1F4B8} Desconto:** ${formatOrderMoney(discount, currency)}`,
+      `**\u{1F4B0} Total Final:** ${formatOrderMoney(final, currency)}`,
+      `**\u{1F4C5} Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`,
+      `**Status:** ${order.status === 'pending' ? '\u{1F7E1} Pendente' : statusLabel(order.status)}`,
     ].join('\n'))
     .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
     .setTimestamp(order.created_at);
 
   return {
+    content: order.responsible_role_id ? `<@&${order.responsible_role_id}>` : undefined,
     embeds: [embed],
     components: [
       row(
@@ -290,7 +424,7 @@ function buildOrderApprovalPayload(order) {
         button(`order_delivered_${String(order._id)}`, 'Entregue', ButtonStyle.Success, { disabled: ['delivered', 'cancelled'].includes(order.status) }),
       ),
     ],
-    allowedMentions: { parse: [] },
+    allowedMentions: order.responsible_role_id ? { parse: [], roles: [String(order.responsible_role_id)] } : { parse: [] },
   };
 }
 
@@ -318,6 +452,20 @@ function getSession(interaction) {
       userId: interaction.user.id,
       familyId: '',
       familyName: '',
+      familyLeaderName: '',
+      familyOrderChannelId: '',
+      familyResponsibleRoleId: '',
+      mode: 'grouped',
+      currency: 'BRL',
+      currencySelected: false,
+      productId: '',
+      productName: '',
+      quantity: 0,
+      couponMode: 'no',
+      couponId: '',
+      couponCode: '',
+      couponPercentage: 0,
+      groupedItems: emptyGroupedItems(),
       category: '',
       cart: [],
     });
@@ -336,10 +484,39 @@ function upsertCartLine(session, line) {
 }
 
 function cartTotal(session) {
+  if (session.productId && session.quantity > 0 && Number.isFinite(session.unitPriceCents)) {
+    const gross = session.unitPriceCents * session.quantity;
+    return Math.max(0, gross - Math.round(gross * (Number(session.couponPercentage || 0) / 100)));
+  }
   return session.cart.reduce((total, item) => total + item.total_value_cents, 0);
 }
 
+function orderPreviewTotals(session) {
+  const quantity = Math.max(0, Number(session.quantity || 0));
+  const unit = Number(session.unitPriceCents || 0);
+  const gross = unit * quantity;
+  const percent = Math.max(0, Math.min(100, Number(session.couponPercentage || 0)));
+  const discount = Math.round(gross * (percent / 100));
+  return {
+    gross,
+    discount,
+    final: Math.max(0, gross - discount),
+  };
+}
+
 function cartDescription(session) {
+  if (session.productId) {
+    const totals = orderPreviewTotals(session);
+    return [
+      `Produto: **${session.productName || 'Nao selecionado'}**`,
+      `Quantidade: **${Number(session.quantity || 0).toLocaleString('pt-BR')}**`,
+      `Unitario: **${formatOrderMoney(session.unitPriceCents || 0, session.currency)}**`,
+      `Bruto: **${formatOrderMoney(totals.gross, session.currency)}**`,
+      `Cupom: **${session.couponCode || 'Sem desconto'}**`,
+      `Desconto: **${formatOrderMoney(totals.discount, session.currency)}**`,
+      `Final: **${formatOrderMoney(totals.final, session.currency)}**`,
+    ].join('\n');
+  }
   if (!session.cart.length) return '`Carrinho vazio.`';
   return session.cart
     .map((item, index) => `${index + 1}. ${item.quantity.toLocaleString('pt-BR')}x ${item.name} - ${formatMoney(item.total_value_cents)}`)
@@ -353,24 +530,293 @@ function buildOrderPanelPayload(interaction = null) {
     .setAuthor({ name: 'VORTEX | Encomendas V2', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
     .setTitle('Sistema de Encomendas V2')
     .setDescription([
-      `${ORDER_PANEL_EMOJI} **Fazer Pedido** abre o fluxo por etapas com familia, tipo e carrinho.`,
-      `${FAVORITE_EMOJI} Use modelos salvos para repetir pedidos de alto volume sem montar item por item.`,
+      `\u{2795} **Nova Encomenda** abre a selecao de moeda antes do formulario principal.`,
+      'O sistema calcula valor bruto, desconto e valor final automaticamente.',
       '',
-      'Todos os pedidos, familias, estoque, favoritos e logs usam MongoDB. Nada e salvo em JSON local.',
+      'Todas as familias, cupons, produtos e pedidos usam MongoDB. Nada e salvo em JSON local.',
     ].join('\n'))
     .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
     .setTimestamp();
 
   const components = [
     row(
-      button('order_start', 'Fazer Pedido', ButtonStyle.Primary, { emoji: ORDER_PANEL_EMOJI }),
-      button('order_family_manage', 'Gerenciar Familias', ButtonStyle.Secondary),
-      button('order_history', 'Historico', ButtonStyle.Secondary),
-      linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Painel Web'),
+      button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }),
     ),
   ];
 
   return buildPayload('orders', embed, components, false);
+}
+
+async function buildOrderAdminPanelPayload(interaction = null) {
+  const guildId = interaction ? getGuildId(interaction) : String(process.env.GUILD_ID || 'global');
+  const [families, coupons, products, settings] = isMongoReady()
+    ? await Promise.all([
+      getCollection('order_families').countDocuments({ guild_id: guildId }),
+      getCollection('order_coupons').countDocuments({ guild_id: guildId }),
+      getCollection('order_inventory').countDocuments({ guild_id: guildId }),
+      getSettings(guildId),
+    ])
+    : [0, 0, 0, null];
+
+  const embed = new EmbedBuilder()
+    .setColor('#0EA5E9')
+    .setAuthor({ name: 'VORTEX | Gerenciamento de Encomendas', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
+    .setTitle('Painel Administrativo')
+    .setDescription([
+      `Familias cadastradas: **${families}**`,
+      `Cupons cadastrados: **${coupons}**`,
+      `Produtos cadastrados: **${products}**`,
+      `Canal de registro: ${settings?.order_channel_id ? `<#${settings.order_channel_id}>` : '**nao configurado**'}`,
+      '',
+      'Use o painel web para editar familias, cupons, valores BRL/USD e status. Use os botoes abaixo para publicar o painel publico ou acessar atalhos de gerenciamento.',
+    ].join('\n'))
+    .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
+    .setTimestamp();
+
+  return buildPayload('orders', embed, [
+    row(
+      button('order_publish_public_panel', 'Publicar Painel Publico', ButtonStyle.Success, { emoji: ORDER_PANEL_EMOJI }),
+      button('order_family_manage', 'Familias', ButtonStyle.Secondary),
+      button('order_history', 'Historico', ButtonStyle.Secondary),
+    ),
+    row(
+      linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'),
+    ),
+  ], true);
+}
+
+async function showCurrencySelection(interaction) {
+  const embed = new EmbedBuilder()
+    .setColor('#0EA5E9')
+    .setTitle('Qual moeda sera utilizada nesta encomenda?')
+    .setDescription('Escolha a moeda antes de abrir o formulario de encomenda.');
+
+  return respondPanel(interaction, buildPayload('orders', embed, [
+    row(
+      button('order_currency_USD', 'Dolar', ButtonStyle.Primary, { emoji: '\u{1F4B5}' }),
+      button('order_currency_BRL', 'Real', ButtonStyle.Success, { emoji: '\u{1F4B8}' }),
+      button('order_cancel_session', 'Cancelar', ButtonStyle.Danger),
+    ),
+  ]), true);
+}
+
+async function showGroupedOrderForm(interaction) {
+  const session = getSession(interaction);
+  const [families, coupons] = await Promise.all([
+    listFamilies(session.guildId),
+    listCoupons(session.guildId, session.familyId),
+  ]);
+
+  if (!families.length) {
+    return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
+      .setColor('#F59E0B')
+      .setTitle('Nenhuma familia ativa')
+      .setDescription('Cadastre uma familia no painel administrativo antes de abrir encomendas.'),
+    [row(linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]), true);
+  }
+
+  const familySelect = new StringSelectMenuBuilder()
+    .setCustomId('order_select_family')
+    .setPlaceholder('Selecionar Familia')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(families.slice(0, 25).map((family) => ({
+      label: String(family.name || 'Familia').slice(0, 100),
+      value: String(family._id),
+      description: String(family.leader_name || 'Sem lider').slice(0, 100),
+      default: String(family._id) === String(session.familyId || ''),
+    })));
+
+  const components = [
+    row(familySelect),
+    row(
+      button('order_coupon_yes', 'Cupom: Sim', session.couponMode === 'yes' ? ButtonStyle.Success : ButtonStyle.Secondary),
+      button('order_coupon_no', 'Cupom: Nao', session.couponMode === 'no' ? ButtonStyle.Success : ButtonStyle.Secondary),
+    ),
+  ];
+
+  if (session.couponMode === 'yes') {
+    const couponOptions = coupons.length
+      ? coupons.slice(0, 25).map((coupon) => ({
+        label: String(coupon.code || coupon.name || 'Cupom').slice(0, 100),
+        value: String(coupon._id),
+        description: `${Number(coupon.percentage || 0)}% de desconto`.slice(0, 100),
+        default: String(coupon._id) === String(session.couponId || ''),
+      }))
+      : [{ label: 'Nenhum cupom ativo', value: 'none', description: 'Cadastre cupons no painel', default: true }];
+    components.push(row(new StringSelectMenuBuilder()
+      .setCustomId('order_select_coupon')
+      .setPlaceholder('Selecionar Cupom')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(couponOptions)));
+  }
+
+  const hasLines = groupedOrderLines(session).length > 0;
+  components.push(row(
+    button('order_grouped_items', 'Preencher Produtos', ButtonStyle.Primary),
+    button('order_grouped_review', 'Ver Resumo', ButtonStyle.Success, { disabled: !session.familyId || !hasLines || (session.couponMode === 'yes' && !session.couponId) }),
+    button('order_cancel_session', 'Cancelar', ButtonStyle.Danger),
+  ));
+
+  const embed = new EmbedBuilder()
+    .setColor('#0EA5E9')
+    .setTitle('Formulario de Nova Encomenda')
+    .setDescription(groupedOrderSummary(session));
+
+  return respondPanel(interaction, buildPayload('orders', embed, components), true);
+}
+
+function buildGroupedItemsModal(session) {
+  const groupedItems = session.groupedItems || {};
+  const currency = resolveCurrency(session.currency);
+  const labelSuffix = currency === 'USD' ? '$' : 'R$';
+  const modal = new ModalBuilder()
+    .setCustomId('modal_order_grouped_items')
+    .setTitle(`Itens da Encomenda - ${currency}`);
+
+  modal.addComponents(...GROUPED_ORDER_ITEMS.map((item) => {
+    const current = groupedItems[item.key] || {};
+    const value = current.quantity && current.valueCents
+      ? `${current.quantity} | ${moneyFromCents(current.valueCents)}`
+      : '';
+    return row(new TextInputBuilder()
+      .setCustomId(item.key)
+      .setLabel(`${item.label} - qtd | valor total`)
+      .setPlaceholder(`Ex: 100 | ${labelSuffix}50000`)
+      .setValue(String(value).slice(0, 100))
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setMaxLength(100));
+  }));
+
+  return modal;
+}
+
+async function showGroupedConfirmation(interaction) {
+  const session = getSession(interaction);
+  const lines = groupedOrderLines(session);
+  if (!session.familyId || !lines.length) return showGroupedOrderForm(interaction);
+  if (session.couponMode === 'yes' && !session.couponId) return showGroupedOrderForm(interaction);
+
+  const embed = new EmbedBuilder()
+    .setColor('#22C55E')
+    .setTitle('Resumo da Encomenda')
+    .setDescription(groupedOrderSummary(session));
+
+  return respondPanel(interaction, buildPayload('orders', embed, [
+    row(
+      button('order_grouped_confirm', 'Confirmar Encomenda', ButtonStyle.Success, { emoji: '\u{2705}' }),
+      button('order_grouped_back', 'Voltar', ButtonStyle.Secondary),
+      button('order_cancel_session', 'Cancelar', ButtonStyle.Danger, { emoji: '\u{274C}' }),
+    ),
+  ]), true);
+}
+
+async function showOrderBuilder(interaction) {
+  const session = getSession(interaction);
+  const [families, munitions, allProducts, coupons] = await Promise.all([
+    listFamilies(session.guildId),
+    listInventory(session.guildId, 'munitions'),
+    listInventory(session.guildId),
+    listCoupons(session.guildId, session.familyId),
+  ]);
+  const products = munitions.length ? munitions : allProducts;
+
+  if (!families.length || !products.length) {
+    return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
+      .setColor('#F59E0B')
+      .setTitle('Encomendas indisponiveis')
+      .setDescription([
+        !families.length ? 'Cadastre pelo menos uma familia ativa.' : null,
+        !products.length ? 'Cadastre pelo menos uma municao/produto ativo.' : null,
+      ].filter(Boolean).join('\n')),
+    [row(linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]), true);
+  }
+
+  const familySelect = new StringSelectMenuBuilder()
+    .setCustomId('order_select_family')
+    .setPlaceholder('Familia')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(families.slice(0, 25).map((family) => ({
+      label: String(family.name || 'Familia').slice(0, 100),
+      value: String(family._id),
+      description: String(family.leader_name || 'Sem lider').slice(0, 100),
+      default: String(family._id) === String(session.familyId || ''),
+    })));
+
+  const currencySelect = new StringSelectMenuBuilder()
+    .setCustomId('order_select_currency')
+    .setPlaceholder('Moeda')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(CURRENCY_OPTIONS.map((item) => ({
+      ...item,
+      default: item.value === resolveCurrency(session.currency),
+    })));
+
+  const productSelect = new StringSelectMenuBuilder()
+    .setCustomId('order_select_product')
+    .setPlaceholder('Tipo de Municao')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(products.slice(0, 25).map((item) => ({
+      label: String(item.name || 'Municao').slice(0, 100),
+      value: String(item._id),
+      description: `${Number(item.package_quantity || 1)} por pacote | BRL ${moneyFromCents(inventoryPrice(item, 'BRL'))} | USD ${moneyFromCents(inventoryPrice(item, 'USD'))}`.slice(0, 100),
+      default: String(item._id) === String(session.productId || ''),
+    })));
+
+  const couponOptions = [
+    {
+      label: 'Sem desconto',
+      value: 'none',
+      description: 'Nao aplicar cupom',
+      default: !session.couponId,
+    },
+    ...coupons.slice(0, 24).map((coupon) => ({
+      label: String(coupon.code || coupon.name || 'Cupom').slice(0, 100),
+      value: String(coupon._id),
+      description: `${Number(coupon.percentage || 0)}% de desconto`.slice(0, 100),
+      default: String(coupon._id) === String(session.couponId || ''),
+    })),
+  ];
+  const couponSelect = new StringSelectMenuBuilder()
+    .setCustomId('order_select_coupon')
+    .setPlaceholder('Cupom de Desconto')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(couponOptions);
+
+  const totals = orderPreviewTotals(session);
+  const embed = new EmbedBuilder()
+    .setColor('#0EA5E9')
+    .setTitle(`${ORDER_PANEL_EMOJI} Fazer Encomenda`)
+    .setDescription([
+      `**Familia:** ${session.familyName || 'Selecione'}`,
+      `**Lider:** ${session.familyLeaderName || 'N/A'}`,
+      `**Moeda:** ${currencyLabel(session.currency)}`,
+      `**Municao:** ${session.productName || 'Selecione'}`,
+      `**Quantidade:** ${Number(session.quantity || 0).toLocaleString('pt-BR')}`,
+      `**Cupom:** ${session.couponCode || 'Sem desconto'}`,
+      '',
+      `**Valor Bruto:** ${formatOrderMoney(totals.gross, session.currency)}`,
+      `**Desconto:** ${formatOrderMoney(totals.discount, session.currency)}`,
+      `**Valor Final:** ${formatOrderMoney(totals.final, session.currency)}`,
+    ].join('\n'));
+
+  return respondPanel(interaction, buildPayload('orders', embed, [
+    row(familySelect),
+    row(currencySelect),
+    row(productSelect),
+    row(couponSelect),
+    row(
+      button('order_set_quantity', 'Quantidade', ButtonStyle.Secondary),
+      button('order_finalize', 'Finalizar Encomenda', ButtonStyle.Success, { disabled: !session.familyId || !session.productId || !session.quantity }),
+      button('order_cancel_session', 'Cancelar', ButtonStyle.Danger),
+    ),
+  ]), true);
 }
 
 async function showFamilySelect(interaction) {
@@ -497,6 +943,22 @@ function buildQuantityModal(itemId) {
         .setCustomId('quantity')
         .setLabel('Quantidade')
         .setPlaceholder('Ex: 500')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(12)),
+    );
+}
+
+function buildOrderQuantityModal(session) {
+  return new ModalBuilder()
+    .setCustomId('modal_order_v2_quantity')
+    .setTitle('Quantidade da encomenda')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('quantity')
+        .setLabel('Quantidade')
+        .setPlaceholder('Ex: 100')
+        .setValue(session?.quantity ? String(session.quantity).slice(0, 12) : '')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(12)),
@@ -673,8 +1135,272 @@ async function saveFavorite(interaction) {
   return safeReply(interaction, { content: `${FAVORITE_EMOJI} Modelo salvo para ${family.name}.`, ephemeral: true });
 }
 
+async function finalizeGroupedOrder(interaction) {
+  const session = getSession(interaction);
+  const lines = groupedOrderLines(session);
+  if (!session.familyId || !lines.length) {
+    return safeEdit(interaction, { content: 'Selecione familia e preencha pelo menos um produto antes de confirmar.' });
+  }
+  if (session.couponMode === 'yes' && !session.couponId) {
+    return safeEdit(interaction, { content: 'Selecione o cupom ou marque Cupom: Nao antes de confirmar.' });
+  }
+
+  const familyId = objectId(session.familyId);
+  const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
+  if (!family) return safeEdit(interaction, { content: 'Familia ativa nao encontrada.' });
+
+  let coupon = null;
+  if (session.couponMode === 'yes' && session.couponId) {
+    const couponId = objectId(session.couponId);
+    coupon = couponId ? await getCollection('order_coupons').findOne({ _id: couponId, guild_id: session.guildId, active: true }) : null;
+    if (!coupon) return safeEdit(interaction, { content: 'Cupom nao encontrado ou inativo.' });
+    if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) return safeEdit(interaction, { content: 'Cupom expirado.' });
+    if (coupon.usage_limit && Number(coupon.used_count || 0) >= Number(coupon.usage_limit)) return safeEdit(interaction, { content: 'Cupom atingiu o limite de usos.' });
+    const familyIds = Array.isArray(coupon.family_ids) ? coupon.family_ids.map(String) : [];
+    if (familyIds.length && !familyIds.includes(String(family._id))) return safeEdit(interaction, { content: 'Cupom nao liberado para esta familia.' });
+    session.couponCode = coupon.code || coupon.name || '';
+    session.couponPercentage = Number(coupon.percentage || 0);
+  } else {
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = 0;
+  }
+
+  const currency = resolveCurrency(session.currency);
+  const totals = groupedOrderTotals(session);
+  const actor = getActor(interaction);
+  const now = new Date();
+  const settings = await getSettings(session.guildId);
+  const orderId = new mongoose.Types.ObjectId();
+  const order = {
+    _id: orderId,
+    order_number: await nextOrderNumber(session.guildId),
+    guild_id: session.guildId,
+    family_id: String(family._id),
+    family_name: family.name,
+    family_slug: family.slug,
+    family_color: family.color || '#0EA5E9',
+    family_icon: family.icon || ORDER_PANEL_EMOJI,
+    family_leader_name: family.leader_name || null,
+    responsible_id: actor.id,
+    responsible_name: actor.name,
+    responsible_mention: `<@${actor.id}>`,
+    items: lines.map((line) => ({
+      inventory_item_id: null,
+      name: line.label,
+      emoji: line.emoji,
+      category: 'munitions',
+      package_quantity: 1,
+      quantity: Number(line.quantity || 0),
+      unit_price_cents: line.quantity ? Math.round(Number(line.valueCents || 0) / Number(line.quantity || 1)) : Number(line.valueCents || 0),
+      total_value_cents: Number(line.valueCents || 0),
+    })),
+    currency,
+    subtotal_value_cents: totals.subtotal,
+    discount_value_cents: totals.discount,
+    final_value_cents: totals.final,
+    coupon_id: coupon?._id ? String(coupon._id) : null,
+    coupon_code: coupon?.code || null,
+    coupon_percentage: coupon ? Number(coupon.percentage || 0) : 0,
+    total_value_cents: totals.final,
+    status: 'pending',
+    stock_applied: false,
+    stock_restored: false,
+    approval_channel_id: family.order_channel_id || settings?.order_channel_id || null,
+    approval_message_id: null,
+    responsible_role_id: family.responsible_role_id || null,
+    created_by_id: actor.id,
+    created_by_name: actor.name,
+    source: 'discord',
+    created_at: now,
+    updated_at: now,
+  };
+
+  await getCollection('orders').insertOne(order);
+  if (coupon?._id) {
+    await getCollection('order_coupons').updateOne(
+      { _id: coupon._id, guild_id: session.guildId },
+      { $inc: { used_count: 1 }, $set: { updated_at: now } },
+    );
+  }
+
+  order.approval_message_id = await sendApprovalMessage(interaction, order);
+  if (order.approval_message_id) {
+    await getCollection('orders').updateOne(
+      { _id: orderId, guild_id: session.guildId },
+      { $set: { approval_message_id: order.approval_message_id } },
+    );
+  }
+
+  await insertOrderLog({
+    guild_id: session.guildId,
+    order_id: String(orderId),
+    order_number: order.order_number,
+    family_id: order.family_id,
+    family_name: order.family_name,
+    action: 'order_created',
+    actor_id: actor.id,
+    actor_name: actor.name,
+    details: {
+      source: 'discord',
+      currency,
+      items: order.items.length,
+      subtotalValue: moneyFromCents(totals.subtotal),
+      coupon: coupon?.code || null,
+      discountValue: moneyFromCents(totals.discount),
+      totalValue: moneyFromCents(totals.final),
+    },
+    created_at: now,
+  }, family, settings);
+
+  orderSessions.delete(sessionKey(interaction));
+  return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
+    .setColor('#22C55E')
+    .setTitle(`Encomenda #${order.order_number} criada`)
+    .setDescription([
+      `Familia: **${order.family_name}**`,
+      `Moeda: **${currencyLabel(currency)}**`,
+      `Total final: **${formatOrderMoney(totals.final, currency)}**`,
+      order.approval_channel_id ? `Canal de envio: <#${order.approval_channel_id}>` : 'Canal de envio nao configurado.',
+    ].join('\n')),
+  [row(button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }), linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]), true);
+}
+
 async function finalizeOrder(interaction) {
   const session = getSession(interaction);
+  if (session.productId) {
+    if (!session.familyId || !session.productId || !session.quantity) {
+      return safeEdit(interaction, { content: 'Selecione familia, municao e quantidade antes de finalizar.' });
+    }
+
+    const familyId = objectId(session.familyId);
+    const productId = objectId(session.productId);
+    const [family, product] = await Promise.all([
+      familyId ? getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null,
+      productId ? getCollection('order_inventory').findOne({ _id: productId, guild_id: session.guildId, active: true }) : null,
+    ]);
+    if (!family) return safeEdit(interaction, { content: 'Familia ativa nao encontrada.' });
+    if (!product) return safeEdit(interaction, { content: 'Municao ativa nao encontrada.' });
+
+    let coupon = null;
+    if (session.couponId) {
+      const couponId = objectId(session.couponId);
+      coupon = couponId ? await getCollection('order_coupons').findOne({ _id: couponId, guild_id: session.guildId, active: true }) : null;
+      if (!coupon) return safeEdit(interaction, { content: 'Cupom nao encontrado ou inativo.' });
+      if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) return safeEdit(interaction, { content: 'Cupom expirado.' });
+      const familyIds = Array.isArray(coupon.family_ids) ? coupon.family_ids.map(String) : [];
+      if (familyIds.length && !familyIds.includes(String(family._id))) return safeEdit(interaction, { content: 'Cupom nao liberado para esta familia.' });
+    }
+
+    const currency = resolveCurrency(session.currency);
+    const unitPriceCents = inventoryPrice(product, currency);
+    const quantity = Math.max(1, Number(session.quantity || 1));
+    const subtotal = unitPriceCents * quantity;
+    const couponPercentage = coupon ? Math.max(0, Math.min(100, Number(coupon.percentage || 0))) : 0;
+    const discount = Math.round(subtotal * (couponPercentage / 100));
+    const final = Math.max(0, subtotal - discount);
+    const actor = getActor(interaction);
+    const now = new Date();
+    const settings = await getSettings(session.guildId);
+    const orderId = new mongoose.Types.ObjectId();
+    const order = {
+      _id: orderId,
+      order_number: await nextOrderNumber(session.guildId),
+      guild_id: session.guildId,
+      family_id: String(family._id),
+      family_name: family.name,
+      family_slug: family.slug,
+      family_color: family.color || '#0EA5E9',
+      family_icon: family.icon || ORDER_PANEL_EMOJI,
+      family_leader_name: family.leader_name || null,
+      responsible_id: actor.id,
+      responsible_name: actor.name,
+      items: [{
+        inventory_item_id: String(product._id),
+        name: product.name,
+        category: product.category || 'munitions',
+        package_quantity: Number(product.package_quantity || 1),
+        quantity,
+        unit_price_cents: unitPriceCents,
+        unit_price_brl_cents: inventoryPrice(product, 'BRL'),
+        unit_price_usd_cents: inventoryPrice(product, 'USD'),
+        total_value_cents: subtotal,
+      }],
+      currency,
+      subtotal_value_cents: subtotal,
+      discount_value_cents: discount,
+      final_value_cents: final,
+      coupon_id: coupon?._id ? String(coupon._id) : null,
+      coupon_code: coupon?.code || null,
+      coupon_percentage: couponPercentage,
+      total_value_cents: final,
+      status: 'pending',
+      stock_applied: false,
+      stock_restored: false,
+      approval_channel_id: family.order_channel_id || settings?.order_channel_id || null,
+      approval_message_id: null,
+      created_by_id: actor.id,
+      created_by_name: actor.name,
+      source: 'discord',
+      created_at: now,
+      updated_at: now,
+    };
+
+    await getCollection('orders').insertOne(order);
+    if (coupon?._id) {
+      await getCollection('order_coupons').updateOne(
+        { _id: coupon._id, guild_id: session.guildId },
+        { $inc: { used_count: 1 }, $set: { updated_at: now } },
+      );
+    }
+    order.approval_message_id = await sendApprovalMessage(interaction, order);
+    if (order.approval_message_id) {
+      await getCollection('orders').updateOne(
+        { _id: orderId, guild_id: session.guildId },
+        { $set: { approval_message_id: order.approval_message_id } },
+      );
+    }
+
+    await insertOrderLog({
+      guild_id: session.guildId,
+      order_id: String(orderId),
+      order_number: order.order_number,
+      family_id: order.family_id,
+      family_name: order.family_name,
+      action: 'order_created',
+      actor_id: actor.id,
+      actor_name: actor.name,
+      details: {
+        source: 'discord',
+        product: product.name,
+        quantity,
+        currency,
+        subtotalValue: moneyFromCents(subtotal),
+        coupon: coupon?.code || null,
+        discountValue: moneyFromCents(discount),
+        totalValue: moneyFromCents(final),
+      },
+      created_at: now,
+    }, family, settings);
+
+    orderSessions.delete(sessionKey(interaction));
+    return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
+      .setColor('#22C55E')
+      .setTitle(`Encomenda #${order.order_number} criada`)
+      .setDescription([
+        `Familia: **${order.family_name}**`,
+        `Produto: **${product.name}**`,
+        `Quantidade: **${quantity.toLocaleString('pt-BR')}**`,
+        `Moeda: **${currencyLabel(currency)}**`,
+        `Valor Bruto: **${formatOrderMoney(subtotal, currency)}**`,
+        `Cupom: **${coupon?.code || 'Sem desconto'}**`,
+        `Desconto: **${formatOrderMoney(discount, currency)}**`,
+        `Valor Final: **${formatOrderMoney(final, currency)}**`,
+        order.approval_channel_id ? `Canal de registro: <#${order.approval_channel_id}>` : 'Canal de registro nao configurado no painel web.',
+      ].join('\n')),
+    [row(button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: ORDER_PANEL_EMOJI }), linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]), true);
+  }
+
   if (!session.familyId || !session.cart.length) return showCart(interaction);
 
   const familyId = objectId(session.familyId);
@@ -718,7 +1444,7 @@ async function finalizeOrder(interaction) {
     status: 'pending',
     stock_applied: true,
     stock_restored: false,
-    approval_channel_id: settings?.order_channel_id || null,
+    approval_channel_id: family.order_channel_id || settings?.order_channel_id || null,
     approval_message_id: null,
     created_by_id: actor.id,
     created_by_name: actor.name,
@@ -1006,10 +1732,38 @@ async function handleOrderButton(interaction) {
       userId: interaction.user.id,
       familyId: '',
       familyName: '',
+      familyLeaderName: '',
+      familyOrderChannelId: '',
+      familyResponsibleRoleId: '',
+      mode: 'grouped',
+      currency: 'BRL',
+      currencySelected: false,
+      productId: '',
+      productName: '',
+      quantity: 0,
+      couponMode: 'no',
+      couponId: '',
+      couponCode: '',
+      couponPercentage: 0,
+      groupedItems: emptyGroupedItems(),
       category: '',
       cart: [],
     });
-    return showFamilySelect(interaction);
+    return showCurrencySelection(interaction);
+  }
+
+  if (interaction.customId === 'order_currency_USD' || interaction.customId === 'order_currency_BRL') {
+    const session = getSession(interaction);
+    session.mode = 'grouped';
+    session.currency = interaction.customId.endsWith('USD') ? 'USD' : 'BRL';
+    session.currencySelected = true;
+    return showGroupedOrderForm(interaction);
+  }
+
+  if (interaction.customId === 'order_publish_public_panel') {
+    if (!hasOrderManagerPermission(interaction.member)) return safeReply(interaction, { content: 'Sem permissao.', ephemeral: true });
+    await interaction.channel?.send(buildOrderPanelPayload(interaction)).catch(() => null);
+    return safeReply(interaction, { content: 'Painel publico de encomendas publicado neste canal.', ephemeral: true });
   }
 
   if (interaction.customId === 'order_family_manage') return showFamilyManager(interaction);
@@ -1023,13 +1777,42 @@ async function handleOrderButton(interaction) {
     await safeDeferReply(interaction, { ephemeral: true });
     return finalizeOrder(interaction);
   }
+  if (interaction.customId === 'order_coupon_yes') {
+    const session = getSession(interaction);
+    session.couponMode = 'yes';
+    return showGroupedOrderForm(interaction);
+  }
+  if (interaction.customId === 'order_coupon_no') {
+    const session = getSession(interaction);
+    session.couponMode = 'no';
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = 0;
+    return showGroupedOrderForm(interaction);
+  }
+  if (interaction.customId === 'order_grouped_items') {
+    const session = getSession(interaction);
+    if (!session.currencySelected) return showCurrencySelection(interaction);
+    return safeShowModal(interaction, buildGroupedItemsModal(session));
+  }
+  if (interaction.customId === 'order_grouped_review') return showGroupedConfirmation(interaction);
+  if (interaction.customId === 'order_grouped_back') return showGroupedOrderForm(interaction);
+  if (interaction.customId === 'order_grouped_confirm') {
+    await safeDeferReply(interaction, { ephemeral: true });
+    return finalizeGroupedOrder(interaction);
+  }
+  if (interaction.customId === 'order_set_quantity') {
+    const session = getSession(interaction);
+    if (!session.productId) return safeReply(interaction, { content: 'Selecione uma municao antes de informar a quantidade.', ephemeral: true });
+    return safeShowModal(interaction, buildOrderQuantityModal(session));
+  }
   if (interaction.customId === 'order_cancel_session') {
     orderSessions.delete(sessionKey(interaction));
     return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
       .setColor('#64748B')
-      .setTitle('Pedido cancelado')
-      .setDescription('O carrinho atual foi descartado.'),
-    [row(button('order_start', 'Fazer Pedido', ButtonStyle.Primary))]), true);
+      .setTitle('Encomenda cancelada')
+      .setDescription('A encomenda atual foi descartada.'),
+    [row(button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }))]), true);
   }
   if (interaction.customId === 'order_custom_item') {
     const session = getSession(interaction);
@@ -1096,7 +1879,68 @@ async function handleOrderSelect(interaction) {
     if (!family) return safeReply(interaction, { content: 'Familia nao encontrada.', ephemeral: true });
     session.familyId = String(family._id);
     session.familyName = family.name;
-    return showCart(interaction);
+    session.familyLeaderName = family.leader_name || '';
+    session.familyOrderChannelId = family.order_channel_id || '';
+    session.familyResponsibleRoleId = family.responsible_role_id || '';
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = 0;
+    if (session.mode === 'grouped') return showGroupedOrderForm(interaction);
+    return showOrderBuilder(interaction);
+  }
+
+  if (interaction.customId === 'order_select_currency') {
+    const session = getSession(interaction);
+    session.currency = resolveCurrency(interaction.values[0]);
+    if (session.productId) {
+      const id = objectId(session.productId);
+      const item = id ? await getCollection('order_inventory').findOne({ _id: id, guild_id: session.guildId, active: true }) : null;
+      if (item) session.unitPriceCents = inventoryPrice(item, session.currency);
+    }
+    return showOrderBuilder(interaction);
+  }
+
+  if (interaction.customId === 'order_select_product') {
+    const session = getSession(interaction);
+    const id = objectId(interaction.values[0]);
+    const item = id ? await getCollection('order_inventory').findOne({ _id: id, guild_id: session.guildId, active: true }) : null;
+    if (!item) return safeReply(interaction, { content: 'Municao nao encontrada.', ephemeral: true });
+    session.productId = String(item._id);
+    session.productName = item.name;
+    session.productCategory = item.category || 'munitions';
+    session.packageQuantity = Number(item.package_quantity || 1);
+    session.unitPriceCents = inventoryPrice(item, session.currency);
+    session.unitPriceBrlCents = inventoryPrice(item, 'BRL');
+    session.unitPriceUsdCents = inventoryPrice(item, 'USD');
+    return showOrderBuilder(interaction);
+  }
+
+  if (interaction.customId === 'order_select_coupon') {
+    const session = getSession(interaction);
+    const value = String(interaction.values[0] || '');
+    if (value === 'none') {
+      session.couponId = '';
+      session.couponCode = '';
+      session.couponPercentage = 0;
+      return session.mode === 'grouped' ? showGroupedOrderForm(interaction) : showOrderBuilder(interaction);
+    }
+    const id = objectId(value);
+    const coupon = id ? await getCollection('order_coupons').findOne({ _id: id, guild_id: session.guildId, active: true }) : null;
+    if (!coupon) return safeReply(interaction, { content: 'Cupom nao encontrado.', ephemeral: true });
+    const familyIds = Array.isArray(coupon.family_ids) ? coupon.family_ids.map(String) : [];
+    if (familyIds.length && !familyIds.includes(String(session.familyId || ''))) {
+      return safeReply(interaction, { content: 'Cupom nao liberado para esta familia.', ephemeral: true });
+    }
+    if (coupon.usage_limit && Number(coupon.used_count || 0) >= Number(coupon.usage_limit)) {
+      return safeReply(interaction, { content: 'Cupom atingiu o limite de usos.', ephemeral: true });
+    }
+    if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) {
+      return safeReply(interaction, { content: 'Cupom expirado.', ephemeral: true });
+    }
+    session.couponId = String(coupon._id);
+    session.couponCode = coupon.code || coupon.name;
+    session.couponPercentage = Number(coupon.percentage || 0);
+    return session.mode === 'grouped' ? showGroupedOrderForm(interaction) : showOrderBuilder(interaction);
   }
 
   if (interaction.customId === 'order_select_category') {
@@ -1171,6 +2015,36 @@ async function handleOrderModal(interaction) {
       total_value_cents: item.unit_price_cents * quantity,
     });
     return safeEdit(interaction, { content: `${quantity.toLocaleString('pt-BR')}x ${item.name} adicionado ao carrinho.` });
+  }
+
+  if (interaction.customId === 'modal_order_v2_quantity') {
+    await safeDeferReply(interaction, { ephemeral: true });
+    const session = getSession(interaction);
+    const quantity = parsePositiveInt(interaction.fields.getTextInputValue('quantity'));
+    if (!session.productId) return safeEdit(interaction, { content: 'Selecione uma municao antes de informar a quantidade.' });
+    if (!quantity) return safeEdit(interaction, { content: 'Informe uma quantidade maior que zero.' });
+    session.quantity = quantity;
+    return showOrderBuilder(interaction);
+  }
+
+  if (interaction.customId === 'modal_order_grouped_items') {
+    await safeDeferReply(interaction, { ephemeral: true });
+    const session = getSession(interaction);
+    session.groupedItems = session.groupedItems || emptyGroupedItems();
+    for (const item of GROUPED_ORDER_ITEMS) {
+      const parsed = parseGroupedProductInput(interaction.fields.getTextInputValue(item.key));
+      session.groupedItems[item.key] = {
+        key: item.key,
+        label: item.label,
+        emoji: item.emoji,
+        quantity: parsed.quantity,
+        valueCents: parsed.valueCents,
+      };
+    }
+    if (!groupedOrderLines(session).length) {
+      return safeEdit(interaction, { content: 'Preencha pelo menos um produto com quantidade e valor maior que zero.' });
+    }
+    return showGroupedConfirmation(interaction);
   }
 
   if (interaction.customId.startsWith('modal_order_custom_')) {
@@ -1297,6 +2171,7 @@ async function handleOrderModal(interaction) {
 }
 
 module.exports = {
+  buildOrderAdminPanelPayload,
   buildOrderPanelPayload,
   handleOrderButton,
   handleOrderModal,

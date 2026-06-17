@@ -12,9 +12,11 @@ const ORDER_NUMBER_OFFSET = 3846;
 
 const orderStatuses = ['pending', 'separating', 'transport', 'delivered', 'cancelled'] as const;
 const itemCategories = ['munitions', 'weapons', 'general', 'drugs', 'custom'] as const;
+const currencies = ['BRL', 'USD'] as const;
 
 type OrderStatus = typeof orderStatuses[number];
 type ItemCategory = typeof itemCategories[number];
+type OrderCurrency = typeof currencies[number];
 
 type OrderSettingsDoc = {
   _id?: ObjectId;
@@ -35,8 +37,12 @@ type OrderFamilyDoc = {
   slug: string;
   leader_id?: string | null;
   leader_name?: string | null;
+  order_channel_id?: string | null;
+  responsible_role_id?: string | null;
   color: string;
   icon: string;
+  registered_at?: Date | null;
+  internal_notes?: string | null;
   log_webhook_url?: string | null;
   members: Array<{ discord_id: string; name?: string | null }>;
   active: boolean;
@@ -53,7 +59,10 @@ type InventoryItemDoc = {
   slug: string;
   category: ItemCategory;
   quantity_available: number;
+  package_quantity: number;
   unit_price_cents: number;
+  price_brl_cents: number;
+  price_usd_cents: number;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -63,9 +72,29 @@ type OrderLineItem = {
   inventory_item_id?: string | null;
   name: string;
   category: ItemCategory;
+  package_quantity?: number;
   quantity: number;
   unit_price_cents: number;
+  unit_price_brl_cents?: number;
+  unit_price_usd_cents?: number;
   total_value_cents: number;
+};
+
+type OrderCouponDoc = {
+  _id?: ObjectId;
+  guild_id: string;
+  code: string;
+  name: string;
+  percentage: number;
+  active: boolean;
+  family_ids: string[];
+  expires_at?: Date | null;
+  usage_limit?: number | null;
+  used_count?: number;
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  created_at: Date;
+  updated_at: Date;
 };
 
 type OrderDoc = {
@@ -80,6 +109,13 @@ type OrderDoc = {
   responsible_id?: string | null;
   responsible_name?: string | null;
   items: OrderLineItem[];
+  currency?: OrderCurrency;
+  subtotal_value_cents?: number;
+  discount_value_cents?: number;
+  final_value_cents?: number;
+  coupon_id?: string | null;
+  coupon_code?: string | null;
+  coupon_percentage?: number;
   total_value_cents: number;
   status: OrderStatus;
   stock_applied: boolean;
@@ -145,9 +181,13 @@ const familySchema = z.object({
   guildId: discordId.optional(),
   name: z.string().trim().min(2, 'Informe o nome da familia.').max(80),
   leaderId: optionalDiscordId,
-  leaderName: z.string().trim().max(80).optional().or(z.literal('')),
+  leaderName: z.string().trim().max(80).default(''),
+  orderChannelId: optionalDiscordId,
+  responsibleRoleId: optionalDiscordId,
   color: colorSchema.default('#0EA5E9'),
   icon: z.string().trim().max(32).default('📦'),
+  registeredAt: z.coerce.date().optional(),
+  internalNotes: z.string().trim().max(1000).default('Sem observacoes.'),
   logWebhookUrl: urlSchema,
   active: z.boolean().default(true),
   members: z.array(z.object({
@@ -159,9 +199,12 @@ const familySchema = z.object({
 const inventorySchema = z.object({
   guildId: discordId.optional(),
   name: z.string().trim().min(2, 'Informe o nome do item.').max(100),
-  category: z.enum(itemCategories).default('general'),
-  quantityAvailable: z.coerce.number().int().min(0).max(100_000_000),
-  unitPrice: z.coerce.number().min(0).max(1_000_000_000),
+  category: z.enum(itemCategories).default('munitions'),
+  quantityAvailable: z.coerce.number().int().min(0).max(100_000_000).default(100_000_000),
+  packageQuantity: z.coerce.number().int().positive('Quantidade por pacote precisa ser maior que zero.').max(100_000_000).default(1),
+  unitPrice: z.coerce.number().min(0).max(1_000_000_000).optional(),
+  priceBrl: z.coerce.number().min(0).max(1_000_000_000),
+  priceUsd: z.coerce.number().min(0).max(1_000_000_000),
   active: z.boolean().default(true)
 });
 
@@ -178,9 +221,21 @@ const createOrderSchema = z.object({
   familyId: objectIdSchema,
   responsibleId: optionalDiscordId,
   responsibleName: z.string().trim().max(80).optional().or(z.literal('')),
+  currency: z.enum(currencies).default('BRL'),
+  couponId: objectIdSchema.optional().or(z.literal('')),
   items: z.array(orderLineSchema).min(1, 'Adicione pelo menos um item ao carrinho.').max(40),
   saveAsFavorite: z.boolean().default(false),
   favoriteName: z.string().trim().max(80).optional().or(z.literal(''))
+});
+
+const couponSchema = z.object({
+  guildId: discordId.optional(),
+  name: z.string().trim().min(2, 'Informe o nome do cupom.').max(60),
+  percentage: z.coerce.number().min(0).max(100),
+  active: z.boolean().default(true),
+  familyIds: z.array(objectIdSchema).default([]),
+  expiresAt: z.coerce.date().optional().nullable(),
+  usageLimit: z.coerce.number().int().positive().max(100_000_000).optional().nullable()
 });
 
 const updateStatusSchema = z.object({
@@ -246,8 +301,12 @@ async function discordRequest(path: string, init: RequestInit = {}) {
 }
 
 async function fetchDiscordChannels(guildId: string) {
-  const channels = await discordRequest(`/guilds/${guildId}/channels`);
+  const [channels, roles] = await Promise.all([
+    discordRequest(`/guilds/${guildId}/channels`),
+    discordRequest(`/guilds/${guildId}/roles`)
+  ]);
   const rows = Array.isArray(channels) ? channels : [];
+  const roleRows = Array.isArray(roles) ? roles : [];
   return {
     categories: rows
       .filter((channel: any) => Number(channel.type) === CHANNEL_TYPE_CATEGORY)
@@ -265,6 +324,15 @@ async function fetchDiscordChannels(guildId: string) {
         name: String(channel.name || 'canal'),
         parentId: channel.parent_id ? String(channel.parent_id) : null,
         position: Number(channel.position || 0)
+      })),
+    roles: roleRows
+      .filter((role: any) => role && String(role.name || '') !== '@everyone')
+      .sort((a: any, b: any) => Number(b.position || 0) - Number(a.position || 0))
+      .map((role: any) => ({
+        id: String(role.id),
+        name: String(role.name || 'cargo'),
+        position: Number(role.position || 0),
+        color: Number(role.color || 0)
       }))
   };
 }
@@ -290,6 +358,28 @@ function moneyFromCents(value: number) {
 
 function formatMoney(valueCents: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(moneyFromCents(valueCents));
+}
+
+function formatOrderMoney(valueCents: number, currency: OrderCurrency = 'BRL') {
+  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'pt-BR', {
+    style: 'currency',
+    currency
+  }).format(moneyFromCents(valueCents));
+}
+
+function currencyLabel(currency: OrderCurrency = 'BRL') {
+  return currency === 'USD' ? 'Dolar (USD)' : 'Real (BRL)';
+}
+
+function resolveCurrency(value: unknown): OrderCurrency {
+  return value === 'USD' ? 'USD' : 'BRL';
+}
+
+function inventoryPrice(doc: InventoryItemDoc, currency: OrderCurrency) {
+  const fallback = Number(doc.unit_price_cents || 0);
+  return currency === 'USD'
+    ? Number(doc.price_usd_cents ?? fallback)
+    : Number(doc.price_brl_cents ?? fallback);
 }
 
 function statusLabel(status: OrderStatus) {
@@ -339,8 +429,12 @@ function normalizeFamily(doc: OrderFamilyDoc) {
     slug: doc.slug,
     leaderId: doc.leader_id || '',
     leaderName: doc.leader_name || '',
+    orderChannelId: doc.order_channel_id || '',
+    responsibleRoleId: doc.responsible_role_id || '',
     color: doc.color,
     icon: doc.icon,
+    registeredAt: row.registered_at || row.created_at,
+    internalNotes: doc.internal_notes || '',
     logWebhookUrl: doc.log_webhook_url || '',
     members: doc.members || [],
     active: doc.active,
@@ -351,6 +445,8 @@ function normalizeFamily(doc: OrderFamilyDoc) {
 
 function normalizeInventoryItem(doc: InventoryItemDoc) {
   const row = serializeDoc(doc) as any;
+  const priceBrlCents = Number(doc.price_brl_cents ?? doc.unit_price_cents ?? 0);
+  const priceUsdCents = Number(doc.price_usd_cents ?? doc.unit_price_cents ?? 0);
   return {
     id: String(doc._id),
     guildId: doc.guild_id,
@@ -359,8 +455,29 @@ function normalizeInventoryItem(doc: InventoryItemDoc) {
     category: doc.category,
     categoryLabel: categoryLabel(doc.category),
     quantityAvailable: doc.quantity_available,
-    unitPrice: moneyFromCents(doc.unit_price_cents),
+    packageQuantity: Number(doc.package_quantity || 1),
+    unitPrice: moneyFromCents(priceBrlCents),
+    priceBrl: moneyFromCents(priceBrlCents),
+    priceUsd: moneyFromCents(priceUsdCents),
     active: doc.active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function normalizeCoupon(doc: OrderCouponDoc) {
+  const row = serializeDoc(doc) as any;
+  return {
+    id: String(doc._id),
+    guildId: doc.guild_id,
+    name: doc.name,
+    code: doc.code,
+    percentage: Number(doc.percentage || 0),
+    active: doc.active,
+    familyIds: Array.isArray(doc.family_ids) ? doc.family_ids : [],
+    expiresAt: row.expires_at || null,
+    usageLimit: doc.usage_limit ?? null,
+    usedCount: Number(doc.used_count || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -368,6 +485,10 @@ function normalizeInventoryItem(doc: InventoryItemDoc) {
 
 function normalizeOrder(doc: OrderDoc) {
   const row = serializeDoc(doc) as any;
+  const currency = resolveCurrency(doc.currency);
+  const subtotal = Number(doc.subtotal_value_cents ?? doc.total_value_cents ?? 0);
+  const discount = Number(doc.discount_value_cents ?? 0);
+  const final = Number(doc.final_value_cents ?? doc.total_value_cents ?? Math.max(0, subtotal - discount));
   return {
     id: String(doc._id),
     orderNumber: doc.order_number,
@@ -384,11 +505,22 @@ function normalizeOrder(doc: OrderDoc) {
       name: item.name,
       category: item.category,
       categoryLabel: categoryLabel(item.category),
+      packageQuantity: Number(item.package_quantity || 1),
       quantity: item.quantity,
       unitPrice: moneyFromCents(item.unit_price_cents),
+      unitPriceBrl: moneyFromCents(Number(item.unit_price_brl_cents ?? item.unit_price_cents ?? 0)),
+      unitPriceUsd: moneyFromCents(Number(item.unit_price_usd_cents ?? item.unit_price_cents ?? 0)),
       totalValue: moneyFromCents(item.total_value_cents)
     })),
-    totalValue: moneyFromCents(doc.total_value_cents),
+    currency,
+    currencyLabel: currencyLabel(currency),
+    subtotalValue: moneyFromCents(subtotal),
+    discountValue: moneyFromCents(discount),
+    finalValue: moneyFromCents(final),
+    couponId: doc.coupon_id || '',
+    couponCode: doc.coupon_code || '',
+    couponPercentage: Number(doc.coupon_percentage || 0),
+    totalValue: moneyFromCents(final),
     status: doc.status,
     statusLabel: statusLabel(doc.status),
     stockApplied: doc.stock_applied,
@@ -462,7 +594,7 @@ async function nextOrderNumber(guildId: string) {
   return ORDER_NUMBER_OFFSET + Number((result as any)?.seq || 1);
 }
 
-async function buildOrderItems(guildId: string, requested: z.infer<typeof orderLineSchema>[]) {
+async function buildOrderItems(guildId: string, requested: z.infer<typeof orderLineSchema>[], currency: OrderCurrency = 'BRL') {
   const inventory = await collection<InventoryItemDoc>('order_inventory');
   const ids = requested
     .map((item) => item.inventoryItemId)
@@ -481,20 +613,19 @@ async function buildOrderItems(guildId: string, requested: z.infer<typeof orderL
     if (stockItem && !stockItem.active) {
       throw new Error(`${stockItem.name} esta desativado no estoque.`);
     }
-    if (stockItem && stockItem.quantity_available < input.quantity) {
-      throw new Error(`${stockItem.name} nao possui estoque suficiente. Disponivel: ${stockItem.quantity_available}.`);
-    }
-
     const name = stockItem?.name || String(input.name || 'Item personalizado').trim();
     if (!name || name.length < 2) throw new Error('Informe o nome do item personalizado.');
     const category = stockItem?.category || input.category || 'custom';
-    const unitPriceCents = stockItem ? stockItem.unit_price_cents : cents(Number(input.unitPrice || 0));
+    const unitPriceCents = stockItem ? inventoryPrice(stockItem, currency) : cents(Number(input.unitPrice || 0));
     items.push({
       inventory_item_id: stockItem?._id ? String(stockItem._id) : null,
       name,
       category,
+      package_quantity: Number(stockItem?.package_quantity || 1),
       quantity: input.quantity,
       unit_price_cents: unitPriceCents,
+      unit_price_brl_cents: stockItem ? inventoryPrice(stockItem, 'BRL') : unitPriceCents,
+      unit_price_usd_cents: stockItem ? inventoryPrice(stockItem, 'USD') : unitPriceCents,
       total_value_cents: unitPriceCents * input.quantity
     });
   }
@@ -515,8 +646,44 @@ async function applyStockDelta(guildId: string, items: OrderLineItem[], directio
   await (await collection<InventoryItemDoc>('order_inventory')).bulkWrite(operations);
 }
 
+async function findApplicableCoupon(guildId: string, couponId: string | undefined, familyId: string) {
+  if (!couponId || !ObjectId.isValid(couponId)) return null;
+  const coupon = await (await collection<OrderCouponDoc>('order_coupons')).findOne({
+    _id: new ObjectId(couponId),
+    guild_id: guildId
+  });
+  if (!coupon || !coupon.active) throw new Error('Cupom inativo ou nao encontrado.');
+  if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) {
+    throw new Error('Cupom expirado.');
+  }
+  if (coupon.usage_limit && Number(coupon.used_count || 0) >= Number(coupon.usage_limit)) {
+    throw new Error('Cupom atingiu o limite de usos.');
+  }
+  const familyIds = Array.isArray(coupon.family_ids) ? coupon.family_ids.map(String) : [];
+  if (familyIds.length && !familyIds.includes(String(familyId))) {
+    throw new Error('Cupom nao liberado para esta familia.');
+  }
+  return coupon;
+}
+
+function calculateOrderTotals(items: OrderLineItem[], coupon: OrderCouponDoc | null) {
+  const subtotal = items.reduce((total, item) => total + item.total_value_cents, 0);
+  const percentage = coupon ? Math.max(0, Math.min(100, Number(coupon.percentage || 0))) : 0;
+  const discount = Math.round(subtotal * (percentage / 100));
+  return {
+    subtotal,
+    discount,
+    final: Math.max(0, subtotal - discount),
+    percentage
+  };
+}
+
 function buildDiscordOrderPayload(order: OrderDoc) {
+  const currency = resolveCurrency(order.currency);
   const items = order.items.map((item) => `${item.quantity.toLocaleString('pt-BR')}x ${item.name}`).join('\n');
+  const subtotal = Number(order.subtotal_value_cents ?? order.total_value_cents ?? 0);
+  const discount = Number(order.discount_value_cents ?? 0);
+  const final = Number(order.final_value_cents ?? order.total_value_cents ?? Math.max(0, subtotal - discount));
   return {
     embeds: [
       {
@@ -525,11 +692,15 @@ function buildDiscordOrderPayload(order: OrderDoc) {
         description: [
           `**Familia:** ${order.family_icon || '📦'} ${order.family_name}`,
           `**Solicitante:** ${order.responsible_name || order.created_by_name || 'N/A'}`,
+          `**Moeda:** ${currencyLabel(currency)}`,
           '',
           '**Itens:**',
           items || 'Nenhum item',
           '',
-          `**Valor Total:** ${formatMoney(order.total_value_cents)}`,
+          `**Valor Bruto:** ${formatOrderMoney(subtotal, currency)}`,
+          `**Cupom:** ${order.coupon_code ? `${order.coupon_code} (${Number(order.coupon_percentage || 0)}%)` : 'Sem desconto'}`,
+          `**Desconto:** ${formatOrderMoney(discount, currency)}`,
+          `**Valor Final:** ${formatOrderMoney(final, currency)}`,
           `**Status:** ${statusLabel(order.status)}`,
           `**Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`
         ].join('\n'),
@@ -625,6 +796,7 @@ async function insertOrderLog(log: OrderLogDoc, family?: OrderFamilyDoc | null, 
 
 function buildOrderFilter(req: Request, guildId: string): Filter<OrderDoc> {
   const filter: Filter<OrderDoc> = { guild_id: guildId };
+  const dynamicFilter = filter as Record<string, any>;
   const status = String(req.query.status || '').trim();
   const familyId = String(req.query.familyId || '').trim();
   const responsible = String(req.query.responsible || '').trim();
@@ -635,16 +807,16 @@ function buildOrderFilter(req: Request, guildId: string): Filter<OrderDoc> {
   if (orderStatuses.includes(status as OrderStatus)) filter.status = status as OrderStatus;
   if (familyId && ObjectId.isValid(familyId)) filter.family_id = familyId;
   if (responsible) {
-    filter.$or = [
+    dynamicFilter.$or = [
       { responsible_name: { $regex: responsible, $options: 'i' } },
       { responsible_id: responsible }
-    ] as any;
+    ];
   }
-  if (item) filter['items.name' as keyof OrderDoc] = { $regex: item, $options: 'i' } as any;
+  if (item) dynamicFilter['items.name'] = { $regex: item, $options: 'i' };
   if (dateFrom || dateTo) {
-    filter.created_at = {} as any;
-    if (dateFrom) (filter.created_at as any).$gte = new Date(`${dateFrom}T00:00:00.000Z`);
-    if (dateTo) (filter.created_at as any).$lte = new Date(`${dateTo}T23:59:59.999Z`);
+    dynamicFilter.created_at = {};
+    if (dateFrom) dynamicFilter.created_at.$gte = new Date(`${dateFrom}T00:00:00.000Z`);
+    if (dateTo) dynamicFilter.created_at.$lte = new Date(`${dateTo}T23:59:59.999Z`);
   }
 
   return filter;
@@ -656,22 +828,35 @@ async function orderStats(guildId: string) {
     collection<OrderFamilyDoc>('order_families')
   ]);
 
-  const [totalOrders, pending, delivered, totalFamilies, totals, ranking] = await Promise.all([
+  const totalsPromise = orders.aggregate<{ _id: null; value: number }>([
+    { $match: { guild_id: guildId, status: { $ne: 'cancelled' } } },
+    { $group: { _id: null, value: { $sum: { $ifNull: ['$final_value_cents', '$total_value_cents'] } } } }
+  ]).toArray();
+  const currencyTotalsPromise = orders.aggregate<{ _id: OrderCurrency | null; value: number }>([
+    { $match: { guild_id: guildId, status: { $ne: 'cancelled' } } },
+    { $group: { _id: '$currency', value: { $sum: { $ifNull: ['$final_value_cents', '$total_value_cents'] } } } }
+  ]).toArray();
+  const rankingPromise = orders.aggregate<{ _id: string; familyName: string; total: number; value: number }>([
+    { $match: { guild_id: guildId } },
+    { $group: { _id: '$family_id', familyName: { $first: '$family_name' }, total: { $sum: 1 }, value: { $sum: { $ifNull: ['$final_value_cents', '$total_value_cents'] } } } },
+    { $sort: { value: -1, total: -1 } },
+    { $limit: 10 }
+  ]).toArray();
+  const topCouponsPromise = orders.aggregate<{ _id: string; code: string; total: number; value: number }>([
+    { $match: { guild_id: guildId, coupon_code: { $nin: [null, ''] } } },
+    { $group: { _id: '$coupon_code', code: { $first: '$coupon_code' }, total: { $sum: 1 }, value: { $sum: { $ifNull: ['$discount_value_cents', 0] } } } },
+    { $sort: { total: -1, value: -1 } },
+    { $limit: 5 }
+  ]).toArray();
+
+  const [totalOrders, pending, delivered, totalFamilies] = await Promise.all([
     orders.countDocuments({ guild_id: guildId }),
     orders.countDocuments({ guild_id: guildId, status: 'pending' }),
     orders.countDocuments({ guild_id: guildId, status: 'delivered' }),
-    families.countDocuments({ guild_id: guildId, active: true }),
-    orders.aggregate<{ _id: null; value: number }>([
-      { $match: { guild_id: guildId, status: { $ne: 'cancelled' } } },
-      { $group: { _id: null, value: { $sum: '$total_value_cents' } } }
-    ]).toArray(),
-    orders.aggregate<{ _id: string; familyName: string; total: number; value: number }>([
-      { $match: { guild_id: guildId } },
-      { $group: { _id: '$family_id', familyName: { $first: '$family_name' }, total: { $sum: 1 }, value: { $sum: '$total_value_cents' } } },
-      { $sort: { value: -1, total: -1 } },
-      { $limit: 10 }
-    ]).toArray()
+    families.countDocuments({ guild_id: guildId, active: true })
   ]);
+  const [totals, currencyTotals, ranking, topCoupons] = await Promise.all([totalsPromise, currencyTotalsPromise, rankingPromise, topCouponsPromise]);
+  const totalByCurrency = new Map(currencyTotals.map((item) => [resolveCurrency(item._id), Number(item.value || 0)]));
 
   return {
     totalFamilies,
@@ -679,6 +864,13 @@ async function orderStats(guildId: string) {
     pending,
     delivered,
     movedValue: moneyFromCents(totals[0]?.value || 0),
+    movedValueBrl: moneyFromCents(totalByCurrency.get('BRL') || 0),
+    movedValueUsd: moneyFromCents(totalByCurrency.get('USD') || 0),
+    topCoupons: topCoupons.map((item) => ({
+      code: item.code,
+      total: item.total,
+      discountValue: moneyFromCents(item.value)
+    })),
     ranking: ranking.map((item) => ({
       familyId: item._id,
       familyName: item.familyName,
@@ -700,14 +892,18 @@ function orderExportRows(orders: OrderDoc[]) {
     responsavel: order.responsible_name || order.created_by_name || '',
     status: statusLabel(order.status),
     itens: order.items.map((item) => `${item.quantity}x ${item.name}`).join('; '),
-    valor: moneyFromCents(order.total_value_cents),
+    moeda: resolveCurrency(order.currency),
+    valor_bruto: moneyFromCents(Number(order.subtotal_value_cents ?? order.total_value_cents ?? 0)),
+    cupom: order.coupon_code || '',
+    desconto: moneyFromCents(Number(order.discount_value_cents ?? 0)),
+    valor: moneyFromCents(Number(order.final_value_cents ?? order.total_value_cents ?? 0)),
     criado_em: order.created_at.toISOString()
   }));
 }
 
 function buildCsv(orders: OrderDoc[], delimiter = ',') {
   const rows = orderExportRows(orders);
-  const headers = ['id', 'familia', 'responsavel', 'status', 'itens', 'valor', 'criado_em'];
+  const headers = ['id', 'familia', 'responsavel', 'status', 'itens', 'moeda', 'valor_bruto', 'cupom', 'desconto', 'valor', 'criado_em'];
   return [
     headers.map(csvCell).join(delimiter),
     ...rows.map((row) => headers.map((header) => csvCell((row as any)[header])).join(delimiter))
@@ -760,6 +956,7 @@ ordersRouter.get('/discord-options', asyncRoute(async (req, res) => {
       guildId,
       categories: [],
       textChannels: [],
+      roles: [],
       error: error instanceof Error ? error.message : 'Falha ao carregar canais do Discord.'
     });
   }
@@ -833,8 +1030,12 @@ ordersRouter.post('/families', asyncRoute(async (req, res) => {
     slug: createSlug(input.name),
     leader_id: input.leaderId || null,
     leader_name: input.leaderName || null,
+    order_channel_id: input.orderChannelId || null,
+    responsible_role_id: input.responsibleRoleId || null,
     color: input.color,
     icon: input.icon || '📦',
+    registered_at: input.registeredAt || now,
+    internal_notes: input.internalNotes || 'Sem observacoes.',
     log_webhook_url: input.logWebhookUrl || null,
     members: input.members.map((member) => ({ discord_id: member.discordId, name: member.name || null })),
     active: input.active,
@@ -852,7 +1053,7 @@ ordersRouter.post('/families', asyncRoute(async (req, res) => {
     action: 'family_created',
     actor_id: actor.id,
     actor_name: actor.name,
-    details: { leaderId: doc.leader_id, active: doc.active },
+    details: { leaderId: doc.leader_id, active: doc.active, registeredAt: doc.registered_at },
     created_at: now
   }, doc);
 
@@ -860,7 +1061,7 @@ ordersRouter.post('/families', asyncRoute(async (req, res) => {
 }));
 
 ordersRouter.put('/families/:id', asyncRoute(async (req, res) => {
-  const input = familySchema.partial({ name: true }).parse(req.body);
+  const input = familySchema.partial().parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const id = objectIdParam(req);
   const actor = getActor(req);
@@ -874,8 +1075,12 @@ ordersRouter.put('/families/:id', asyncRoute(async (req, res) => {
   }
   if (input.leaderId !== undefined) update.leader_id = input.leaderId || null;
   if (input.leaderName !== undefined) update.leader_name = input.leaderName || null;
+  if (input.orderChannelId !== undefined) update.order_channel_id = input.orderChannelId || null;
+  if (input.responsibleRoleId !== undefined) update.responsible_role_id = input.responsibleRoleId || null;
   if (input.color !== undefined) update.color = input.color;
   if (input.icon !== undefined) update.icon = input.icon || '📦';
+  if (input.registeredAt !== undefined) update.registered_at = input.registeredAt || now;
+  if (input.internalNotes !== undefined) update.internal_notes = input.internalNotes || '';
   if (input.logWebhookUrl !== undefined) update.log_webhook_url = input.logWebhookUrl || null;
   if (input.active !== undefined) update.active = input.active;
   if (input.members !== undefined) update.members = input.members.map((member) => ({ discord_id: member.discordId, name: member.name || null }));
@@ -943,7 +1148,10 @@ ordersRouter.post('/inventory', asyncRoute(async (req, res) => {
     slug: createSlug(input.name),
     category: input.category,
     quantity_available: input.quantityAvailable,
-    unit_price_cents: cents(input.unitPrice),
+    package_quantity: input.packageQuantity,
+    unit_price_cents: cents(input.priceBrl ?? input.unitPrice ?? 0),
+    price_brl_cents: cents(input.priceBrl ?? input.unitPrice ?? 0),
+    price_usd_cents: cents(input.priceUsd ?? input.unitPrice ?? 0),
     active: input.active,
     created_at: now,
     updated_at: now
@@ -955,14 +1163,14 @@ ordersRouter.post('/inventory', asyncRoute(async (req, res) => {
     action: 'inventory_created',
     actor_id: actor.id,
     actor_name: actor.name,
-    details: { item: doc.name, quantity: doc.quantity_available },
+    details: { item: doc.name, packageQuantity: doc.package_quantity, priceBrl: input.priceBrl, priceUsd: input.priceUsd },
     created_at: now
   });
   return res.status(201).json({ ok: true, item: normalizeInventoryItem(doc) });
 }));
 
 ordersRouter.put('/inventory/:id', asyncRoute(async (req, res) => {
-  const input = inventorySchema.partial({ name: true }).parse(req.body);
+  const input = inventorySchema.partial().parse(req.body);
   const guildId = input.guildId || defaultGuildId(req);
   const id = objectIdParam(req);
   const update: Partial<InventoryItemDoc> = { updated_at: new Date() };
@@ -972,7 +1180,15 @@ ordersRouter.put('/inventory/:id', asyncRoute(async (req, res) => {
   }
   if (input.category !== undefined) update.category = input.category;
   if (input.quantityAvailable !== undefined) update.quantity_available = input.quantityAvailable;
-  if (input.unitPrice !== undefined) update.unit_price_cents = cents(input.unitPrice);
+  if (input.packageQuantity !== undefined) update.package_quantity = input.packageQuantity;
+  if (input.priceBrl !== undefined) {
+    update.price_brl_cents = cents(input.priceBrl);
+    update.unit_price_cents = cents(input.priceBrl);
+  } else if (input.unitPrice !== undefined) {
+    update.price_brl_cents = cents(input.unitPrice);
+    update.unit_price_cents = cents(input.unitPrice);
+  }
+  if (input.priceUsd !== undefined) update.price_usd_cents = cents(input.priceUsd);
   if (input.active !== undefined) update.active = input.active;
 
   const result = await (await collection<InventoryItemDoc>('order_inventory')).findOneAndUpdate(
@@ -1005,6 +1221,96 @@ ordersRouter.delete('/inventory/:id', asyncRoute(async (req, res) => {
   if (!result) return res.status(404).json({ ok: false, error: 'Item de estoque nao encontrado.' });
   publishDashboardEvent({ type: 'orders.updated', payload: { guildId, action: 'inventory_deleted' } });
   return res.json({ ok: true, item: normalizeInventoryItem(result) });
+}));
+
+ordersRouter.get('/coupons', asyncRoute(async (req, res) => {
+  const guildId = defaultGuildId(req);
+  const includeInactive = String(req.query.includeInactive || '') === 'true';
+  const filter: Filter<OrderCouponDoc> = { guild_id: guildId };
+  if (!includeInactive) filter.active = true;
+  const rows = await (await collection<OrderCouponDoc>('order_coupons'))
+    .find(filter)
+    .sort({ active: -1, name: 1 })
+    .toArray();
+  return res.json({ ok: true, guildId, coupons: rows.map(normalizeCoupon) });
+}));
+
+ordersRouter.post('/coupons', asyncRoute(async (req, res) => {
+  const input = couponSchema.parse(req.body);
+  const guildId = input.guildId || defaultGuildId(req);
+  const actor = getActor(req);
+  const now = new Date();
+  const doc: OrderCouponDoc = {
+    _id: new ObjectId(),
+    guild_id: guildId,
+    code: createSlug(input.name).toUpperCase(),
+    name: input.name.trim().toUpperCase(),
+    percentage: input.percentage,
+    active: input.active,
+    family_ids: input.familyIds || [],
+    expires_at: input.expiresAt || null,
+    usage_limit: input.usageLimit || null,
+    used_count: 0,
+    created_by_id: actor.id,
+    created_by_name: actor.name,
+    created_at: now,
+    updated_at: now
+  };
+  await (await collection<OrderCouponDoc>('order_coupons')).insertOne(doc);
+  await insertOrderLog({
+    guild_id: guildId,
+    action: 'coupon_created',
+    actor_id: actor.id,
+    actor_name: actor.name,
+    details: { coupon: doc.code, percentage: doc.percentage, families: doc.family_ids.length, usageLimit: doc.usage_limit || null },
+    created_at: now
+  });
+  return res.status(201).json({ ok: true, coupon: normalizeCoupon(doc) });
+}));
+
+ordersRouter.put('/coupons/:id', asyncRoute(async (req, res) => {
+  const input = couponSchema.partial().parse(req.body);
+  const guildId = input.guildId || defaultGuildId(req);
+  const id = objectIdParam(req);
+  const update: Partial<OrderCouponDoc> = { updated_at: new Date() };
+  if (input.name !== undefined) {
+    update.name = input.name.trim().toUpperCase();
+    update.code = createSlug(input.name).toUpperCase();
+  }
+  if (input.percentage !== undefined) update.percentage = input.percentage;
+  if (input.active !== undefined) update.active = input.active;
+  if (input.familyIds !== undefined) update.family_ids = input.familyIds || [];
+  if (input.expiresAt !== undefined) update.expires_at = input.expiresAt || null;
+  if (input.usageLimit !== undefined) update.usage_limit = input.usageLimit || null;
+  const result = await (await collection<OrderCouponDoc>('order_coupons')).findOneAndUpdate(
+    { _id: id, guild_id: guildId },
+    { $set: update },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Cupom nao encontrado.' });
+  const actor = getActor(req);
+  await insertOrderLog({
+    guild_id: guildId,
+    action: 'coupon_updated',
+    actor_id: actor.id,
+    actor_name: actor.name,
+    details: { coupon: result.code, percentage: result.percentage, active: result.active, usageLimit: result.usage_limit || null },
+    created_at: new Date()
+  });
+  return res.json({ ok: true, coupon: normalizeCoupon(result) });
+}));
+
+ordersRouter.delete('/coupons/:id', asyncRoute(async (req, res) => {
+  const guildId = defaultGuildId(req);
+  const id = objectIdParam(req);
+  const result = await (await collection<OrderCouponDoc>('order_coupons')).findOneAndUpdate(
+    { _id: id, guild_id: guildId },
+    { $set: { active: false, updated_at: new Date() } },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Cupom nao encontrado.' });
+  publishDashboardEvent({ type: 'orders.updated', payload: { guildId, action: 'coupon_deleted' } });
+  return res.json({ ok: true, coupon: normalizeCoupon(result) });
 }));
 
 ordersRouter.get('/favorites', asyncRoute(async (req, res) => {
@@ -1129,7 +1435,10 @@ ordersRouter.post('/', asyncRoute(async (req, res) => {
   const family = await families.findOne({ _id: new ObjectId(input.familyId), guild_id: guildId });
   if (!family || !family.active) return res.status(404).json({ ok: false, error: 'Familia ativa nao encontrada.' });
 
-  const items = await buildOrderItems(guildId, input.items);
+  const currency = resolveCurrency(input.currency);
+  const items = await buildOrderItems(guildId, input.items, currency);
+  const coupon = await findApplicableCoupon(guildId, input.couponId || '', String(family._id));
+  const totals = calculateOrderTotals(items, coupon);
   const settings = await settingsCollection.findOne({ guild_id: guildId });
   const actor = getActor(req);
   const now = new Date();
@@ -1146,11 +1455,18 @@ ordersRouter.post('/', asyncRoute(async (req, res) => {
     responsible_id: input.responsibleId || actor.id,
     responsible_name: input.responsibleName || actor.name,
     items,
-    total_value_cents: items.reduce((total, item) => total + item.total_value_cents, 0),
+    currency,
+    subtotal_value_cents: totals.subtotal,
+    discount_value_cents: totals.discount,
+    final_value_cents: totals.final,
+    coupon_id: coupon?._id ? String(coupon._id) : null,
+    coupon_code: coupon?.code || null,
+    coupon_percentage: totals.percentage,
+    total_value_cents: totals.final,
     status: 'pending',
-    stock_applied: true,
+    stock_applied: false,
     stock_restored: false,
-    approval_channel_id: settings?.order_channel_id || null,
+    approval_channel_id: family.order_channel_id || settings?.order_channel_id || null,
     approval_message_id: null,
     created_by_id: actor.id,
     created_by_name: actor.name,
@@ -1159,11 +1475,16 @@ ordersRouter.post('/', asyncRoute(async (req, res) => {
     updated_at: now
   };
 
-  await applyStockDelta(guildId, items, -1);
   if (doc.approval_channel_id) {
     doc.approval_message_id = await sendApprovalMessage(doc.approval_channel_id, doc).catch(() => '');
   }
   await (await collection<OrderDoc>('orders')).insertOne(doc);
+  if (coupon?._id) {
+    await (await collection<OrderCouponDoc>('order_coupons')).updateOne(
+      { _id: coupon._id, guild_id: guildId },
+      { $inc: { used_count: 1 }, $set: { updated_at: now } }
+    );
+  }
 
   await insertOrderLog({
     guild_id: guildId,
@@ -1174,7 +1495,14 @@ ordersRouter.post('/', asyncRoute(async (req, res) => {
     action: 'order_created',
     actor_id: actor.id,
     actor_name: actor.name,
-    details: { items: items.length, totalValue: moneyFromCents(doc.total_value_cents) },
+    details: {
+      items: items.length,
+      currency,
+      subtotalValue: moneyFromCents(totals.subtotal),
+      coupon: coupon?.code || null,
+      discountValue: moneyFromCents(totals.discount),
+      totalValue: moneyFromCents(totals.final)
+    },
     created_at: now
   }, family, settings);
 

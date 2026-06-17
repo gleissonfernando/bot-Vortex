@@ -14,6 +14,7 @@ import {
   History,
   PackageCheck,
   PackagePlus,
+  Percent,
   Plus,
   RefreshCw,
   Save,
@@ -30,10 +31,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type OrderStatus = 'pending' | 'separating' | 'transport' | 'delivered' | 'cancelled';
 type ItemCategory = 'munitions' | 'weapons' | 'general' | 'drugs' | 'custom';
-type TabKey = 'dashboard' | 'families' | 'orders' | 'logs' | 'stock' | 'settings';
+type OrderCurrency = 'BRL' | 'USD';
+type TabKey = 'dashboard' | 'families' | 'discounts' | 'orders' | 'logs' | 'stock' | 'settings';
 
 type DiscordCategory = { id: string; name: string; position: number };
 type DiscordTextChannel = { id: string; name: string; parentId?: string | null; position: number };
+type DiscordRole = { id: string; name: string; position: number; color: number };
 
 type OrderSettings = {
   guildId: string;
@@ -51,8 +54,12 @@ type OrderFamily = {
   slug: string;
   leaderId: string;
   leaderName: string;
+  orderChannelId: string;
+  responsibleRoleId: string;
   color: string;
   icon: string;
+  registeredAt: string;
+  internalNotes: string;
   logWebhookUrl: string;
   members: Array<{ discord_id: string; name?: string | null }>;
   active: boolean;
@@ -68,7 +75,10 @@ type InventoryItem = {
   category: ItemCategory;
   categoryLabel: string;
   quantityAvailable: number;
+  packageQuantity: number;
   unitPrice: number;
+  priceBrl: number;
+  priceUsd: number;
   active: boolean;
 };
 
@@ -77,9 +87,27 @@ type OrderLine = {
   name: string;
   category: ItemCategory;
   categoryLabel?: string;
+  packageQuantity?: number;
   quantity: number;
   unitPrice: number;
+  unitPriceBrl?: number;
+  unitPriceUsd?: number;
   totalValue: number;
+};
+
+type OrderCoupon = {
+  id: string;
+  guildId: string;
+  name: string;
+  code: string;
+  percentage: number;
+  active: boolean;
+  familyIds: string[];
+  expiresAt: string | null;
+  usageLimit: number | null;
+  usedCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type OrderItem = {
@@ -93,6 +121,14 @@ type OrderItem = {
   responsibleId: string;
   responsibleName: string;
   items: OrderLine[];
+  currency: OrderCurrency;
+  currencyLabel: string;
+  subtotalValue: number;
+  discountValue: number;
+  finalValue: number;
+  couponId: string;
+  couponCode: string;
+  couponPercentage: number;
   totalValue: number;
   status: OrderStatus;
   statusLabel: string;
@@ -109,6 +145,9 @@ type OrderStats = {
   pending: number;
   delivered: number;
   movedValue: number;
+  movedValueBrl: number;
+  movedValueUsd: number;
+  topCoupons: Array<{ code: string; total: number; discountValue: number }>;
   ranking: Array<{ familyId: string; familyName: string; total: number; value: number }>;
 };
 
@@ -162,6 +201,7 @@ const categoryOptions: Array<{ value: ItemCategory; label: string }> = [
 const tabs: Array<{ key: TabKey; label: string; icon: typeof BarChart3 }> = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { key: 'families', label: 'Familias', icon: Users },
+  { key: 'discounts', label: 'Descontos', icon: Percent },
   { key: 'orders', label: 'Pedidos', icon: ClipboardList },
   { key: 'logs', label: 'Logs', icon: History },
   { key: 'stock', label: 'Estoque', icon: Warehouse },
@@ -174,6 +214,9 @@ const emptyStats: OrderStats = {
   pending: 0,
   delivered: 0,
   movedValue: 0,
+  movedValueBrl: 0,
+  movedValueUsd: 0,
+  topCoupons: [],
   ranking: []
 };
 
@@ -182,6 +225,10 @@ const initialFamilyForm = {
   name: '',
   leaderId: '',
   leaderName: '',
+  orderChannelId: '',
+  responsibleRoleId: '',
+  registeredAt: new Date().toISOString().slice(0, 10),
+  internalNotes: '',
   color: '#0EA5E9',
   icon: '📦',
   logWebhookUrl: '',
@@ -192,10 +239,22 @@ const initialFamilyForm = {
 const initialInventoryForm = {
   id: '',
   name: '',
-  category: 'general' as ItemCategory,
-  quantityAvailable: '0',
-  unitPrice: '0',
+  category: 'munitions' as ItemCategory,
+  quantityAvailable: '100000000',
+  packageQuantity: '1',
+  priceBrl: '0',
+  priceUsd: '0',
   active: true
+};
+
+const initialCouponForm = {
+  id: '',
+  name: '',
+  percentage: '0',
+  active: true,
+  familyIds: [] as string[],
+  expiresAt: '',
+  usageLimit: ''
 };
 
 export default function OrdersPage() {
@@ -203,7 +262,9 @@ export default function OrdersPage() {
   const [settings, setSettings] = useState<OrderSettings | null>(null);
   const [categories, setCategories] = useState<DiscordCategory[]>([]);
   const [textChannels, setTextChannels] = useState<DiscordTextChannel[]>([]);
+  const [roles, setRoles] = useState<DiscordRole[]>([]);
   const [families, setFamilies] = useState<OrderFamily[]>([]);
+  const [coupons, setCoupons] = useState<OrderCoupon[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [logs, setLogs] = useState<OrderLog[]>([]);
@@ -214,9 +275,12 @@ export default function OrdersPage() {
   const [message, setMessage] = useState('');
   const [discordError, setDiscordError] = useState('');
   const [familyForm, setFamilyForm] = useState(initialFamilyForm);
+  const [couponForm, setCouponForm] = useState(initialCouponForm);
   const [inventoryForm, setInventoryForm] = useState(initialInventoryForm);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState<OrderCurrency>('BRL');
+  const [selectedCouponId, setSelectedCouponId] = useState('');
   const [responsibleName, setResponsibleName] = useState('');
   const [selectedInventoryId, setSelectedInventoryId] = useState('');
   const [selectedQuantity, setSelectedQuantity] = useState('1');
@@ -228,8 +292,17 @@ export default function OrdersPage() {
 
   const activeFamilies = useMemo(() => families.filter((family) => family.active), [families]);
   const selectedFamily = useMemo(() => families.find((family) => family.id === selectedFamilyId) || null, [families, selectedFamilyId]);
+  const availableCoupons = useMemo(() => coupons.filter((coupon) => {
+    if (!coupon.active) return false;
+    if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) return false;
+    if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) return false;
+    return !coupon.familyIds.length || coupon.familyIds.includes(selectedFamilyId);
+  }), [coupons, selectedFamilyId]);
+  const selectedCoupon = useMemo(() => availableCoupons.find((coupon) => coupon.id === selectedCouponId) || null, [availableCoupons, selectedCouponId]);
   const filteredFavorites = useMemo(() => favorites.filter((favorite) => !selectedFamilyId || favorite.familyId === selectedFamilyId), [favorites, selectedFamilyId]);
-  const cartTotal = useMemo(() => cart.reduce((total, item) => total + item.quantity * item.unitPrice, 0), [cart]);
+  const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + item.quantity * item.unitPrice, 0), [cart]);
+  const cartDiscount = useMemo(() => selectedCoupon ? Math.round(cartSubtotal * (selectedCoupon.percentage / 100) * 100) / 100 : 0, [cartSubtotal, selectedCoupon]);
+  const cartTotal = useMemo(() => Math.max(0, cartSubtotal - cartDiscount), [cartSubtotal, cartDiscount]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -243,11 +316,12 @@ export default function OrdersPage() {
     setLoading(true);
     setMessage('');
     try {
-      const [ordersData, settingsData, optionsData, familiesData, inventoryData, logsData, favoritesData] = await Promise.all([
+      const [ordersData, settingsData, optionsData, familiesData, couponsData, inventoryData, logsData, favoritesData] = await Promise.all([
         apiFetch<{ orders: OrderItem[]; stats: OrderStats }>(`/orders${queryString ? `?${queryString}` : ''}`),
         apiFetch<{ settings: OrderSettings }>('/orders/settings'),
-        apiFetch<{ categories: DiscordCategory[]; textChannels: DiscordTextChannel[]; error?: string | null }>('/orders/discord-options').catch(() => null),
+        apiFetch<{ categories: DiscordCategory[]; textChannels: DiscordTextChannel[]; roles: DiscordRole[]; error?: string | null }>('/orders/discord-options').catch(() => null),
         apiFetch<{ families: OrderFamily[] }>('/orders/families?includeInactive=true'),
+        apiFetch<{ coupons: OrderCoupon[] }>('/orders/coupons?includeInactive=true'),
         apiFetch<{ inventory: InventoryItem[] }>('/orders/inventory?includeInactive=true'),
         apiFetch<{ logs: OrderLog[] }>('/orders/logs?limit=200'),
         apiFetch<{ favorites: FavoriteOrder[] }>('/orders/favorites')
@@ -262,6 +336,7 @@ export default function OrdersPage() {
         defaultLogsWebhookUrl: settingsData.settings?.defaultLogsWebhookUrl || ''
       });
       setFamilies(familiesData.families || []);
+      setCoupons(couponsData.coupons || []);
       setInventory(inventoryData.inventory || []);
       setLogs(logsData.logs || []);
       setFavorites(favoritesData.favorites || []);
@@ -269,6 +344,7 @@ export default function OrdersPage() {
       if (optionsData) {
         setCategories(optionsData.categories || []);
         setTextChannels(optionsData.textChannels || []);
+        setRoles(optionsData.roles || []);
         setDiscordError(optionsData.error || '');
       }
     } catch (error) {
@@ -289,6 +365,12 @@ export default function OrdersPage() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (selectedCouponId && !availableCoupons.some((coupon) => coupon.id === selectedCouponId)) {
+      setSelectedCouponId('');
+    }
+  }, [availableCoupons, selectedCouponId]);
+
   function setFilter(key: keyof typeof filters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
@@ -299,6 +381,19 @@ export default function OrdersPage() {
 
   function setInventoryField(key: keyof typeof initialInventoryForm, value: string | boolean) {
     setInventoryForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setCouponField(key: keyof typeof initialCouponForm, value: string | boolean | string[]) {
+    setCouponForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function changeCurrency(currency: OrderCurrency) {
+    setSelectedCurrency(currency);
+    setCart((current) => current.map((line) => {
+      if (!line.inventoryItemId) return line;
+      const inventoryItem = inventory.find((item) => item.id === line.inventoryItemId);
+      return inventoryItem ? { ...line, unitPrice: priceForCurrency(inventoryItem, currency) } : line;
+    }));
   }
 
   async function saveSettings() {
@@ -327,6 +422,10 @@ export default function OrdersPage() {
         name: familyForm.name,
         leaderId: familyForm.leaderId,
         leaderName: familyForm.leaderName,
+        orderChannelId: familyForm.orderChannelId,
+        responsibleRoleId: familyForm.responsibleRoleId,
+        registeredAt: familyForm.registeredAt,
+        internalNotes: familyForm.internalNotes,
         color: familyForm.color,
         icon: familyForm.icon,
         logWebhookUrl: familyForm.logWebhookUrl,
@@ -367,6 +466,10 @@ export default function OrdersPage() {
       name: family.name,
       leaderId: family.leaderId || '',
       leaderName: family.leaderName || '',
+      orderChannelId: family.orderChannelId || '',
+      responsibleRoleId: family.responsibleRoleId || '',
+      registeredAt: family.registeredAt ? family.registeredAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      internalNotes: family.internalNotes || '',
       color: family.color || '#0EA5E9',
       icon: family.icon || '📦',
       logWebhookUrl: family.logWebhookUrl || '',
@@ -374,6 +477,58 @@ export default function OrdersPage() {
       membersText: (family.members || []).map((member) => `${member.discord_id}${member.name ? ` - ${member.name}` : ''}`).join('\n')
     });
     setActiveTab('families');
+  }
+
+  async function saveCoupon() {
+    setSaving(true);
+    setMessage('');
+    try {
+      const payload = {
+        name: couponForm.name,
+        percentage: Number(couponForm.percentage),
+        active: couponForm.active,
+        familyIds: couponForm.familyIds,
+        expiresAt: couponForm.expiresAt || null,
+        usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : null
+      };
+      await apiFetch(couponForm.id ? `/orders/coupons/${couponForm.id}` : '/orders/coupons', {
+        method: couponForm.id ? 'PUT' : 'POST',
+        body: JSON.stringify(payload)
+      });
+      setCouponForm(initialCouponForm);
+      setMessage(couponForm.id ? 'Cupom atualizado.' : 'Cupom criado.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao salvar cupom.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function editCoupon(coupon: OrderCoupon) {
+    setCouponForm({
+      id: coupon.id,
+      name: coupon.name || coupon.code,
+      percentage: String(coupon.percentage),
+      active: coupon.active,
+      familyIds: coupon.familyIds || [],
+      expiresAt: coupon.expiresAt ? coupon.expiresAt.slice(0, 10) : '',
+      usageLimit: coupon.usageLimit ? String(coupon.usageLimit) : ''
+    });
+    setActiveTab('discounts');
+  }
+
+  async function disableCoupon(coupon: OrderCoupon) {
+    setSaving(true);
+    try {
+      await apiFetch(`/orders/coupons/${coupon.id}`, { method: 'DELETE' });
+      setMessage('Cupom desativado.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao desativar cupom.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveInventoryItem() {
@@ -384,7 +539,9 @@ export default function OrdersPage() {
         name: inventoryForm.name,
         category: inventoryForm.category,
         quantityAvailable: Number(inventoryForm.quantityAvailable),
-        unitPrice: Number(inventoryForm.unitPrice),
+        packageQuantity: Number(inventoryForm.packageQuantity),
+        priceBrl: Number(inventoryForm.priceBrl),
+        priceUsd: Number(inventoryForm.priceUsd),
         active: inventoryForm.active
       };
       await apiFetch(inventoryForm.id ? `/orders/inventory/${inventoryForm.id}` : '/orders/inventory', {
@@ -407,7 +564,9 @@ export default function OrdersPage() {
       name: item.name,
       category: item.category,
       quantityAvailable: String(item.quantityAvailable),
-      unitPrice: String(item.unitPrice),
+      packageQuantity: String(item.packageQuantity || 1),
+      priceBrl: String(item.priceBrl ?? item.unitPrice ?? 0),
+      priceUsd: String(item.priceUsd ?? item.unitPrice ?? 0),
       active: item.active
     });
     setActiveTab('stock');
@@ -439,7 +598,7 @@ export default function OrdersPage() {
       name: item.name,
       category: item.category,
       quantity,
-      unitPrice: item.unitPrice
+      unitPrice: priceForCurrency(item, selectedCurrency)
     }));
     setSelectedQuantity('1');
   }
@@ -483,6 +642,8 @@ export default function OrdersPage() {
         method: 'POST',
         body: JSON.stringify({
           familyId: selectedFamilyId,
+          currency: selectedCurrency,
+          couponId: selectedCouponId || undefined,
           responsibleName,
           saveAsFavorite,
           favoriteName,
@@ -497,6 +658,7 @@ export default function OrdersPage() {
       });
       setMessage(`Pedido #${data.order.orderNumber} criado.`);
       setCart([]);
+      setSelectedCouponId('');
       setResponsibleName('');
       setSaveAsFavorite(false);
       setFavoriteName('');
@@ -635,8 +797,24 @@ export default function OrdersPage() {
             saveFamily={saveFamily}
             resetFamily={() => setFamilyForm(initialFamilyForm)}
             families={families}
+            textChannels={textChannels}
+            roles={roles}
             editFamily={editFamily}
             deleteFamily={deleteFamily}
+            saving={saving}
+          />
+        ) : null}
+
+        {activeTab === 'discounts' ? (
+          <CouponsTab
+            couponForm={couponForm}
+            setCouponField={setCouponField}
+            saveCoupon={saveCoupon}
+            resetCoupon={() => setCouponForm(initialCouponForm)}
+            coupons={coupons}
+            families={families}
+            editCoupon={editCoupon}
+            disableCoupon={disableCoupon}
             saving={saving}
           />
         ) : null}
@@ -649,6 +827,11 @@ export default function OrdersPage() {
             selectedFamilyId={selectedFamilyId}
             setSelectedFamilyId={setSelectedFamilyId}
             selectedFamily={selectedFamily}
+            selectedCurrency={selectedCurrency}
+            setSelectedCurrency={changeCurrency}
+            availableCoupons={availableCoupons}
+            selectedCouponId={selectedCouponId}
+            setSelectedCouponId={setSelectedCouponId}
             responsibleName={responsibleName}
             setResponsibleName={setResponsibleName}
             selectedInventoryId={selectedInventoryId}
@@ -660,6 +843,8 @@ export default function OrdersPage() {
             setCustomItem={setCustomItem}
             addCustomToCart={addCustomToCart}
             cart={cart}
+            cartSubtotal={cartSubtotal}
+            cartDiscount={cartDiscount}
             cartTotal={cartTotal}
             updateCartQuantity={updateCartQuantity}
             removeCartLine={(key) => setCart((current) => current.filter((item) => item.key !== key))}
@@ -718,12 +903,13 @@ export default function OrdersPage() {
 function DashboardTab({ stats, families, orders }: { stats: OrderStats; families: OrderFamily[]; orders: OrderItem[] }) {
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Metric label="Familias" value={stats.totalFamilies} icon={Users} tone="sky" />
         <Metric label="Pedidos" value={stats.totalOrders} icon={ClipboardList} tone="violet" />
         <Metric label="Pendentes" value={stats.pending} icon={History} tone="amber" />
         <Metric label="Entregues" value={stats.delivered} icon={PackageCheck} tone="emerald" />
-        <Metric label="Movimentado" value={formatMoney(stats.movedValue)} icon={BarChart3} tone="rose" />
+        <Metric label="Total Real" value={formatMoney(stats.movedValueBrl ?? stats.movedValue, 'BRL')} icon={BarChart3} tone="rose" />
+        <Metric label="Total Dolar" value={formatMoney(stats.movedValueUsd || 0, 'USD')} icon={BarChart3} tone="sky" />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1fr_1.25fr]">
@@ -748,6 +934,22 @@ function DashboardTab({ stats, families, orders }: { stats: OrderStats; families
             <h2 className="text-lg font-semibold text-white">Pedidos Recentes</h2>
           </div>
           <OrdersTable orders={orders.slice(0, 8)} compact />
+        </div>
+      </section>
+
+      <section className="panel overflow-hidden">
+        <div className="border-b border-white/10 px-4 py-3">
+          <h2 className="text-lg font-semibold text-white">Cupons Mais Utilizados</h2>
+        </div>
+        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
+          {(stats.topCoupons || []).map((coupon) => (
+            <div key={coupon.code} className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+              <p className="truncate text-sm font-semibold text-white">{coupon.code}</p>
+              <p className="mt-1 text-xs text-slate-500">{coupon.total.toLocaleString('pt-BR')} uso{coupon.total === 1 ? '' : 's'}</p>
+              <p className="mt-3 text-sm font-semibold text-emerald-100">{formatMoney(coupon.discountValue)}</p>
+            </div>
+          ))}
+          {!(stats.topCoupons || []).length ? <Empty text="Nenhum cupom utilizado." /> : null}
         </div>
       </section>
 
@@ -779,10 +981,21 @@ function FamiliesTab(props: {
   saveFamily: () => void;
   resetFamily: () => void;
   families: OrderFamily[];
+  textChannels: DiscordTextChannel[];
+  roles: DiscordRole[];
   editFamily: (family: OrderFamily) => void;
   deleteFamily: (family: OrderFamily) => void;
   saving: boolean;
 }) {
+  const canSaveFamily = Boolean(
+    props.familyForm.name.trim()
+    && props.familyForm.leaderName.trim()
+    && props.familyForm.orderChannelId
+    && props.familyForm.responsibleRoleId
+    && props.familyForm.registeredAt
+    && props.familyForm.internalNotes.trim()
+  );
+
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.35fr]">
       <section className="panel p-5">
@@ -794,9 +1007,30 @@ function FamiliesTab(props: {
             <Input label="Nome do lider" value={props.familyForm.leaderName} onChange={(value) => props.setFamilyField('leaderName', value)} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Canal de envio</span>
+              <select value={props.familyForm.orderChannelId} onChange={(event) => props.setFamilyField('orderChannelId', event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
+                <option value="">Selecionar canal</option>
+                {props.textChannels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Cargo responsavel</span>
+              <select value={props.familyForm.responsibleRoleId} onChange={(event) => props.setFamilyField('responsibleRoleId', event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
+                <option value="">Selecionar cargo</option>
+                {props.roles.map((role) => <option key={role.id} value={role.id}>@{role.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <Input label="Data de cadastro" type="date" value={props.familyForm.registeredAt} onChange={(value) => props.setFamilyField('registeredAt', value)} />
+          <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Cor" type="color" value={props.familyForm.color} onChange={(value) => props.setFamilyField('color', value)} />
             <Input label="Emoji/Icone" value={props.familyForm.icon} onChange={(value) => props.setFamilyField('icon', value)} />
           </div>
+          <label className="block">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Observacoes internas</span>
+            <textarea value={props.familyForm.internalNotes} onChange={(event) => props.setFamilyField('internalNotes', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none" />
+          </label>
           <Input label="Webhook de logs" value={props.familyForm.logWebhookUrl} onChange={(value) => props.setFamilyField('logWebhookUrl', value)} />
           <label className="block">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Membros</span>
@@ -811,7 +1045,7 @@ function FamiliesTab(props: {
               <X size={16} />
               Limpar
             </button>
-            <button onClick={props.saveFamily} disabled={props.saving || !props.familyForm.name.trim()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
+            <button onClick={props.saveFamily} disabled={props.saving || !canSaveFamily} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
               <Save size={16} />
               Salvar
             </button>
@@ -822,11 +1056,15 @@ function FamiliesTab(props: {
       <section className="panel overflow-hidden">
         <TableHeader title="Familias Cadastradas" count={props.families.length} />
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[1240px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Familia</th>
                 <th className="px-4 py-3">Lider</th>
+                <th className="px-4 py-3">Canal</th>
+                <th className="px-4 py-3">Cargo</th>
+                <th className="px-4 py-3">Cadastro</th>
+                <th className="px-4 py-3">Observacoes</th>
                 <th className="px-4 py-3">Membros</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Acoes</th>
@@ -845,6 +1083,10 @@ function FamiliesTab(props: {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-300">{family.leaderName || family.leaderId || 'N/A'}</td>
+                  <td className="px-4 py-3 text-slate-300">{family.orderChannelId ? <span>#{props.textChannels.find((channel) => channel.id === family.orderChannelId)?.name || family.orderChannelId}</span> : 'N/A'}</td>
+                  <td className="px-4 py-3 text-slate-300">{family.responsibleRoleId ? <span>@{props.roles.find((role) => role.id === family.responsibleRoleId)?.name || family.responsibleRoleId}</span> : 'N/A'}</td>
+                  <td className="px-4 py-3 text-slate-300">{family.registeredAt ? formatDate(family.registeredAt) : 'N/A'}</td>
+                  <td className="max-w-[260px] truncate px-4 py-3 text-slate-400">{family.internalNotes || 'N/A'}</td>
                   <td className="px-4 py-3 text-slate-300">{family.members?.length || 0}</td>
                   <td className="px-4 py-3"><StatePill active={family.active} /></td>
                   <td className="px-4 py-3">
@@ -863,6 +1105,105 @@ function FamiliesTab(props: {
   );
 }
 
+function CouponsTab(props: {
+  couponForm: typeof initialCouponForm;
+  setCouponField: (key: keyof typeof initialCouponForm, value: string | boolean | string[]) => void;
+  saveCoupon: () => void;
+  resetCoupon: () => void;
+  coupons: OrderCoupon[];
+  families: OrderFamily[];
+  editCoupon: (coupon: OrderCoupon) => void;
+  disableCoupon: (coupon: OrderCoupon) => void;
+  saving: boolean;
+}) {
+  const familyNameById = new Map(props.families.map((family) => [family.id, family.name]));
+  const canSaveCoupon = Boolean(props.couponForm.name.trim() && Number(props.couponForm.percentage) > 0);
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[0.85fr_1.4fr]">
+      <section className="panel p-5">
+        <h2 className="text-lg font-semibold text-white">{props.couponForm.id ? 'Editar Cupom' : 'Cadastrar Cupom'}</h2>
+        <div className="mt-5 grid gap-4">
+          <Input label="Nome do cupom" value={props.couponForm.name} onChange={(value) => props.setCouponField('name', value)} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Porcentagem de desconto" type="number" value={props.couponForm.percentage} onChange={(value) => props.setCouponField('percentage', value)} />
+            <Input label="Expira em" type="date" value={props.couponForm.expiresAt} onChange={(value) => props.setCouponField('expiresAt', value)} />
+          </div>
+          <Input label="Limite de usos" type="number" value={props.couponForm.usageLimit} onChange={(value) => props.setCouponField('usageLimit', value)} />
+          <label className="block">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Familias permitidas</span>
+            <select
+              multiple
+              value={props.couponForm.familyIds}
+              onChange={(event) => props.setCouponField('familyIds', Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
+              className="mt-1 h-36 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none"
+            >
+              {props.families.map((family) => <option key={family.id} value={family.id}>{family.icon} {family.name}</option>)}
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <input type="checkbox" checked={props.couponForm.active} onChange={(event) => props.setCouponField('active', event.target.checked)} className="h-4 w-4" />
+            Cupom ativo
+          </label>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={props.resetCoupon} className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.08]">
+              <X size={16} />
+              Limpar
+            </button>
+            <button onClick={props.saveCoupon} disabled={props.saving || !canSaveCoupon} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
+              <Save size={16} />
+              Salvar
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel overflow-hidden">
+        <TableHeader title="Cupons de Desconto" count={props.coupons.length} />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[940px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Cupom</th>
+                <th className="px-4 py-3">Desconto</th>
+                <th className="px-4 py-3">Familias</th>
+                <th className="px-4 py-3">Expira</th>
+                <th className="px-4 py-3">Usos</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Acoes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {props.coupons.map((coupon) => (
+                <tr key={coupon.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-white">{coupon.name}</p>
+                    <p className="text-xs text-slate-500">{coupon.code}</p>
+                  </td>
+                  <td className="px-4 py-3 text-emerald-100">{coupon.percentage}%</td>
+                  <td className="max-w-[320px] px-4 py-3 text-slate-300">
+                    {coupon.familyIds.length ? coupon.familyIds.map((id) => familyNameById.get(id) || id).join(', ') : 'Todas'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">{coupon.expiresAt ? formatDate(coupon.expiresAt) : 'Sem expiração'}</td>
+                  <td className="px-4 py-3 text-slate-300">{coupon.usedCount.toLocaleString('pt-BR')} / {coupon.usageLimit ? coupon.usageLimit.toLocaleString('pt-BR') : 'sem limite'}</td>
+                  <td className="px-4 py-3"><StatePill active={coupon.active} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <IconButton title="Editar" onClick={() => props.editCoupon(coupon)} icon={Edit3} />
+                      <IconButton title="Desativar" onClick={() => props.disableCoupon(coupon)} icon={Trash2} tone="danger" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!props.coupons.length ? <EmptyRow colSpan={7} text="Nenhum cupom cadastrado." /> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function OrdersTab(props: {
   families: OrderFamily[];
   inventory: InventoryItem[];
@@ -870,6 +1211,11 @@ function OrdersTab(props: {
   selectedFamilyId: string;
   setSelectedFamilyId: (value: string) => void;
   selectedFamily: OrderFamily | null;
+  selectedCurrency: OrderCurrency;
+  setSelectedCurrency: (value: OrderCurrency) => void;
+  availableCoupons: OrderCoupon[];
+  selectedCouponId: string;
+  setSelectedCouponId: (value: string) => void;
   responsibleName: string;
   setResponsibleName: (value: string) => void;
   selectedInventoryId: string;
@@ -881,6 +1227,8 @@ function OrdersTab(props: {
   setCustomItem: (value: { name: string; category: ItemCategory; quantity: string; unitPrice: string }) => void;
   addCustomToCart: () => void;
   cart: CartLine[];
+  cartSubtotal: number;
+  cartDiscount: number;
   cartTotal: number;
   updateCartQuantity: (key: string, value: number) => void;
   removeCartLine: (key: string) => void;
@@ -903,14 +1251,32 @@ function OrdersTab(props: {
         <div className="panel p-5">
           <h2 className="text-lg font-semibold text-white">Fazer Pedido</h2>
           <div className="mt-5 grid gap-4">
-            <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Familia</span>
-              <select value={props.selectedFamilyId} onChange={(event) => props.setSelectedFamilyId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
-                <option value="">Selecionar familia</option>
-                {props.families.map((family) => <option key={family.id} value={family.id}>{family.icon} {family.name}</option>)}
-              </select>
-            </label>
-            <Input label="Responsavel" value={props.responsibleName} onChange={props.setResponsibleName} />
+            <div className="grid gap-4 sm:grid-cols-[1fr_150px]">
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Familia</span>
+                <select value={props.selectedFamilyId} onChange={(event) => props.setSelectedFamilyId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
+                  <option value="">Selecionar familia</option>
+                  {props.families.map((family) => <option key={family.id} value={family.id}>{family.icon} {family.name}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Moeda</span>
+                <select value={props.selectedCurrency} onChange={(event) => props.setSelectedCurrency(event.target.value as OrderCurrency)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
+                  <option value="BRL">Real (BRL)</option>
+                  <option value="USD">Dolar (USD)</option>
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
+              <Input label="Responsavel" value={props.responsibleName} onChange={props.setResponsibleName} />
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Cupom de desconto</span>
+                <select value={props.selectedCouponId} onChange={(event) => props.setSelectedCouponId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
+                  <option value="">Sem desconto</option>
+                  {props.availableCoupons.map((coupon) => <option key={coupon.id} value={coupon.id}>{coupon.code} - {coupon.percentage}%</option>)}
+                </select>
+              </label>
+            </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
               <div className="grid gap-3 lg:grid-cols-[1fr_110px_auto]">
                 <label className="block">
@@ -918,7 +1284,7 @@ function OrdersTab(props: {
                   <select value={props.selectedInventoryId} onChange={(event) => props.setSelectedInventoryId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
                     <option value="">Selecionar item</option>
                     {props.inventory.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} | {item.categoryLabel} | {item.quantityAvailable} disp.</option>
+                      <option key={item.id} value={item.id}>{item.name} | {item.packageQuantity} un. | {formatMoney(priceForCurrency(item, props.selectedCurrency), props.selectedCurrency)}</option>
                     ))}
                   </select>
                 </label>
@@ -939,7 +1305,7 @@ function OrdersTab(props: {
                   </select>
                 </label>
                 <Input label="Qtd." type="number" value={props.customItem.quantity} onChange={(value) => props.setCustomItem({ ...props.customItem, quantity: value })} />
-                <Input label="Valor" type="number" value={props.customItem.unitPrice} onChange={(value) => props.setCustomItem({ ...props.customItem, unitPrice: value })} />
+                <Input label={`Valor ${props.selectedCurrency}`} type="number" value={props.customItem.unitPrice} onChange={(value) => props.setCustomItem({ ...props.customItem, unitPrice: value })} />
                 <button onClick={props.addCustomToCart} className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-semibold text-white hover:bg-white/[0.13]">
                   <Plus size={16} />
                   Adicionar
@@ -955,7 +1321,7 @@ function OrdersTab(props: {
               <h2 className="text-lg font-semibold text-white">Pedido</h2>
               <p className="text-sm text-slate-500">{props.selectedFamily ? `${props.selectedFamily.icon} ${props.selectedFamily.name}` : 'Sem familia selecionada'}</p>
             </div>
-            <span className="text-xl font-semibold text-emerald-100">{formatMoney(props.cartTotal)}</span>
+            <span className="text-xl font-semibold text-emerald-100">{formatMoney(props.cartTotal, props.selectedCurrency)}</span>
           </div>
           <div className="p-4">
             <div className="space-y-2">
@@ -966,11 +1332,25 @@ function OrdersTab(props: {
                     <p className="text-xs text-slate-500">{categoryOptions.find((entry) => entry.value === item.category)?.label || item.category}</p>
                   </div>
                   <Input label="Qtd." type="number" value={String(item.quantity)} onChange={(value) => props.updateCartQuantity(item.key, Number(value))} />
-                  <div className="text-sm font-semibold text-slate-200">{formatMoney(item.quantity * item.unitPrice)}</div>
+                  <div className="text-sm font-semibold text-slate-200">{formatMoney(item.quantity * item.unitPrice, props.selectedCurrency)}</div>
                   <IconButton title="Remover" onClick={() => props.removeCartLine(item.key)} icon={Trash2} tone="danger" />
                 </div>
               ))}
               {!props.cart.length ? <Empty text="Carrinho vazio." /> : null}
+            </div>
+            <div className="mt-4 grid gap-2 rounded-lg border border-white/10 bg-white/[0.025] p-4 text-sm">
+              <div className="flex justify-between gap-3 text-slate-300">
+                <span>Valor bruto</span>
+                <strong className="text-slate-100">{formatMoney(props.cartSubtotal, props.selectedCurrency)}</strong>
+              </div>
+              <div className="flex justify-between gap-3 text-slate-300">
+                <span>Desconto</span>
+                <strong className="text-emerald-100">{formatMoney(props.cartDiscount, props.selectedCurrency)}</strong>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-white/10 pt-2 text-base text-slate-100">
+                <span>Valor final</span>
+                <strong>{formatMoney(props.cartTotal, props.selectedCurrency)}</strong>
+              </div>
             </div>
             <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 lg:grid-cols-[1fr_auto_auto]">
               <Input label="Nome do modelo" value={props.favoriteName} onChange={props.setFavoriteName} />
@@ -1078,12 +1458,19 @@ function StockTab(props: {
   disableInventoryItem: (item: InventoryItem) => void;
   saving: boolean;
 }) {
+  const canSaveInventory = Boolean(
+    props.inventoryForm.name.trim()
+    && Number(props.inventoryForm.packageQuantity) > 0
+    && Number.isFinite(Number(props.inventoryForm.priceBrl))
+    && Number.isFinite(Number(props.inventoryForm.priceUsd))
+  );
+
   return (
     <div className="grid gap-5 xl:grid-cols-[0.85fr_1.4fr]">
       <section className="panel p-5">
-        <h2 className="text-lg font-semibold text-white">{props.inventoryForm.id ? 'Editar Item' : 'Cadastrar Item'}</h2>
+        <h2 className="text-lg font-semibold text-white">{props.inventoryForm.id ? 'Editar Municao' : 'Cadastrar Municao'}</h2>
         <div className="mt-5 grid gap-4">
-          <Input label="Nome do item" value={props.inventoryForm.name} onChange={(value) => props.setInventoryField('name', value)} />
+          <Input label="Nome da municao" value={props.inventoryForm.name} onChange={(value) => props.setInventoryField('name', value)} />
           <label className="block">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Categoria</span>
             <select value={props.inventoryForm.category} onChange={(event) => props.setInventoryField('category', event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 px-3 py-2 text-sm outline-none">
@@ -1092,7 +1479,11 @@ function StockTab(props: {
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Quantidade disponivel" type="number" value={props.inventoryForm.quantityAvailable} onChange={(value) => props.setInventoryField('quantityAvailable', value)} />
-            <Input label="Valor unitario" type="number" value={props.inventoryForm.unitPrice} onChange={(value) => props.setInventoryField('unitPrice', value)} />
+            <Input label="Quantidade por pacote" type="number" value={props.inventoryForm.packageQuantity} onChange={(value) => props.setInventoryField('packageQuantity', value)} />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Valor em Real" type="number" value={props.inventoryForm.priceBrl} onChange={(value) => props.setInventoryField('priceBrl', value)} />
+            <Input label="Valor em Dolar" type="number" value={props.inventoryForm.priceUsd} onChange={(value) => props.setInventoryField('priceUsd', value)} />
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
             <input type="checkbox" checked={props.inventoryForm.active} onChange={(event) => props.setInventoryField('active', event.target.checked)} className="h-4 w-4" />
@@ -1103,7 +1494,7 @@ function StockTab(props: {
               <X size={16} />
               Limpar
             </button>
-            <button onClick={props.saveInventoryItem} disabled={props.saving || !props.inventoryForm.name.trim()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
+            <button onClick={props.saveInventoryItem} disabled={props.saving || !canSaveInventory} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
               <Save size={16} />
               Salvar
             </button>
@@ -1112,15 +1503,17 @@ function StockTab(props: {
       </section>
 
       <section className="panel overflow-hidden">
-        <TableHeader title="Estoque" count={props.inventory.length} />
+        <TableHeader title="Produtos de Municao" count={props.inventory.length} />
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[920px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Item</th>
+                <th className="px-4 py-3">Municao</th>
                 <th className="px-4 py-3">Categoria</th>
                 <th className="px-4 py-3">Disponivel</th>
-                <th className="px-4 py-3">Valor</th>
+                <th className="px-4 py-3">Pacote</th>
+                <th className="px-4 py-3">Real</th>
+                <th className="px-4 py-3">Dolar</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Acoes</th>
               </tr>
@@ -1131,7 +1524,9 @@ function StockTab(props: {
                   <td className="px-4 py-3 font-semibold text-white">{item.name}</td>
                   <td className="px-4 py-3 text-slate-300">{item.categoryLabel}</td>
                   <td className="px-4 py-3 text-slate-300">{item.quantityAvailable.toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-3 text-slate-300">{formatMoney(item.unitPrice)}</td>
+                  <td className="px-4 py-3 text-slate-300">{item.packageQuantity.toLocaleString('pt-BR')}</td>
+                  <td className="px-4 py-3 text-slate-300">{formatMoney(item.priceBrl, 'BRL')}</td>
+                  <td className="px-4 py-3 text-slate-300">{formatMoney(item.priceUsd, 'USD')}</td>
                   <td className="px-4 py-3"><StatePill active={item.active} /></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
@@ -1141,7 +1536,7 @@ function StockTab(props: {
                   </td>
                 </tr>
               ))}
-              {!props.inventory.length ? <EmptyRow colSpan={6} text="Nenhum item cadastrado." /> : null}
+              {!props.inventory.length ? <EmptyRow colSpan={8} text="Nenhuma municao cadastrada." /> : null}
             </tbody>
           </table>
         </div>
@@ -1240,12 +1635,13 @@ function SettingsTab(props: {
 function OrdersTable({ orders, compact = false, setOrderStatus }: { orders: OrderItem[]; compact?: boolean; setOrderStatus?: (order: OrderItem, status: OrderStatus) => void }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[980px] text-left text-sm">
+      <table className="w-full min-w-[1080px] text-left text-sm">
         <thead className="text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-3">Pedido</th>
             <th className="px-4 py-3">Familia</th>
             <th className="px-4 py-3">Itens</th>
+            <th className="px-4 py-3">Cupom</th>
             <th className="px-4 py-3">Valor</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3">Criado</th>
@@ -1263,7 +1659,11 @@ function OrdersTable({ orders, compact = false, setOrderStatus }: { orders: Orde
                 </div>
               </td>
               <td className="px-4 py-3 text-slate-300">{order.items.slice(0, 3).map((item) => `${item.quantity}x ${item.name}`).join(', ')}</td>
-              <td className="px-4 py-3 text-slate-300">{formatMoney(order.totalValue)}</td>
+              <td className="px-4 py-3 text-slate-300">{order.couponCode ? `${order.couponCode} (${order.couponPercentage}%)` : 'Sem desconto'}</td>
+              <td className="px-4 py-3">
+                <p className="font-semibold text-slate-200">{formatMoney(order.finalValue || order.totalValue, order.currency || 'BRL')}</p>
+                {order.discountValue ? <p className="text-xs text-emerald-200">-{formatMoney(order.discountValue, order.currency || 'BRL')}</p> : null}
+              </td>
               <td className="px-4 py-3"><StatusBadge status={order.status} label={order.statusLabel} /></td>
               <td className="px-4 py-3 text-slate-500">{formatDate(order.createdAt)}</td>
               {!compact ? (
@@ -1278,7 +1678,7 @@ function OrdersTable({ orders, compact = false, setOrderStatus }: { orders: Orde
               ) : null}
             </tr>
           ))}
-          {!orders.length ? <EmptyRow colSpan={compact ? 6 : 7} text="Nenhum pedido encontrado." /> : null}
+          {!orders.length ? <EmptyRow colSpan={compact ? 7 : 8} text="Nenhum pedido encontrado." /> : null}
         </tbody>
       </table>
     </div>
@@ -1376,6 +1776,10 @@ function upsertCartLine(cart: CartLine[], next: CartLine) {
   return cart.map((item) => item.key === next.key ? { ...item, quantity: item.quantity + next.quantity } : item);
 }
 
+function priceForCurrency(item: InventoryItem, currency: OrderCurrency) {
+  return currency === 'USD' ? (item.priceUsd ?? item.unitPrice ?? 0) : (item.priceBrl ?? item.unitPrice ?? 0);
+}
+
 function parseMembers(value: string) {
   return value
     .split(/\r?\n|,/)
@@ -1388,8 +1792,8 @@ function parseMembers(value: string) {
     .filter((item) => /^\d{5,32}$/.test(item.discordId));
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
+function formatMoney(value: number, currency: OrderCurrency = 'BRL') {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(value) || 0);
 }
 
 function formatDate(value?: string | null) {
