@@ -84,11 +84,21 @@ function applyShardCloudRuntimeDefaults() {
   // Tentamos usar 80% da memoria disponivel, com um limite inferior seguro.
   try {
     const detectedMem = Number(process.env.MEMORY) || 1024;
-    let calculated = Math.floor(detectedMem * 0.8);
+    // Use uma fração conservadora da memoria para o heap (60%) para reduzir OOM/CPU
+    let calculated = Math.floor(detectedMem * 0.6);
     // Nunca exceder a memoria fisica minus uma margem (64MB)
-    if (calculated > detectedMem - 64) calculated = Math.max( Math.floor(detectedMem - 64), 384 );
-    calculated = Math.max(384, calculated);
+    if (calculated > detectedMem - 64) calculated = Math.max(Math.floor(detectedMem - 64), 384);
+    calculated = Math.max(256, calculated);
     setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
+
+    // If the runtime is constrained (<1GB), avoid heavy startup work
+    if (detectedMem < 1024) {
+      setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
+      setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
+      // favor a lightweight bot mode on constrained runtimes
+      setRuntimeDefault('BOT_LIGHT_MODE', 'true');
+      setRuntimeDefault('START_DISCORD_BOT', 'true');
+    }
   } catch (err) {
     setRuntimeDefault('NODE_OPTIONS', '--max-old-space-size=768');
   }
@@ -97,6 +107,11 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('START_DISCORD_BOT', 'true');
   setRuntimeDefault('START_FREQUENCY_API', 'true');
   setRuntimeDefault('START_FREQUENCY_WEB', 'true');
+  // Permitir sobrescrever para desabilitar o Next/web em runtimes pequenos ou por configuracao
+  if (String(process.env.SKIP_FREQUENCY_WEB || process.env.NO_NEXT || '').trim().toLowerCase() === 'true') {
+    process.env.START_FREQUENCY_WEB = 'false';
+    console.log('[shardcloud] SKIP_FREQUENCY_WEB/NO_NEXT=true -> frequency web build/start disabled');
+  }
   setRuntimeDefault('BOT_LIGHT_MODE', 'true');
   setRuntimeDefault('FIVEM_SYSTEM_ENABLED', 'true');
   setRuntimeDefault('MONGODB_REQUIRED', 'false');
@@ -109,6 +124,14 @@ function applyShardCloudRuntimeDefaults() {
   ensureEphemeralSecret('JWT_SECRET', 32);
   ensureEphemeralSecret('INGEST_SECRET', 32);
   setRuntimeDefault('BOT_INGEST_SECRET', process.env.INGEST_SECRET || '');
+
+  // Conservative cache and interval defaults to lower CPU/RAM usage
+  setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '5');
+  setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '20');
+  setRuntimeDefault('DISCORD_CACHE_MAX_PRESENCES', '0');
+  setRuntimeDefault('LIVE_ALERT_CHECK_INTERVAL_MS', process.env.LIVE_ALERT_CHECK_INTERVAL_MS || '300000');
+  setRuntimeDefault('FREQUENCY_MEMBER_SYNC_INTERVAL_MS', process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || '1800000');
+  setRuntimeDefault('POINT_AUTOMATION_INTERVAL_MS', process.env.POINT_AUTOMATION_INTERVAL_MS || '1800000');
 }
 
 applyShardCloudRuntimeDefaults();
