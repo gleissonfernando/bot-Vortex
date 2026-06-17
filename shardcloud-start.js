@@ -94,15 +94,15 @@ function applyShardCloudRuntimeDefaults() {
 
     // If the runtime is constrained (<=1GB), avoid heavy startup work
     if (detectedMem <= 1024) {
-      setRuntimeDefault('BUILD_API_ON_STARTUP', 'false');
-      setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
+      process.env.BUILD_API_ON_STARTUP = 'false';
+      process.env.BUILD_WEB_ON_STARTUP = 'false';
       // Keep the public dashboard online by starting the prebuilt Next standalone
       // app, but avoid rebuilding it inside the constrained ShardCloud runtime.
-      setRuntimeDefault('START_FREQUENCY_WEB', 'true');
+      process.env.START_FREQUENCY_WEB = 'true';
       // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
-      setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'false');
+      process.env.REGISTER_COMMANDS_ON_STARTUP = 'false';
       setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '120000');
       setRuntimeDefault('DISCORD_BOT_NODE_OPTIONS', '--max-old-space-size=160');
       setRuntimeDefault('FREQUENCY_API_NODE_OPTIONS', '--max-old-space-size=160');
