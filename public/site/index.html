@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vortex</title>
+  <link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+  <div id="login-view" class="auth-shell" hidden>
+    <main class="auth-panel" aria-labelledby="login-title">
+      <div class="brand-mark">VX</div>
+      <p class="eyebrow">Vortex</p>
+      <h1 id="login-title">Painel operacional</h1>
+      <p class="muted">Entre para gerenciar bot, membros, lives, bau, encomendas e seguranca.</p>
+
+      <div id="login-alert" class="alert" hidden></div>
+
+      <button id="discord-login" class="primary wide" type="button">Entrar com Discord</button>
+
+      <div class="divider"><span>ou</span></div>
+
+      <form id="login-form" class="stack">
+        <label>
+          Email
+          <input id="login-email" name="email" type="email" autocomplete="username" required>
+        </label>
+        <label>
+          Senha
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="secondary wide" type="submit">Entrar com email</button>
+      </form>
+    </main>
+  </div>
+
+  <div id="app-view" class="app-shell" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="/dashboard" data-route="overview" aria-label="Vortex dashboard">
+        <span class="brand-mark small">VX</span>
+        <span>
+          <strong>Vortex</strong>
+          <small>Node-only</small>
+        </span>
+      </a>
+      <nav id="side-nav" class="side-nav" aria-label="Navegacao principal"></nav>
+      <button id="logout" class="ghost wide" type="button">Sair</button>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ShardCloud</p>
+          <h1 id="view-title">Visao geral</h1>
+        </div>
+        <div class="top-actions">
+          <div id="health-pill" class="status-pill">verificando</div>
+          <div id="user-pill" class="user-pill">offline</div>
+          <button class="secondary" data-action="refresh" type="button">Atualizar</button>
+        </div>
+      </header>
+
+      <main id="content" class="content" aria-live="polite"></main>
+    </div>
+  </div>
+
+  <script src="/site/site.js" defer></script>
+</body>
+</html>

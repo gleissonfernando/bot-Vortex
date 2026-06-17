@@ -294,6 +294,50 @@ function checkPackageScripts() {
   }
 }
 
+function checkNoNextRuntime() {
+  const panelPackage = readJson('frequency-panel/package.json');
+  const workspaces = Array.isArray(panelPackage.workspaces) ? panelPackage.workspaces : [];
+  if (workspaces.includes('apps/web')) {
+    fail('frequency-panel nao deve incluir apps/web nos workspaces; o site oficial e estatico Node-only');
+  } else {
+    ok('frequency-panel workspaces ficam apenas em API/bot, sem app Next');
+  }
+
+  const forbiddenFiles = [
+    'frequency-panel/apps/web/package.json',
+    'frequency-panel/apps/web/next.config.mjs',
+    'frequency-panel/apps/web/next-env.d.ts',
+    'frequency-panel/apps/web/src/app/layout.tsx',
+    'frequency-panel/apps/web/src/app/page.tsx'
+  ];
+  for (const file of forbiddenFiles) {
+    if (fileExists(file)) {
+      fail(`${file} nao deve existir no runtime Node-only`);
+    } else {
+      ok(`${file} ausente`);
+    }
+  }
+
+  const packageFiles = [
+    'package.json',
+    'package-lock.json',
+    'frequency-panel/package.json',
+    'frequency-panel/package-lock.json'
+  ];
+  for (const file of packageFiles) {
+    const content = readText(file);
+    if (/"next"\s*:|eslint-config-next|@next\//.test(content)) {
+      fail(`${file} contem dependencia Next removida do sistema`);
+    } else {
+      ok(`${file} sem dependencias Next`);
+    }
+  }
+
+  requireFile('public/site/index.html', 'site estatico index');
+  requireFile('public/site/site.css', 'site estatico CSS');
+  requireFile('public/site/site.js', 'site estatico JS');
+}
+
 function checkShardCloudFile() {
   requireFile('.shardcloud', '.shardcloud');
   const shard = parseKeyValueFile('.shardcloud');
@@ -362,6 +406,7 @@ function checkWorkflow() {
     'vortex-frequency-api',
     'https://shardcloud.app/api/apps/',
     'rm -rf node_modules',
+    'rm -rf frequency-panel/apps/web',
     'rm -f .env .env.*',
     'rm -f commands/perfis.json',
     'rm -f commands/pointTranscripts.json',
@@ -393,6 +438,8 @@ function checkShardCloudRuntime() {
     'SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE',
     'SHARDCLOUD_REQUIRE_PORT_80',
     'REGISTER_COMMANDS_ON_STARTUP',
+    'serveSiteIndex',
+    "path.join(rootDir, 'public', 'site')",
     "process.env.SHARDCLOUD_DEPLOY_MODE === 'git'"
   ];
 
@@ -531,12 +578,16 @@ function checkStrictEnv() {
 function checkBuildArtifacts() {
   requireFile('frequency-panel/apps/api/dist/index.js', 'Frequency API dist');
   requireFile('frequency-panel/apps/bot/dist/index.js', 'Frequency bot dist');
+  requireFile('public/site/index.html', 'site estatico index');
+  requireFile('public/site/site.css', 'site estatico CSS');
+  requireFile('public/site/site.js', 'site estatico JS');
   requireFile('public/sistema-de-bau-banner.png', 'public static asset');
 }
 
 function main() {
   log('iniciando regra de deploy ShardCloud');
   checkPackageScripts();
+  checkNoNextRuntime();
   checkShardCloudFile();
   checkWorkflow();
   checkShardCloudRuntime();

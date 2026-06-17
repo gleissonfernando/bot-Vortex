@@ -8,7 +8,7 @@ reports
 coverage
 .cache
 *.log
-frequency-panel/apps/web/.next/cache
+frequency-panel/apps/web
 commands/approvedSetChannels.json
 commands/ausencias.json
 commands/bauStorage.json

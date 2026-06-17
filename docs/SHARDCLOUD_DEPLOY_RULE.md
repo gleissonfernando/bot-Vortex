@@ -11,6 +11,7 @@ npm run deploy:check
 Esse comando faz o preflight completo:
 
 - confere `package.json`, `.shardcloud` e workflow do GitHub;
+- garante que o site oficial esta em `public/site` e que nao ha dependencias Next no contrato;
 - checa sintaxe dos arquivos JS do bot com `node --check`;
 - confirma que `/encomenda`, `/exibir` e `/painel` estao prontos para registro no Discord;
 - compila API e bot do `frequency-panel`;
@@ -21,7 +22,7 @@ Esse comando faz o preflight completo:
 
 O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
 
-Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos `dist` da API e do bot, e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches e `.env`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos `dist` da API e do bot, e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches, `.env` e qualquer sobra de `frequency-panel/apps/web`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
 
 Por isso o `.shardcloud` deve ficar curto:
 
@@ -40,9 +41,9 @@ O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres. Mantenha `PORT=80 npm
 `shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
 
 - aplica defaults de producao para build de API, registro de comandos e uso de memoria;
-- nao faz build nem start de web separado;
+- nao faz build nem start de web separado e nao usa Next;
 - inicia o bot Discord imediatamente e a Frequency API;
-- serve uma pagina publica simples pelo proprio Node para rotas como `/` e `/dashboard`;
+- serve o painel estatico de `public/site` pelo proprio Node para rotas como `/`, `/login`, `/dashboard` e `/dashboard/*`;
 - serve arquivos runtime usados pelo site, como `/transcripts`, `/assets` e `/vendor/fontawesome`, direto pelo proxy publico;
 - abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
 - expoe `/health` e `/_shardcloud/health` no supervisor;
@@ -66,6 +67,18 @@ Verifique nesta ordem:
 Se `/health` voltar JSON, confira `config.startDiscordBot`, `config.hasDiscordToken` e `children.discord-bot` para saber se o bot iniciou, foi pulado por falta de token, ou foi desligado por variavel de ambiente.
 
 O arquivo `.shardignore` tambem deve continuar versionado como contrato do pacote, mas a CLI oficial da ShardCloud nao le esse arquivo. Por isso o workflow precisa remover explicitamente cache, segredos e JSONs de runtime antes do `commit`.
+
+## Site sem Next
+
+O site da Vortex nao depende de Next, React ou build web na hospedagem. A interface publica fica em:
+
+```txt
+public/site/index.html
+public/site/site.css
+public/site/site.js
+```
+
+Esses arquivos chamam a API existente por `/api/*` usando cookies httpOnly do login. O `frequency-panel` fica restrito aos workspaces `apps/api` e `apps/bot`; `apps/web` nao deve voltar para os workspaces nem carregar `next`, `eslint-config-next` ou `@next/*` nos manifests/locks. O preflight falha se essas dependencias voltarem.
 
 Quando a validacao publica falhar, o workflow consulta o status do app pela API da ShardCloud e publica apenas `status`, `name`, `ram` e `vcpu` como anotacao do check. Nao use `logs`/`status` do CLI dentro da Action porque esses comandos ficam em streaming/interativos.
 

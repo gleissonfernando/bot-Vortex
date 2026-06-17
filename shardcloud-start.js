@@ -337,6 +337,20 @@ function serveStaticFile(req, res, baseDir, relativePath, cacheControl = 'public
 }
 
 function serveRuntimeStatic(req, res, pathname) {
+  if (pathname.startsWith('/site/')) {
+    return serveStaticFile(
+      req,
+      res,
+      path.join(rootDir, 'public', 'site'),
+      pathname.slice('/site/'.length),
+      pathname.endsWith('.html') ? 'no-store' : 'public, max-age=3600'
+    );
+  }
+
+  if (pathname === '/favicon.ico') {
+    return serveStaticFile(req, res, path.join(rootDir, 'public', 'site'), 'favicon.ico');
+  }
+
   if (pathname.startsWith('/transcripts/')) {
     return serveStaticFile(
       req,
@@ -365,12 +379,51 @@ function serveRuntimeStatic(req, res, pathname) {
   return false;
 }
 
+function siteCsp() {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https://bot-vortex.shardweb.app",
+    "font-src 'self' https: data:",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+function serveSiteIndex(req, res) {
+  const indexPath = path.join(rootDir, 'public', 'site', 'index.html');
+  if (!fs.existsSync(indexPath)) return false;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': siteCsp(),
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+  });
+
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+
+  fs.createReadStream(indexPath).pipe(res);
+  return true;
+}
+
 function serveNodeSite(req, res, pathname) {
   if (!['GET', 'HEAD'].includes(req.method || 'GET')) {
     res.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
     return true;
   }
+
+  if (serveSiteIndex(req, res)) return true;
 
   const health = runtimeHealth();
   const apiStatus = health.children['frequency-api']?.status || 'starting';

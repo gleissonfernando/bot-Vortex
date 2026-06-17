@@ -6,6 +6,7 @@ Servicos Node.js para gestao de frequencia de membros do Discord.
 
 - Backend: Node.js, Express, JWT, MongoDB
 - Bot Discord: discord.js
+- Site: HTML/CSS/JS estatico servido por `shardcloud-start.js`
 - Banco: MongoDB
 
 ## Estrutura
@@ -15,6 +16,7 @@ frequency-panel/
   apps/
     api/          API Node.js com auth, membros, ponto, frequencia e exportacao
     bot/          Bot Discord que sincroniza membros e envia eventos de ponto
+  ../public/site/ Site estatico sem Next
   docker-compose.yml
   .env.example
 ```
@@ -31,6 +33,7 @@ frequency-panel/
 - Frequencia diaria e grafico de presenca.
 - Exportacao CSV do relatorio.
 - Layout responsivo.
+- Painel web sem Next, React ou build separado na ShardCloud.
 
 ## Instalacao
 
@@ -76,6 +79,7 @@ npm run dev:bot
 
 - API: `http://localhost:4100`
 - Healthcheck: `http://localhost:4100/health`
+- Site pelo supervisor: `npm run dev` na raiz e abra `http://localhost:3000/dashboard`
 
 ## Variaveis de ambiente
 
