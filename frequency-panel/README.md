@@ -125,6 +125,8 @@ POINT_AUTOMATION_INTERVAL_MS=900000
 
 Para o login com Discord OAuth2, cadastre exatamente a URL de callback acima em Discord Developer Portal > sua aplicacao > OAuth2 > Redirects. O `DISCORD_CLIENT_SECRET` fica na mesma pagina do portal e deve ser mantido privado. Se `DISCORD_OAUTH_REDIRECT_URI` nao for definido, a API usa `SITE_ORIGIN` + `/api/auth/discord/callback`.
 
+Na ShardCloud, o nome canonico do segredo e `DISCORD_CLIENT_SECRET`, mas o runtime tambem aceita `CLIENT_SECRET` e `DISCORD_OAUTH_CLIENT_SECRET` como aliases.
+
 ## Login inicial
 
 A API cria automaticamente um usuario admin ao iniciar:

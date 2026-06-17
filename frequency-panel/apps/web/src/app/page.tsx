@@ -15,6 +15,17 @@ async function readJsonResponse(response: Response) {
   }
 }
 
+function publicLoginError(message: string) {
+  const text = String(message || '').trim();
+  if (!text) return '';
+  if (/DISCORD_CLIENT_SECRET|DISCORD_CLIENT_ID|DISCORD_OAUTH_REDIRECT_URI|SITE_ORIGIN|Variavel/i.test(text)) {
+    return 'Login Discord indisponivel no momento. Configure o OAuth2 no servidor.';
+  }
+  if (text === 'missing_code') return 'Login Discord cancelado ou expirado. Tente novamente.';
+  if (text === 'invalid_state') return 'Sessao de login expirada. Tente novamente.';
+  return text;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -24,7 +35,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setError(params.get('error') || '');
+    setError(publicLoginError(params.get('error') || ''));
   }, []);
 
   function loginWithDiscord() {

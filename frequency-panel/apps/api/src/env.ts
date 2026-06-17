@@ -16,6 +16,7 @@ function applyAlias(target: string, sources: string[]) {
 
 applyAlias('DISCORD_TOKEN', ['DISCORD_BOT_TOKEN', 'TOKEN']);
 applyAlias('DISCORD_CLIENT_ID', ['CLIENT_ID', 'VITE_DISCORD_CLIENT_ID']);
+applyAlias('DISCORD_CLIENT_SECRET', ['CLIENT_SECRET', 'DISCORD_OAUTH_CLIENT_SECRET', 'VITE_DISCORD_CLIENT_SECRET']);
 applyAlias('DISCORD_GUILD_ID', ['GUILD_ID', 'VITE_DISCORD_GUILD_ID']);
 applyAlias('MONGODB_URI', ['MONGO_URI', 'DATABASE_URL']);
 
@@ -70,7 +71,7 @@ export const env = {
   siteOrigin,
   ingestSecret: requiredSecret('INGEST_SECRET', 32),
   discordClientId: process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '',
-  discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
+  discordClientSecret: process.env.DISCORD_CLIENT_SECRET || process.env.CLIENT_SECRET || process.env.DISCORD_OAUTH_CLIENT_SECRET || process.env.VITE_DISCORD_CLIENT_SECRET || '',
   discordOauthRedirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || defaultDiscordOauthRedirectUri,
   discordBotToken: process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || process.env.TOKEN || '',
   discordGuildId: process.env.DISCORD_GUILD_ID || process.env.GUILD_ID || '',

@@ -171,6 +171,7 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('BOT_MONGODB_REQUIRED', 'false');
   setRuntimeAlias('DISCORD_TOKEN', ['DISCORD_BOT_TOKEN', 'TOKEN']);
   setRuntimeAlias('DISCORD_CLIENT_ID', ['CLIENT_ID', 'VITE_DISCORD_CLIENT_ID']);
+  setRuntimeAlias('DISCORD_CLIENT_SECRET', ['CLIENT_SECRET', 'DISCORD_OAUTH_CLIENT_SECRET', 'VITE_DISCORD_CLIENT_SECRET']);
   setRuntimeAlias('DISCORD_GUILD_ID', ['GUILD_ID', 'VITE_DISCORD_GUILD_ID']);
   setRuntimeAlias('MONGODB_URI', ['MONGO_URI', 'DATABASE_URL']);
 

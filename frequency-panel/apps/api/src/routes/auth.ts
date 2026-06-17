@@ -85,8 +85,13 @@ authRouter.post('/login', limitLoginAttempts, async (req, res) => {
 });
 
 authRouter.get('/discord/start', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+
   const missing = firstMissingEnv(['SITE_ORIGIN', 'DISCORD_CLIENT_ID', 'DISCORD_OAUTH_REDIRECT_URI']);
-  if (missing) return res.status(503).json({ ok: false, error: `Variavel ${missing} nao configurada.` });
+  if (missing) {
+    console.warn('[frequency-api] OAuth Discord start bloqueado por config ausente', { missing });
+    return res.status(503).json({ ok: false, error: missingOAuthPublicMessage() });
+  }
 
   const next = decodeNext(req.query.next);
   const state = encodeState(next);
@@ -111,9 +116,6 @@ authRouter.get('/discord/start', (req, res) => {
 authRouter.get('/discord/callback', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
-  const missing = firstMissingEnv(['SITE_ORIGIN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_OAUTH_REDIRECT_URI']);
-  if (missing) return res.redirect(`${loginUrl()}?error=${encodeURIComponent(`Variavel ${missing} nao configurada.`)}`);
-
   const code = String(req.query.code || '');
   const discordError = String(req.query.error_description || req.query.error || '');
   const state = decodeState(req.query.state);
@@ -123,6 +125,12 @@ authRouter.get('/discord/callback', async (req, res) => {
     return res.redirect(`${loginUrl()}?error=missing_code`);
   }
   if (!state.ok) return res.redirect(`${loginUrl()}?error=${encodeURIComponent('invalid_state')}`);
+
+  const missing = firstMissingEnv(['SITE_ORIGIN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_OAUTH_REDIRECT_URI']);
+  if (missing) {
+    console.warn('[frequency-api] OAuth Discord callback bloqueado por config ausente', { missing });
+    return res.redirect(`${loginUrl()}?error=${encodeURIComponent(missingOAuthPublicMessage())}`);
+  }
 
   try {
     console.info('[frequency-api] OAuth Discord callback recebido', { next, codeLength: code.length });
@@ -273,7 +281,19 @@ function decodeNext(value: unknown) {
 }
 
 function firstMissingEnv(names: string[]) {
-  return names.find((name) => !process.env[name]?.trim()) || '';
+  return names.find((name) => !envValueByName(name)?.trim()) || '';
+}
+
+function envValueByName(name: string) {
+  if (name === 'SITE_ORIGIN') return env.siteOrigin;
+  if (name === 'DISCORD_CLIENT_ID') return env.discordClientId;
+  if (name === 'DISCORD_CLIENT_SECRET') return env.discordClientSecret;
+  if (name === 'DISCORD_OAUTH_REDIRECT_URI') return env.discordOauthRedirectUri;
+  return process.env[name] || '';
+}
+
+function missingOAuthPublicMessage() {
+  return 'Login Discord indisponivel no momento. Configure o OAuth2 no servidor.';
 }
 
 function encodeState(next: string) {
@@ -337,7 +357,7 @@ function publicOAuthErrorMessage(error: unknown) {
 
 async function exchangeDiscordCode(code: string) {
   if (!env.discordClientId || !env.discordClientSecret || !env.discordOauthRedirectUri) {
-    throw new DiscordOAuthError('Discord OAuth2 nao configurado', 'Discord OAuth2 nao configurado no servidor.');
+    throw new DiscordOAuthError('Discord OAuth2 nao configurado', missingOAuthPublicMessage());
   }
 
   const response = await fetch('https://discord.com/api/oauth2/token', {
@@ -385,13 +405,13 @@ function parseDiscordErrorBody(body: string) {
 function oauthTokenPublicMessage(status: number, discordError: { code: string; description: string }) {
   const detail = `${discordError.code} ${discordError.description}`.toLowerCase();
   if (detail.includes('invalid_client')) {
-    return 'Discord OAuth recusou o client_id/client_secret. Confira DISCORD_CLIENT_ID e DISCORD_CLIENT_SECRET.';
+    return 'Discord OAuth recusou as credenciais da aplicacao. Confira o Client ID e o Client Secret no painel do Discord.';
   }
   if (detail.includes('redirect') || detail.includes('invalid_grant')) {
     return 'Discord OAuth recusou o callback. Confira se DISCORD_OAUTH_REDIRECT_URI e o Redirect do Discord Developer Portal sao identicos.';
   }
   if (status === 401) {
-    return 'Discord OAuth nao autorizou a aplicacao. Confira DISCORD_CLIENT_SECRET.';
+    return 'Discord OAuth nao autorizou a aplicacao. Confira as credenciais no painel do Discord.';
   }
   return `Discord OAuth retornou HTTP ${status}. Confira os logs do frequency-api.`;
 }

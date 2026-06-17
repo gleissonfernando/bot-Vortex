@@ -148,7 +148,7 @@ FREQUENCY_MEMBER_SYNC_INTERVAL_MS=900000
 POINT_AUTOMATION_INTERVAL_MS=900000
 ```
 
-As variaveis canonicas sao `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI`. O runtime tambem aceita os aliases comuns da ShardCloud (`TOKEN`, `CLIENT_ID`, `GUILD_ID`, `DATABASE_URL`, `MONGO_URI`, `DISCORD_BOT_TOKEN`) se voce precisar trocar algum nome.
+As variaveis canonicas sao `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_GUILD_ID` e `MONGODB_URI`. O runtime tambem aceita os aliases comuns da ShardCloud (`TOKEN`, `CLIENT_ID`, `CLIENT_SECRET`, `DISCORD_OAUTH_CLIENT_SECRET`, `GUILD_ID`, `DATABASE_URL`, `MONGO_URI`, `DISCORD_BOT_TOKEN`) se voce precisar trocar algum nome.
 
 `JWT_SECRET` e `INGEST_SECRET` precisam ter pelo menos 32 caracteres. `ADMIN_PASSWORD` precisa ter pelo menos 12 caracteres. Para validar o `.env` local sem mostrar segredos:
 
