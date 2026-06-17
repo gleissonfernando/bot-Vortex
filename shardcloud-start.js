@@ -103,6 +103,10 @@ function applyShardCloudRuntimeDefaults() {
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
       setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'false');
+      setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '120000');
+      setRuntimeDefault('DISCORD_BOT_NODE_OPTIONS', '--max-old-space-size=160');
+      setRuntimeDefault('FREQUENCY_API_NODE_OPTIONS', '--max-old-space-size=160');
+      setRuntimeDefault('FREQUENCY_WEB_NODE_OPTIONS', '--max-old-space-size=192');
 
       // aggressive cache/interval defaults to save RAM/CPU
       setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '0');
@@ -580,30 +584,43 @@ async function main() {
     } else {
       const botLightMode = envFlag('BOT_LIGHT_MODE', true);
       const fivemSystemEnabled = envFlag('FIVEM_SYSTEM_ENABLED', true);
-      start('discord-bot', 'node', ['index.js'], {
-        env: {
-          API_PORT: botApiPort,
-          API_HOST: '0.0.0.0',
-          ENABLE_PRESENCE_FEATURES: fivemSystemEnabled ? 'true' : (botLightMode ? 'false' : (process.env.ENABLE_PRESENCE_FEATURES || 'true')),
-          REGISTER_COMMANDS_ON_STARTUP: envValue('REGISTER_COMMANDS_ON_STARTUP', 'true'),
-          FIVEM_STARTUP_SCAN_ENABLED: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true') : 'false',
-          FIVEM_STARTUP_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
-          POINT_AUTOMATION_SCAN_FIVEM: fivemSystemEnabled ? (process.env.POINT_AUTOMATION_SCAN_FIVEM || 'true') : 'false',
-          POINT_AUTOMATION_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.POINT_AUTOMATION_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
-          POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(botLightMode ? 60 * 60 * 1000 : 30 * 60 * 1000),
-          PONTO_PANEL_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.PONTO_PANEL_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
-          PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(botLightMode ? 5 * 60 * 1000 : 60 * 1000),
-          PROFILE_ACCESS_REVIEW_ENABLED: botLightMode ? 'false' : (process.env.PROFILE_ACCESS_REVIEW_ENABLED || 'true'),
-          PROFILE_SYNC_CHANNELS_ON_STARTUP: botLightMode ? 'false' : (process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP || 'true'),
-          SYNC_CHANNEL_ACCESS_ON_READY: botLightMode ? 'false' : (process.env.SYNC_CHANNEL_ACCESS_ON_READY || 'true'),
-          DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || (botLightMode ? '10' : '25'),
-          DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || (botLightMode ? '50' : '100'),
-          DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || (fivemSystemEnabled ? '100' : (botLightMode ? '0' : '500')),
-          MONGODB_REQUIRED: process.env.BOT_MONGODB_REQUIRED || 'false'
-        },
-        fatal: false,
-        restart: true
-      });
+      const startDiscordBot = () => {
+        if (shuttingDown) return;
+        start('discord-bot', 'node', ['index.js'], {
+          env: {
+            NODE_OPTIONS: process.env.DISCORD_BOT_NODE_OPTIONS || process.env.NODE_OPTIONS,
+            API_PORT: botApiPort,
+            API_HOST: '0.0.0.0',
+            ENABLE_PRESENCE_FEATURES: fivemSystemEnabled ? 'true' : (botLightMode ? 'false' : (process.env.ENABLE_PRESENCE_FEATURES || 'true')),
+            REGISTER_COMMANDS_ON_STARTUP: envValue('REGISTER_COMMANDS_ON_STARTUP', 'true'),
+            FIVEM_STARTUP_SCAN_ENABLED: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_SCAN_ENABLED || 'true') : 'false',
+            FIVEM_STARTUP_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.FIVEM_STARTUP_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
+            POINT_AUTOMATION_SCAN_FIVEM: fivemSystemEnabled ? (process.env.POINT_AUTOMATION_SCAN_FIVEM || 'true') : 'false',
+            POINT_AUTOMATION_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.POINT_AUTOMATION_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
+            POINT_AUTOMATION_INTERVAL_MS: process.env.POINT_AUTOMATION_INTERVAL_MS || String(botLightMode ? 60 * 60 * 1000 : 30 * 60 * 1000),
+            PONTO_PANEL_FETCH_PRESENCES: fivemSystemEnabled ? (process.env.PONTO_PANEL_FETCH_PRESENCES || (botLightMode ? 'false' : 'true')) : 'false',
+            PONTO_PANEL_INTERVAL_MS: process.env.PONTO_PANEL_INTERVAL_MS || String(botLightMode ? 5 * 60 * 1000 : 60 * 1000),
+            PROFILE_ACCESS_REVIEW_ENABLED: botLightMode ? 'false' : (process.env.PROFILE_ACCESS_REVIEW_ENABLED || 'true'),
+            PROFILE_SYNC_CHANNELS_ON_STARTUP: botLightMode ? 'false' : (process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP || 'true'),
+            SYNC_CHANNEL_ACCESS_ON_READY: botLightMode ? 'false' : (process.env.SYNC_CHANNEL_ACCESS_ON_READY || 'true'),
+            DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || (botLightMode ? '10' : '25'),
+            DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || (botLightMode ? '50' : '100'),
+            DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || (fivemSystemEnabled ? '100' : (botLightMode ? '0' : '500')),
+            MONGODB_REQUIRED: process.env.BOT_MONGODB_REQUIRED || 'false'
+          },
+          fatal: false,
+          restart: true
+        });
+      };
+      const botStartDelayMs = Math.max(0, Number(process.env.DISCORD_BOT_START_DELAY_MS) || 0);
+      if (botStartDelayMs > 0) {
+        console.log(`[shardcloud] discord-bot delayed by ${botStartDelayMs}ms to reduce startup memory pressure.`);
+        setChildStatus('discord-bot', 'delayed', { delayMs: botStartDelayMs });
+        const timer = setTimeout(startDiscordBot, botStartDelayMs);
+        if (typeof timer.unref === 'function') timer.unref();
+      } else {
+        startDiscordBot();
+      }
     }
   } else if (shouldStartDiscordBot) {
     console.error('[shardcloud] DISCORD_TOKEN/DISCORD_BOT_TOKEN/TOKEN not configured. Discord bot will not start.');
@@ -649,6 +666,7 @@ async function main() {
         if (fs.existsSync(apiDist)) {
           start('frequency-api', 'node', [apiDist], {
             env: {
+              NODE_OPTIONS: process.env.FREQUENCY_API_NODE_OPTIONS || process.env.NODE_OPTIONS,
               API_PORT: apiPort,
               API_ORIGIN: process.env.API_ORIGIN
             },
@@ -663,6 +681,7 @@ async function main() {
             : ['--prefix', 'frequency-panel', 'run', 'start:api'];
           start('frequency-api', 'npm', apiArgs, {
             env: {
+              NODE_OPTIONS: process.env.FREQUENCY_API_NODE_OPTIONS || process.env.NODE_OPTIONS,
               API_PORT: apiPort,
               API_ORIGIN: process.env.API_ORIGIN
             },
@@ -709,6 +728,7 @@ async function main() {
         ? start('frequency-web', 'node', [standaloneServer], {
             cwd: webDir,
             env: {
+              NODE_OPTIONS: process.env.FREQUENCY_WEB_NODE_OPTIONS || process.env.NODE_OPTIONS,
               HOSTNAME: '0.0.0.0',
               PORT: webInternalPort,
               NODE_ENV: 'production',
@@ -721,6 +741,7 @@ async function main() {
         : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
             cwd: rootDir,
             env: {
+              NODE_OPTIONS: process.env.FREQUENCY_WEB_NODE_OPTIONS || process.env.NODE_OPTIONS,
               INTERNAL_API_URL: process.env.INTERNAL_API_URL,
               NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
             },

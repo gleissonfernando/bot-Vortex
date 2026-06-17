@@ -415,6 +415,21 @@ function checkShardCloudRuntime() {
   } else {
     fail('runtime ShardCloud precisa limitar NODE_OPTIONS em MEMORY<=1024; heaps altos derrubam proxy/API/web no host de 1GB');
   }
+
+  const lowMemorySnippets = [
+    'DISCORD_BOT_START_DELAY_MS',
+    'DISCORD_BOT_NODE_OPTIONS',
+    'FREQUENCY_API_NODE_OPTIONS',
+    'FREQUENCY_WEB_NODE_OPTIONS',
+    'setTimeout(startDiscordBot, botStartDelayMs)'
+  ];
+  for (const snippet of lowMemorySnippets) {
+    if (runtime.includes(snippet)) {
+      ok(`runtime ShardCloud baixa memoria contem ${snippet}`);
+    } else {
+      fail(`runtime ShardCloud baixa memoria precisa conter ${snippet}`);
+    }
+  }
 }
 
 function checkEnvExamples() {
