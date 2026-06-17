@@ -132,12 +132,27 @@ function applyShardCloudRuntimeDefaults() {
     calculated = Math.max(192, calculated);
     setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
 
-    // If the runtime is constrained (<=1GB), avoid heavy startup work
+    // If the runtime is constrained (<=1GB), avoid heavy startup work when the
+    // deploy package already contains the prebuilt Next standalone app. Some
+    // ShardCloud Git deployments arrive as source only; in that case we must
+    // allow one recovery build or the public proxy stays on "Vortex iniciando".
     if (detectedMem <= 1024) {
+      const packagedStandaloneServer = path.join(
+        rootDir,
+        'frequency-panel',
+        'apps',
+        'web',
+        '.next',
+        'standalone',
+        'apps',
+        'web',
+        'server.js'
+      );
+      const hasPackagedWebBuild = fs.existsSync(packagedStandaloneServer);
       process.env.BUILD_API_ON_STARTUP = 'false';
-      process.env.BUILD_WEB_ON_STARTUP = 'false';
+      process.env.BUILD_WEB_ON_STARTUP = hasPackagedWebBuild ? 'false' : 'true';
       // Keep the public dashboard online by starting the prebuilt Next standalone
-      // app, but avoid rebuilding it inside the constrained ShardCloud runtime.
+      // app when present, while recovering source-only deploys by building once.
       process.env.START_FREQUENCY_WEB = 'true';
       // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');

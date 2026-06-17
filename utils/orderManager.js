@@ -747,10 +747,13 @@ function buildOrderPanelPayload(interaction = null) {
     .setAuthor({ name: 'VORTEX | Encomendas', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
     .setTitle('Sistema de Encomendas Vortex')
     .setDescription([
-      `\u{2795} **Abrir Nova Encomenda** abre o formulario no modelo de ticket.`,
-      'Selecione a familia, descreva os produtos no assunto, informe cupom se tiver e envie.',
+      '### Nova encomenda',
       '',
-      'Todas as familias, cupons, produtos e pedidos usam MongoDB. Nada e salvo em JSON local.',
+      'Clique em **Abrir Nova Encomenda** para iniciar seu pedido.',
+      'Escolha a familia, informe as municoes e quantidades, adicione cupom se tiver e envie para aprovacao.',
+      '',
+      '**Antes de enviar**',
+      'Confira os valores, descontos e total final no resumo.',
     ].join('\n'))
     .setFooter({ text: 'Vortex | Sistema de Encomendas' })
     .setTimestamp();
