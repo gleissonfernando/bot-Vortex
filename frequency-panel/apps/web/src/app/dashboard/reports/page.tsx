@@ -1,12 +1,12 @@
 'use client';
 
 import { Download, FileText, RefreshCcw, Search } from 'lucide-react';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { apiFetch, downloadFile } from '@/lib/api';
 import { formatDate, formatSeconds } from '@/lib/format';
 import { subscribeDashboardEvents } from '@/lib/realtime';
+import { Link } from '@/lib/router';
 import type { Member } from '@/lib/types';
 
 export default function ReportsPage() {

@@ -11,18 +11,18 @@ npm run deploy:check
 Esse comando faz o preflight completo:
 
 - confere `package.json`, `.shardcloud` e workflow do GitHub;
-- garante que o site oficial esta em `public/site` e que nao ha dependencias Next no contrato;
+- garante que o site oficial TSX compila para `frequency-panel/apps/web/dist` sem dependencias Next no contrato;
 - checa sintaxe dos arquivos JS do bot com `node --check`;
 - confirma que `/encomenda`, `/exibir` e `/painel` estao prontos para registro no Discord;
-- compila API e bot do `frequency-panel`;
-- confirma que existem `frequency-panel/apps/api/dist/index.js` e `frequency-panel/apps/bot/dist/index.js`;
+- compila API, bot e site TSX do `frequency-panel`;
+- confirma que existem `frequency-panel/apps/api/dist/index.js`, `frequency-panel/apps/bot/dist/index.js` e os arquivos estaticos de `frequency-panel/apps/web/dist`;
 - falha antes do deploy se o pacote nao estiver pronto.
 
 ## Regra da ShardCloud
 
 O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
 
-Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos `dist` da API e do bot, e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches, `.env` e qualquer sobra de `frequency-panel/apps/web`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos `dist` da API, do bot e do site TSX, e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches, `.env`, `.next` e `node_modules` internos do web workspace. O diretorio `frequency-panel/apps/web` precisa ir no pacote porque ele contem o build estatico da interface Vortex. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
 
 Por isso o `.shardcloud` deve ficar curto:
 
@@ -43,7 +43,7 @@ O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres. Mantenha `PORT=80 npm
 - aplica defaults de producao para build de API, registro de comandos e uso de memoria;
 - nao faz build nem start de web separado e nao usa Next;
 - inicia o bot Discord imediatamente e a Frequency API;
-- serve o painel estatico de `public/site` pelo proprio Node para rotas como `/`, `/login`, `/dashboard` e `/dashboard/*`;
+- serve o painel React/TSX ja compilado de `frequency-panel/apps/web/dist` pelo proprio Node para rotas como `/`, `/login`, `/dashboard` e `/dashboard/*`;
 - serve arquivos runtime usados pelo site, como `/transcripts`, `/assets` e `/vendor/fontawesome`, direto pelo proxy publico;
 - abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
 - expoe `/health` e `/_shardcloud/health` no supervisor;
@@ -68,17 +68,32 @@ Se `/health` voltar JSON, confira `config.startDiscordBot`, `config.hasDiscordTo
 
 O arquivo `.shardignore` tambem deve continuar versionado como contrato do pacote, mas a CLI oficial da ShardCloud nao le esse arquivo. Por isso o workflow precisa remover explicitamente cache, segredos e JSONs de runtime antes do `commit`.
 
-## Site sem Next
+## Site TSX sem Next
 
-O site da Vortex nao depende de Next, React ou build web na hospedagem. A interface publica fica em:
+O site da Vortex continua sendo a interface React/TSX original, mas nao depende de Next nem de build web na hospedagem. O codigo fonte fica em:
 
 ```txt
-public/site/index.html
-public/site/site.css
-public/site/site.js
+frequency-panel/apps/web/src/**/*.tsx
+frequency-panel/apps/web/src/app/globals.css
+frequency-panel/apps/web/scripts/build-web.ts
 ```
 
-Esses arquivos chamam a API existente por `/api/*` usando cookies httpOnly do login. O `frequency-panel` fica restrito aos workspaces `apps/api` e `apps/bot`; `apps/web` nao deve voltar para os workspaces nem carregar `next`, `eslint-config-next` ou `@next/*` nos manifests/locks. O preflight falha se essas dependencias voltarem.
+O build oficial e:
+
+```bash
+npm --prefix frequency-panel run build:web
+```
+
+Ele gera:
+
+```txt
+frequency-panel/apps/web/dist/index.html
+frequency-panel/apps/web/dist/assets/site.css
+frequency-panel/apps/web/dist/assets/app.js
+frequency-panel/apps/web/dist/vortex-logo.png
+```
+
+Esses arquivos chamam a API existente por `/api/*` usando cookies httpOnly do login. O `frequency-panel` deve manter `apps/web` nos workspaces para rodar o build TSX, mas `apps/web` nao pode carregar `next`, `eslint-config-next` ou `@next/*` nos manifests/locks. O preflight falha se essas dependencias voltarem.
 
 Quando a validacao publica falhar, o workflow consulta o status do app pela API da ShardCloud e publica apenas `status`, `name`, `ram` e `vcpu` como anotacao do check. Nao use `logs`/`status` do CLI dentro da Action porque esses comandos ficam em streaming/interativos.
 

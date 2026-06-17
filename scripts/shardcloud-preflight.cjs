@@ -161,9 +161,22 @@ function versionAtLeast(actual, minimum) {
 
 function run(command, commandArgs, options = {}) {
   log(`${command} ${commandArgs.join(' ')}`);
+  const env = { ...process.env, ...(options.env || {}) };
+  if (options.cleanNpmEnv) {
+    for (const key of Object.keys(env)) {
+      if (/^npm_/i.test(key) || key === 'INIT_CWD') delete env[key];
+    }
+    for (const key of ['PATH', 'Path', 'path']) {
+      if (!env[key]) continue;
+      env[key] = String(env[key])
+        .split(path.delimiter)
+        .filter((entry) => !/[\\/]node_modules[\\/]\.bin$/i.test(entry))
+        .join(path.delimiter);
+    }
+  }
   const result = spawnSync(command, commandArgs, {
     cwd: options.cwd || rootDir,
-    env: { ...process.env, ...(options.env || {}) },
+    env,
     shell: process.platform === 'win32',
     stdio: 'inherit'
   });
@@ -298,21 +311,31 @@ function checkNoNextRuntime() {
   const panelPackage = readJson('frequency-panel/package.json');
   const workspaces = Array.isArray(panelPackage.workspaces) ? panelPackage.workspaces : [];
   if (workspaces.includes('apps/web')) {
-    fail('frequency-panel nao deve incluir apps/web nos workspaces; o site oficial e estatico Node-only');
+    ok('frequency-panel workspaces incluem apps/web para build TSX estatico');
   } else {
-    ok('frequency-panel workspaces ficam apenas em API/bot, sem app Next');
+    fail('frequency-panel precisa incluir apps/web nos workspaces para gerar o site TSX da Vortex');
+  }
+
+  const requiredFiles = [
+    'frequency-panel/apps/web/package.json',
+    'frequency-panel/apps/web/src/main.tsx',
+    'frequency-panel/apps/web/src/lib/router.tsx',
+    'frequency-panel/apps/web/scripts/build-web.ts',
+    'frequency-panel/apps/web/src/app/page.tsx',
+    'frequency-panel/apps/web/src/app/layout.tsx'
+  ];
+  for (const file of requiredFiles) {
+    requireFile(file, file);
   }
 
   const forbiddenFiles = [
-    'frequency-panel/apps/web/package.json',
     'frequency-panel/apps/web/next.config.mjs',
     'frequency-panel/apps/web/next-env.d.ts',
-    'frequency-panel/apps/web/src/app/layout.tsx',
-    'frequency-panel/apps/web/src/app/page.tsx'
+    'frequency-panel/apps/web/.next'
   ];
   for (const file of forbiddenFiles) {
     if (fileExists(file)) {
-      fail(`${file} nao deve existir no runtime Node-only`);
+      fail(`${file} nao deve existir no web TSX sem Next`);
     } else {
       ok(`${file} ausente`);
     }
@@ -322,9 +345,11 @@ function checkNoNextRuntime() {
     'package.json',
     'package-lock.json',
     'frequency-panel/package.json',
-    'frequency-panel/package-lock.json'
+    'frequency-panel/package-lock.json',
+    'frequency-panel/apps/web/package.json'
   ];
   for (const file of packageFiles) {
+    if (!fileExists(file)) continue;
     const content = readText(file);
     if (/"next"\s*:|eslint-config-next|@next\//.test(content)) {
       fail(`${file} contem dependencia Next removida do sistema`);
@@ -332,10 +357,6 @@ function checkNoNextRuntime() {
       ok(`${file} sem dependencias Next`);
     }
   }
-
-  requireFile('public/site/index.html', 'site estatico index');
-  requireFile('public/site/site.css', 'site estatico CSS');
-  requireFile('public/site/site.js', 'site estatico JS');
 }
 
 function checkShardCloudFile() {
@@ -406,7 +427,8 @@ function checkWorkflow() {
     'vortex-frequency-api',
     'https://shardcloud.app/api/apps/',
     'rm -rf node_modules',
-    'rm -rf frequency-panel/apps/web',
+    'rm -rf frequency-panel/apps/web/node_modules',
+    'rm -rf frequency-panel/apps/web/.next',
     'rm -f .env .env.*',
     'rm -f commands/perfis.json',
     'rm -f commands/pointTranscripts.json',
@@ -420,6 +442,12 @@ function checkWorkflow() {
     } else {
       fail(`workflow precisa conter ${snippet}`);
     }
+  }
+
+  if (workflow.split(/\r?\n/).some((line) => line.trim() === 'rm -rf frequency-panel/apps/web')) {
+    fail('workflow nao pode apagar frequency-panel/apps/web inteiro; ele contem o site TSX da Vortex');
+  } else {
+    ok('workflow preserva frequency-panel/apps/web e remove apenas caches/builds temporarios');
   }
 }
 
@@ -439,7 +467,7 @@ function checkShardCloudRuntime() {
     'SHARDCLOUD_REQUIRE_PORT_80',
     'REGISTER_COMMANDS_ON_STARTUP',
     'serveSiteIndex',
-    "path.join(rootDir, 'public', 'site')",
+    "path.join(rootDir, 'frequency-panel', 'apps', 'web', 'dist')",
     "process.env.SHARDCLOUD_DEPLOY_MODE === 'git'"
   ];
 
@@ -578,9 +606,10 @@ function checkStrictEnv() {
 function checkBuildArtifacts() {
   requireFile('frequency-panel/apps/api/dist/index.js', 'Frequency API dist');
   requireFile('frequency-panel/apps/bot/dist/index.js', 'Frequency bot dist');
-  requireFile('public/site/index.html', 'site estatico index');
-  requireFile('public/site/site.css', 'site estatico CSS');
-  requireFile('public/site/site.js', 'site estatico JS');
+  requireFile('frequency-panel/apps/web/dist/index.html', 'site TSX estatico index');
+  requireFile('frequency-panel/apps/web/dist/assets/app.js', 'site TSX bundle JS');
+  requireFile('frequency-panel/apps/web/dist/assets/site.css', 'site TSX CSS');
+  requireFile('frequency-panel/apps/web/dist/vortex-logo.png', 'logo Vortex do site TSX');
   requireFile('public/sistema-de-bau-banner.png', 'public static asset');
 }
 
@@ -593,20 +622,25 @@ function main() {
   checkShardCloudRuntime();
   checkEnvExamples();
   checkStrictEnv();
-  checkSyntax();
-  checkDiscordCommands();
 
   if (!skipBuild) {
-    run('npm', ['--prefix', 'frequency-panel', 'run', 'build'], {
+    const buildOptions = {
       env: {
-        NODE_TLS_REJECT_UNAUTHORIZED: process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0' ? '1' : process.env.NODE_TLS_REJECT_UNAUTHORIZED
-      }
-    });
+        NODE_TLS_REJECT_UNAUTHORIZED: process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0' ? '1' : process.env.NODE_TLS_REJECT_UNAUTHORIZED,
+        VORTEX_WEB_BUILD_DEBUG: process.env.VORTEX_WEB_BUILD_DEBUG || 'false'
+      },
+      cleanNpmEnv: true
+    };
+    run('npm', ['--prefix', 'frequency-panel', 'run', 'build:api'], buildOptions);
+    run('npm', ['--prefix', 'frequency-panel', 'run', 'build:bot'], buildOptions);
+    run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], buildOptions);
   } else {
     log('build pulada por --skip-build');
   }
 
   checkBuildArtifacts();
+  checkSyntax();
+  checkDiscordCommands();
 
   if (failures > 0) {
     console.error(`[deploy:check] ${failures} falha(s) encontrada(s). Corrija antes de subir para a ShardCloud.`);

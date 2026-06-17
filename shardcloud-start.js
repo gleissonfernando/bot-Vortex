@@ -337,18 +337,14 @@ function serveStaticFile(req, res, baseDir, relativePath, cacheControl = 'public
 }
 
 function serveRuntimeStatic(req, res, pathname) {
-  if (pathname.startsWith('/site/')) {
-    return serveStaticFile(
-      req,
-      res,
-      path.join(rootDir, 'public', 'site'),
-      pathname.slice('/site/'.length),
-      pathname.endsWith('.html') ? 'no-store' : 'public, max-age=3600'
-    );
+  if (pathname === '/favicon.ico') {
+    return serveStaticFile(req, res, path.join(rootDir, 'frequency-panel', 'apps', 'web', 'dist'), 'favicon.ico')
+      || serveStaticFile(req, res, path.join(rootDir, 'frequency-panel', 'apps', 'web', 'public'), 'favicon.ico');
   }
 
-  if (pathname === '/favicon.ico') {
-    return serveStaticFile(req, res, path.join(rootDir, 'public', 'site'), 'favicon.ico');
+  if (pathname === '/vortex-logo.png') {
+    return serveStaticFile(req, res, path.join(rootDir, 'frequency-panel', 'apps', 'web', 'dist'), 'vortex-logo.png')
+      || serveStaticFile(req, res, path.join(rootDir, 'frequency-panel', 'apps', 'web', 'public'), 'vortex-logo.png');
   }
 
   if (pathname.startsWith('/transcripts/')) {
@@ -363,7 +359,8 @@ function serveRuntimeStatic(req, res, pathname) {
 
   if (pathname.startsWith('/assets/')) {
     const assetPath = pathname.slice('/assets/'.length);
-    return serveStaticFile(req, res, path.join(rootDir, 'public', 'assets'), assetPath)
+    return serveStaticFile(req, res, path.join(rootDir, 'frequency-panel', 'apps', 'web', 'dist', 'assets'), assetPath)
+      || serveStaticFile(req, res, path.join(rootDir, 'public', 'assets'), assetPath)
       || serveStaticFile(req, res, path.join(rootDir, 'foto'), assetPath);
   }
 
@@ -395,7 +392,7 @@ function siteCsp() {
 }
 
 function serveSiteIndex(req, res) {
-  const indexPath = path.join(rootDir, 'public', 'site', 'index.html');
+  const indexPath = path.join(rootDir, 'frequency-panel', 'apps', 'web', 'dist', 'index.html');
   if (!fs.existsSync(indexPath)) return false;
 
   res.writeHead(200, {
