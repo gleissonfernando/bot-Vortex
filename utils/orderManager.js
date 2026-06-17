@@ -4,8 +4,11 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  LabelBuilder,
   ModalBuilder,
+  RadioGroupBuilder,
   StringSelectMenuBuilder,
+  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
   PermissionFlagsBits,
@@ -24,6 +27,14 @@ const ORDER_NUMBER_OFFSET = 3846;
 const ORDER_DASHBOARD_URL = String(process.env.PUBLIC_DASHBOARD_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://bot-vortex.shardweb.app').replace(/\/+$/, '');
 const ORDER_PANEL_EMOJI = '\u{1F4E6}';
 const FAVORITE_EMOJI = '\u{2B50}';
+const ORDER_TICKET_MODAL_ID = 'modal_order_ticket';
+const ORDER_TICKET_FAMILY_FIELD = 'order_ticket_family';
+const ORDER_TICKET_SUBJECT_FIELD = 'order_ticket_subject';
+const ORDER_TICKET_COUPON_FIELD = 'order_ticket_coupon';
+const ORDER_TICKET_CURRENCY_FIELD = 'order_ticket_currency';
+const ORDER_TICKET_TEXT_MODAL_ID = 'modal_order_ticket_text';
+const ORDER_TICKET_FAMILY_TEXT_FIELD = 'order_ticket_family_text';
+const ORDER_TICKET_CURRENCY_TEXT_FIELD = 'order_ticket_currency_text';
 
 const orderSessions = new Map();
 const familySelections = new Map();
@@ -241,6 +252,76 @@ function normalizeMemberLines(value) {
     .filter((item) => /^\d{5,32}$/.test(item.discord_id));
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function parseOrderTicketSubject(subject) {
+  const grouped = emptyGroupedItems();
+  const segments = String(subject || '')
+    .split(/\r?\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    const normalized = normalizeSearchText(segment);
+    const meta = GROUPED_ORDER_ITEMS.find((item) => {
+      const labelKey = normalizeSearchText(item.label);
+      const itemKey = normalizeSearchText(item.key);
+      return normalized.includes(labelKey) || normalized.includes(itemKey);
+    });
+    if (!meta) continue;
+
+    const parsed = parseGroupedProductInput(segment);
+    if (!parsed.quantity || !parsed.valueCents) continue;
+    grouped[meta.key] = {
+      key: meta.key,
+      label: meta.label,
+      emoji: meta.emoji,
+      quantity: parsed.quantity,
+      valueCents: parsed.valueCents,
+    };
+  }
+
+  return grouped;
+}
+
+async function findCouponByCode(guildId, familyId, value) {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return null;
+  const coupons = await listCoupons(guildId, familyId);
+  return coupons.find((coupon) => {
+    const code = normalizeSearchText(coupon.code || '');
+    const name = normalizeSearchText(coupon.name || '');
+    return code === normalized || name === normalized;
+  }) || null;
+}
+
+async function resolveOrderTicketFamily(guildId, value) {
+  const raw = String(value || '').trim();
+  const id = objectId(raw);
+  if (id) {
+    const family = await getCollection('order_families').findOne({ _id: id, guild_id: guildId, active: true });
+    if (family) return family;
+  }
+
+  const normalized = normalizeSearchText(raw);
+  if (!normalized) return null;
+  const families = await listFamilies(guildId);
+  return families.find((family) => {
+    const name = normalizeSearchText(family.name);
+    const slug = normalizeSearchText(family.slug);
+    return name === normalized || slug === normalized;
+  }) || families.find((family) => {
+    const name = normalizeSearchText(family.name);
+    return name.includes(normalized) || normalized.includes(name);
+  }) || null;
+}
+
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components.filter(Boolean));
 }
@@ -400,6 +481,7 @@ function buildOrderApprovalPayload(order) {
       `**\u{1F464} Solicitante:** ${order.responsible_mention || order.responsible_name || order.created_by_name || 'N/A'}`,
       `**\u{1F3E0} Familia:** ${order.family_icon || ORDER_PANEL_EMOJI} ${order.family_name}`,
       `**\u{1F4B1} Moeda:** ${currencyLabel(currency)}`,
+      order.subject ? `**Assunto:** ${String(order.subject).slice(0, 500)}` : null,
       '',
       items ? '**Itens da Encomenda:**' : '**Itens da Encomenda:**',
       items || 'Nenhum item',
@@ -409,7 +491,7 @@ function buildOrderApprovalPayload(order) {
       `**\u{1F4B0} Total Final:** ${formatOrderMoney(final, currency)}`,
       `**\u{1F4C5} Data:** ${new Date(order.created_at).toLocaleDateString('pt-BR')}`,
       `**Status:** ${order.status === 'pending' ? '\u{1F7E1} Pendente' : statusLabel(order.status)}`,
-    ].join('\n'))
+    ].filter(Boolean).join('\n'))
     .setFooter({ text: 'Vortex | Sistema de Encomendas V2' })
     .setTimestamp(order.created_at);
 
@@ -465,6 +547,8 @@ function getSession(interaction) {
       couponId: '',
       couponCode: '',
       couponPercentage: 0,
+      subject: '',
+      couponInput: '',
       groupedItems: emptyGroupedItems(),
       category: '',
       cart: [],
@@ -530,8 +614,8 @@ function buildOrderPanelPayload(interaction = null) {
     .setAuthor({ name: 'VORTEX | Encomendas V2', iconURL: interaction?.client?.user?.displayAvatarURL?.() || undefined })
     .setTitle('Sistema de Encomendas V2')
     .setDescription([
-      `\u{2795} **Nova Encomenda** abre a selecao de moeda antes do formulario principal.`,
-      'O sistema calcula valor bruto, desconto e valor final automaticamente.',
+      `\u{2795} **Abrir Nova Encomenda** abre o formulario no modelo de ticket.`,
+      'Selecione a familia, descreva os produtos no assunto, informe cupom se tiver e envie.',
       '',
       'Todas as familias, cupons, produtos e pedidos usam MongoDB. Nada e salvo em JSON local.',
     ].join('\n'))
@@ -540,11 +624,141 @@ function buildOrderPanelPayload(interaction = null) {
 
   const components = [
     row(
-      button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }),
+      button('order_start', 'Abrir Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }),
     ),
   ];
 
   return buildPayload('orders', embed, components, false);
+}
+
+function buildOrderTicketModal(families) {
+  const familySelect = new StringSelectMenuBuilder()
+    .setCustomId(ORDER_TICKET_FAMILY_FIELD)
+    .setPlaceholder('Selecione a categoria da encomenda')
+    .setRequired(true)
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(families.slice(0, 25).map((family) => ({
+      label: String(family.name || 'Familia').slice(0, 100),
+      value: String(family._id),
+      description: String(family.leader_name || family.slug || 'Sem lider').slice(0, 100),
+    })));
+
+  const subjectInput = new TextInputBuilder()
+    .setCustomId(ORDER_TICKET_SUBJECT_FIELD)
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMinLength(10)
+    .setMaxLength(1000)
+    .setPlaceholder('Ex: HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000');
+
+  const couponInput = new TextInputBuilder()
+    .setCustomId(ORDER_TICKET_COUPON_FIELD)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(80)
+    .setPlaceholder('Ex: VORTEX10');
+
+  const currencyRadio = new RadioGroupBuilder()
+    .setCustomId(ORDER_TICKET_CURRENCY_FIELD)
+    .setRequired(true)
+    .setOptions(
+      { label: 'Real (BRL)', value: 'BRL', description: 'Calcular a encomenda em reais.', default: true },
+      { label: 'Dolar (USD)', value: 'USD', description: 'Calcular a encomenda em dolar.' },
+    );
+
+  const modal = new ModalBuilder()
+    .setCustomId(ORDER_TICKET_MODAL_ID)
+    .setTitle('Abrir Nova Encomenda');
+
+  modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    '\u{26A0}\u{FE0F} Este formulario sera enviado ao Sistema de Encomendas V2. Nao compartilhe informacoes confidenciais.',
+  ));
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel('Selecione a Categoria da Encomenda *')
+      .setStringSelectMenuComponent(familySelect),
+    new LabelBuilder()
+      .setLabel('Assunto da Encomenda *')
+      .setDescription('Informe os produtos com quantidade e valor total. Minimo de 10 caracteres.')
+      .setTextInputComponent(subjectInput),
+    new LabelBuilder()
+      .setLabel('Insira seu CUPOM')
+      .setDescription('Deixe em branco se nao se aplica.')
+      .setTextInputComponent(couponInput),
+    new LabelBuilder()
+      .setLabel('Qual moeda sera usada na encomenda? *')
+      .setRadioGroupComponent(currencyRadio),
+  );
+
+  return modal;
+}
+
+function buildOrderTicketTextModal(families) {
+  const familyNames = families
+    .slice(0, 6)
+    .map((family) => String(family.name || 'Familia'))
+    .join(', ');
+  const defaultFamily = families.length === 1 ? String(families[0].name || '') : '';
+
+  const modal = new ModalBuilder()
+    .setCustomId(ORDER_TICKET_TEXT_MODAL_ID)
+    .setTitle('Abrir Nova Encomenda');
+
+  const familyInput = new TextInputBuilder()
+    .setCustomId(ORDER_TICKET_FAMILY_TEXT_FIELD)
+    .setLabel('Categoria da Encomenda *')
+    .setPlaceholder(familyNames ? `Ex: ${familyNames.slice(0, 92)}` : 'Ex: Vortex')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(2)
+    .setMaxLength(100);
+  if (defaultFamily) familyInput.setValue(defaultFamily.slice(0, 100));
+
+  modal.addComponents(
+    row(familyInput),
+    row(new TextInputBuilder()
+      .setCustomId(ORDER_TICKET_SUBJECT_FIELD)
+      .setLabel('Assunto da Encomenda *')
+      .setPlaceholder('Ex: HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMinLength(10)
+      .setMaxLength(1000)),
+    row(new TextInputBuilder()
+      .setCustomId(ORDER_TICKET_COUPON_FIELD)
+      .setLabel('Insira seu CUPOM')
+      .setPlaceholder('Deixe em branco se nao se aplica. Ex: VORTEX10')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setMaxLength(80)),
+    row(new TextInputBuilder()
+      .setCustomId(ORDER_TICKET_CURRENCY_TEXT_FIELD)
+      .setLabel('Moeda *')
+      .setPlaceholder('BRL ou USD')
+      .setValue('BRL')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(3)),
+  );
+
+  return modal;
+}
+
+async function showOrderTicketModal(interaction) {
+  const session = getSession(interaction);
+  const families = await listFamilies(session.guildId);
+  if (!families.length) {
+    return safeReply(interaction, {
+      content: 'Cadastre uma familia ativa no painel administrativo antes de abrir encomendas.',
+      ephemeral: true,
+    });
+  }
+  return safeShowModal(interaction, buildOrderTicketModal(families))
+    .catch(() => {
+      if (interaction.replied || interaction.deferred) return null;
+      return safeShowModal(interaction, buildOrderTicketTextModal(families));
+    });
 }
 
 async function buildOrderAdminPanelPayload(interaction = null) {
@@ -1135,7 +1349,7 @@ async function saveFavorite(interaction) {
   return safeReply(interaction, { content: `${FAVORITE_EMOJI} Modelo salvo para ${family.name}.`, ephemeral: true });
 }
 
-async function finalizeGroupedOrder(interaction) {
+async function finalizeGroupedOrder(interaction, useEditReply = false) {
   const session = getSession(interaction);
   const lines = groupedOrderLines(session);
   if (!session.familyId || !lines.length) {
@@ -1185,6 +1399,7 @@ async function finalizeGroupedOrder(interaction) {
     responsible_id: actor.id,
     responsible_name: actor.name,
     responsible_mention: `<@${actor.id}>`,
+    subject: session.subject || null,
     items: lines.map((line) => ({
       inventory_item_id: null,
       name: line.label,
@@ -1244,8 +1459,10 @@ async function finalizeGroupedOrder(interaction) {
     details: {
       source: 'discord',
       currency,
+      subject: session.subject || null,
       items: order.items.length,
       subtotalValue: moneyFromCents(totals.subtotal),
+      couponInput: session.couponInput || null,
       coupon: coupon?.code || null,
       discountValue: moneyFromCents(totals.discount),
       totalValue: moneyFromCents(totals.final),
@@ -1254,16 +1471,18 @@ async function finalizeGroupedOrder(interaction) {
   }, family, settings);
 
   orderSessions.delete(sessionKey(interaction));
-  return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
+  const payload = buildPayload('orders', new EmbedBuilder()
     .setColor('#22C55E')
     .setTitle(`Encomenda #${order.order_number} criada`)
     .setDescription([
       `Familia: **${order.family_name}**`,
+      session.subject ? `Assunto: **${String(session.subject).slice(0, 120)}**` : null,
       `Moeda: **${currencyLabel(currency)}**`,
       `Total final: **${formatOrderMoney(totals.final, currency)}**`,
       order.approval_channel_id ? `Canal de envio: <#${order.approval_channel_id}>` : 'Canal de envio nao configurado.',
-    ].join('\n')),
-  [row(button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }), linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]), true);
+    ].filter(Boolean).join('\n')),
+  [row(button('order_start', 'Nova Encomenda', ButtonStyle.Primary, { emoji: '\u{2795}' }), linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Abrir Painel Web'))]);
+  return useEditReply ? safeEdit(interaction, payload) : respondPanel(interaction, payload, true);
 }
 
 async function finalizeOrder(interaction) {
@@ -1737,7 +1956,7 @@ async function handleOrderButton(interaction) {
       familyResponsibleRoleId: '',
       mode: 'grouped',
       currency: 'BRL',
-      currencySelected: false,
+      currencySelected: true,
       productId: '',
       productName: '',
       quantity: 0,
@@ -1745,11 +1964,13 @@ async function handleOrderButton(interaction) {
       couponId: '',
       couponCode: '',
       couponPercentage: 0,
+      subject: '',
+      couponInput: '',
       groupedItems: emptyGroupedItems(),
       category: '',
       cart: [],
     });
-    return showCurrencySelection(interaction);
+    return showOrderTicketModal(interaction);
   }
 
   if (interaction.customId === 'order_currency_USD' || interaction.customId === 'order_currency_BRL') {
@@ -1989,9 +2210,85 @@ async function handleOrderSelect(interaction) {
   return safeReply(interaction, { content: 'Selecao de encomenda invalida.', ephemeral: true });
 }
 
+async function submitOrderTicketModal(interaction, {
+  familyInput,
+  subject,
+  couponInput,
+  currency,
+}) {
+  if (!hasOrderUserPermission(interaction.member)) {
+    return safeReply(interaction, { content: 'Voce nao tem permissao para fazer encomendas.', ephemeral: true });
+  }
+  await safeDeferReply(interaction, { ephemeral: true });
+
+  const guildId = getGuildId(interaction);
+  const family = await resolveOrderTicketFamily(guildId, familyInput);
+  if (!family) return safeEdit(interaction, { content: 'Categoria/familia de encomenda nao encontrada.' });
+
+  const groupedItems = parseOrderTicketSubject(subject);
+  const parsedLines = groupedOrderLines({ groupedItems });
+  if (!parsedLines.length) {
+    return safeEdit(interaction, {
+      content: [
+        'Informe pelo menos um produto no assunto usando o modelo:',
+        '`HK/MAG 100 | R$ 50000; TEC/FIVE 50 | R$ 25000; MTAR/MP7 25 | R$ 30000`',
+      ].join('\n'),
+    });
+  }
+
+  const session = getSession(interaction);
+  session.familyId = String(family._id);
+  session.familyName = family.name;
+  session.familyLeaderName = family.leader_name || '';
+  session.familyOrderChannelId = family.order_channel_id || '';
+  session.familyResponsibleRoleId = family.responsible_role_id || '';
+  session.mode = 'grouped';
+  session.currency = resolveCurrency(currency);
+  session.currencySelected = true;
+  session.subject = String(subject || '').trim();
+  session.couponInput = String(couponInput || '').trim();
+  session.groupedItems = groupedItems;
+
+  if (session.couponInput) {
+    const coupon = await findCouponByCode(session.guildId, session.familyId, session.couponInput);
+    if (!coupon) {
+      return safeEdit(interaction, { content: `Cupom \`${session.couponInput.slice(0, 60)}\` nao encontrado ou nao liberado para esta familia.` });
+    }
+    session.couponMode = 'yes';
+    session.couponId = String(coupon._id);
+    session.couponCode = coupon.code || coupon.name || session.couponInput;
+    session.couponPercentage = Number(coupon.percentage || 0);
+  } else {
+    session.couponMode = 'no';
+    session.couponId = '';
+    session.couponCode = '';
+    session.couponPercentage = 0;
+  }
+
+  return finalizeGroupedOrder(interaction, true);
+}
+
 async function handleOrderModal(interaction) {
   if (!isMongoReady()) {
     return safeReply(interaction, { content: 'MongoDB nao esta conectado. O Sistema de Encomendas V2 nao salva dados locais.', ephemeral: true });
+  }
+
+  if (interaction.customId === ORDER_TICKET_MODAL_ID) {
+    return submitOrderTicketModal(interaction, {
+      familyInput: String(interaction.fields.getStringSelectValues(ORDER_TICKET_FAMILY_FIELD)?.[0] || ''),
+      subject: interaction.fields.getTextInputValue(ORDER_TICKET_SUBJECT_FIELD).trim(),
+      couponInput: interaction.fields.getTextInputValue(ORDER_TICKET_COUPON_FIELD).trim(),
+      currency: interaction.fields.getRadioGroup(ORDER_TICKET_CURRENCY_FIELD, true),
+    });
+  }
+
+  if (interaction.customId === ORDER_TICKET_TEXT_MODAL_ID) {
+    return submitOrderTicketModal(interaction, {
+      familyInput: interaction.fields.getTextInputValue(ORDER_TICKET_FAMILY_TEXT_FIELD).trim(),
+      subject: interaction.fields.getTextInputValue(ORDER_TICKET_SUBJECT_FIELD).trim(),
+      couponInput: interaction.fields.getTextInputValue(ORDER_TICKET_COUPON_FIELD).trim(),
+      currency: interaction.fields.getTextInputValue(ORDER_TICKET_CURRENCY_TEXT_FIELD).trim(),
+    });
   }
 
   if (interaction.customId.startsWith('modal_order_quantity_')) {
