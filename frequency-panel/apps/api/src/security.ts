@@ -11,17 +11,33 @@ type RateLimitOptions = {
   keyPrefix: string;
   windowMs: number;
   max: number;
+  skip?: (req: Request) => boolean;
 };
 
 const buckets = new Map<string, RateBucket>();
 
 export function getClientIp(req: Request) {
-  const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0]?.trim();
-  return forwardedFor || req.ip || req.socket.remoteAddress || 'unknown';
+  const candidates = [
+    firstHeaderValue(req.headers['cf-connecting-ip']),
+    firstHeaderValue(req.headers['x-real-ip']),
+    req.ips?.[0],
+    req.ip,
+    firstHeaderValue(req.headers['x-forwarded-for']),
+    req.socket.remoteAddress
+  ];
+
+  for (const candidate of candidates) {
+    const value = normalizeIp(candidate);
+    if (value) return value;
+  }
+
+  return 'unknown';
 }
 
 export function rateLimit(options: RateLimitOptions) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (options.skip?.(req)) return next();
+
     const now = Date.now();
     if (buckets.size > 5000) cleanupExpiredBuckets(now);
 
@@ -41,6 +57,17 @@ export function rateLimit(options: RateLimitOptions) {
 
     return next();
   };
+}
+
+function firstHeaderValue(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return String(raw || '').split(',')[0]?.trim() || '';
+}
+
+function normalizeIp(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.startsWith('::ffff:') ? text.slice(7) : text;
 }
 
 function cleanupExpiredBuckets(now = Date.now()) {

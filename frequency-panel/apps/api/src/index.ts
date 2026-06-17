@@ -40,7 +40,8 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
 app.use(cors({ origin: env.apiOrigin, credentials: true }));
-app.use(rateLimit({ keyPrefix: 'api', windowMs: env.apiRateLimitWindowMs, max: env.apiRateLimitMax }));
+app.use(rateLimit({ keyPrefix: 'api', windowMs: env.apiRateLimitWindowMs, max: env.apiRateLimitMax, skip: skipGlobalRateLimit }));
+app.use('/auth/discord', rateLimit({ keyPrefix: 'discord-oauth', windowMs: 60 * 1000, max: 120 }));
 app.use(requireTrustedOrigin);
 app.use(express.json({ limit: '2mb' }));
 
@@ -93,4 +94,11 @@ function auditSuccessfulMutation(req: express.Request, res: express.Response, ne
   });
 
   return next();
+}
+
+function skipGlobalRateLimit(req: express.Request) {
+  if (req.method === 'OPTIONS') return true;
+  if (!['GET', 'HEAD'].includes(req.method)) return false;
+  if (req.path === '/health' || req.path === '/status/maintenance') return true;
+  return req.path.startsWith('/auth/discord/');
 }

@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { login, refreshSession, sessionFromDiscordOAuthUser, sessionFromRegisteredDiscordUser } from '../auth.js';
 import { requireAuth } from '../middleware.js';
-import { auditLog } from '../security.js';
+import { auditLog, getClientIp } from '../security.js';
 import { env } from '../env.js';
 import { updateSiteUser } from '../services/site-users.js';
 export const authRouter = Router();
@@ -20,13 +20,9 @@ function readPositiveIntEnv(name, fallback) {
     const value = Number(process.env[name]);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
-function getClientKey(req) {
-    const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0]?.trim();
-    return forwardedFor || req.ip || req.socket.remoteAddress || 'unknown';
-}
 function limitLoginAttempts(req, res, next) {
     const now = Date.now();
-    const key = getClientKey(req);
+    const key = getClientIp(req);
     if (loginAttempts.size > 1000)
         cleanupExpiredAttempts(now);
     const bucket = loginAttempts.get(key);
@@ -60,7 +56,7 @@ authRouter.post('/login', limitLoginAttempts, async (req, res) => {
         await auditLog(req, 'auth.login.failed', { email: parsed.data.email.toLowerCase() });
         return res.status(401).json({ ok: false, error: 'Invalid credentials' });
     }
-    loginAttempts.delete(getClientKey(req));
+    loginAttempts.delete(getClientIp(req));
     req.user = session.user;
     setSessionCookies(res, session.token, session.refreshToken);
     await auditLog(req, 'auth.login.success', { email: session.user.email });

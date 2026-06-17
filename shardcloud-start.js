@@ -615,6 +615,8 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
 
     const target = new URL(process.env.INTERNAL_API_URL);
     const targetPath = req.url.slice(4) || '/';
+    const forwardedFor = forwardedForHeader(req);
+    const realIp = firstForwardedAddress(forwardedFor);
     const upstream = http.request({
       hostname: target.hostname,
       port: target.port,
@@ -625,6 +627,8 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
         host: target.host,
         'x-forwarded-host': req.headers.host || target.host,
         'x-forwarded-proto': 'https',
+        ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
+        ...(realIp ? { 'x-real-ip': realIp } : {}),
       }
     }, (upstreamRes) => {
       res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
@@ -667,6 +671,18 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
   });
 
   return server;
+}
+
+function forwardedForHeader(req) {
+  const current = Array.isArray(req.headers['x-forwarded-for'])
+    ? req.headers['x-forwarded-for'].join(', ')
+    : String(req.headers['x-forwarded-for'] || '').trim();
+  const remote = String(req.socket?.remoteAddress || '').trim();
+  return [current, remote].filter(Boolean).join(', ');
+}
+
+function firstForwardedAddress(value) {
+  return String(value || '').split(',')[0]?.trim() || '';
 }
 
 function startProxy() {
