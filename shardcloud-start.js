@@ -314,6 +314,80 @@ function getJson(url, timeoutMs = 1200) {
   });
 }
 
+function safeJoinStatic(baseDir, requestPath) {
+  const decoded = decodeURIComponent(String(requestPath || '')).replace(/\\/g, '/');
+  const cleanPath = decoded.replace(/^\/+/, '');
+  const target = path.resolve(baseDir, cleanPath);
+  const root = path.resolve(baseDir);
+  return target === root || target.startsWith(`${root}${path.sep}`) ? target : null;
+}
+
+function contentTypeFor(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.ttf': 'font/ttf',
+    '.txt': 'text/plain; charset=utf-8',
+    '.webp': 'image/webp',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+  }[ext] || 'application/octet-stream';
+}
+
+function serveStaticFile(req, res, baseDir, relativePath, cacheControl = 'public, max-age=3600') {
+  if (!['GET', 'HEAD'].includes(req.method || 'GET')) return false;
+  const filePath = safeJoinStatic(baseDir, relativePath);
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return false;
+
+  res.writeHead(200, {
+    'Content-Type': contentTypeFor(filePath),
+    'Cache-Control': cacheControl,
+  });
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+
+  fs.createReadStream(filePath).pipe(res);
+  return true;
+}
+
+function serveRuntimeStatic(req, res, pathname) {
+  if (pathname.startsWith('/transcripts/')) {
+    return serveStaticFile(
+      req,
+      res,
+      path.join(rootDir, 'public', 'transcripts'),
+      pathname.slice('/transcripts/'.length),
+      'no-store'
+    );
+  }
+
+  if (pathname.startsWith('/assets/')) {
+    const assetPath = pathname.slice('/assets/'.length);
+    return serveStaticFile(req, res, path.join(rootDir, 'public', 'assets'), assetPath)
+      || serveStaticFile(req, res, path.join(rootDir, 'foto'), assetPath);
+  }
+
+  if (pathname.startsWith('/vendor/fontawesome/')) {
+    return serveStaticFile(
+      req,
+      res,
+      path.join(rootDir, 'node_modules', '@fortawesome', 'fontawesome-free'),
+      pathname.slice('/vendor/fontawesome/'.length)
+    );
+  }
+
+  return false;
+}
+
 async function isFrequencyApiHealthy(port) {
   const result = await getJson(`http://127.0.0.1:${port}/health`);
   return Boolean(result?.statusCode === 200 && result.data?.ok && result.data?.service === 'vortex-frequency-api');
@@ -451,6 +525,8 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
       res.end(JSON.stringify(runtimeHealth()));
       return;
     }
+
+    if (serveRuntimeStatic(req, res, pathname)) return;
 
     const isApi = req.url?.startsWith('/api/');
     const target = new URL(isApi ? process.env.INTERNAL_API_URL : `http://127.0.0.1:${webInternalPort}`);
