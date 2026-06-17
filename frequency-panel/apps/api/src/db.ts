@@ -87,7 +87,16 @@ async function ensureIndexes(db: Db) {
     db.collection('order_settings').createIndex({ guild_id: 1 }, { unique: true }),
     db.collection('orders').createIndex({ guild_id: 1, created_at: -1 }),
     db.collection('orders').createIndex({ guild_id: 1, status: 1, created_at: -1 }),
+    db.collection('orders').createIndex({ guild_id: 1, family_id: 1, created_at: -1 }),
+    db.collection('orders').createIndex({ guild_id: 1, order_number: 1 }, { unique: true }),
+    db.collection('order_counters').createIndex({ guild_id: 1, key: 1 }, { unique: true }),
+    db.collection('order_families').createIndex({ guild_id: 1, slug: 1 }, { unique: true }),
+    db.collection('order_families').createIndex({ guild_id: 1, active: 1, name: 1 }),
+    db.collection('order_inventory').createIndex({ guild_id: 1, slug: 1 }, { unique: true }),
+    db.collection('order_inventory').createIndex({ guild_id: 1, category: 1, active: 1 }),
+    db.collection('order_favorites').createIndex({ guild_id: 1, family_id: 1, updated_at: -1 }),
     db.collection('order_logs').createIndex({ guild_id: 1, order_id: 1, created_at: -1 }),
+    db.collection('order_logs').createIndex({ guild_id: 1, family_id: 1, created_at: -1 }),
     db.collection('jsondocuments').createIndex({ key: 1 }, { unique: true })
   ]);
 }

@@ -121,6 +121,7 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Manutenção', value: 'tab_manutencao', description: 'Modo manutenção e ajustes gerais', emoji: '🛠️' },
     { label: 'Ausências', value: 'tab_ausencias', description: 'Cargos, retornos e mensagens de ausência', emoji: '📆' },
     { label: 'Comandos', value: 'tab_commands', description: 'Permissões por comando ou ação', emoji: '⌨️' },
+    { label: 'Encomendas V2', value: 'tab_orders', description: 'Pedidos, familias, carrinho e historico', emoji: '\u{1F4E6}' },
     { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
     { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
     { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
@@ -173,6 +174,7 @@ function getPanelTabMeta(tab) {
         case 'tab_manutencao': return { icon: '🛠️', title: 'MANUTENÇÃO' };
         case 'tab_ausencias': return { icon: '📆', title: 'GESTÃO DE AUSÊNCIAS' };
         case 'tab_commands': return { icon: '⌨️', title: 'PERMISSÕES DE COMANDOS' };
+        case 'tab_orders': return { icon: '\u{1F4E6}', title: 'ENCOMENDAS V2' };
         case 'tab_perfil': return { icon: '👤', title: 'PERFIS' };
         case 'tab_mirror_messages': return { icon: '💬', title: 'MENSAGENS EM PAINEL' };
         case 'tab_adjust_calls': return { icon: '🔧', title: 'AJUSTE DE CALLS' };
@@ -2108,6 +2110,43 @@ async function renderDashboard(interaction, tab, edit = false) {
           .setStyle(ButtonStyle.Secondary)
       ),
     ];
+  } else if (tab === 'tab_orders') {
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | ENCOMENDAS V2`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#0EA5E9')
+      .setDescription([
+        '### Sistema de Encomendas V2',
+        '',
+        'Gerencie familias, crie pedidos em etapas, acompanhe historico e abra o painel web completo.',
+        '',
+        '**Fluxo do pedido**',
+        '1. Selecionar familia',
+        '2. Selecionar tipo do pedido',
+        '3. Adicionar itens ao carrinho',
+        '4. Finalizar e enviar para aprovacao',
+        '',
+        '**Gerenciar Familias**',
+        'Criar, editar, remover, visualizar membros e consultar historico da familia.',
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder()
+        .setCustomId('order_start')
+        .setLabel('Fazer Pedido')
+        .setEmoji('\u{1F4E6}')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('order_family_manage')
+        .setLabel('Gerenciar Familias')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('order_history')
+        .setLabel('Historico')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setLabel('Painel Web')
+        .setURL('https://bot-vortex.shardweb.app/dashboard/orders')
+        .setStyle(ButtonStyle.Link)
+    );
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
     

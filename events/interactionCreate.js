@@ -8,7 +8,7 @@ const { createAbsence, approveAbsenceRequest, rejectAbsenceRequest, removeOwnAbs
 const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChannelRecord, getApprovedSetChannelRecordByUser } = require('../utils/approvedSetChannels');
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { handleBauButton, handleBauModal } = require('../utils/bauManager');
-const { handleOrderButton, handleOrderModal } = require('../utils/orderManager');
+const { handleOrderButton, handleOrderModal, handleOrderSelect } = require('../utils/orderManager');
 const { hasAnyVortexRole, hasVortexAccess, hasPanelAccess } = require('../utils/permissions');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
@@ -412,6 +412,10 @@ module.exports = {
 
         if (interaction.isButton() && String(interaction.customId || '').startsWith('order_')) {
             return runInteractionHandler(interaction, `Encomenda botao: ${interaction.customId}`, () => handleOrderButton(interaction));
+        }
+
+        if (interaction.isStringSelectMenu() && String(interaction.customId || '').startsWith('order_')) {
+            return runInteractionHandler(interaction, `Encomenda select: ${interaction.customId}`, () => handleOrderSelect(interaction));
         }
 
         if (interaction.isModalSubmit() && String(interaction.customId || '').startsWith('modal_order_')) {
