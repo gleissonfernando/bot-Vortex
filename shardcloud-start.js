@@ -116,12 +116,11 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('NODE_ENV', 'production');
   setRuntimeDefault('SHARDCLOUD_DEPLOY_MODE', 'git');
   setRuntimeDefault('BUILD_API_ON_STARTUP', 'true');
-  setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'true');
+  setRuntimeDefault('BUILD_WEB_ON_STARTUP', 'false');
   setRuntimeDefault('REQUIRE_BUILT_ASSETS', 'false');
   setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
-  setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
   // Calcular NODE_OPTIONS com base na memoria atribuida pela ShardCloud (process.env.MEMORY)
-  // Usamos um teto conservador porque a ShardCloud roda proxy + API + bot + web
+  // Usamos um teto conservador porque a ShardCloud roda proxy + API + bot
   // no mesmo container. Em 1GB, heaps grandes demais derrubam a porta publica.
   try {
     const detectedMem = detectAvailableMemoryMb();
@@ -132,40 +131,17 @@ function applyShardCloudRuntimeDefaults() {
     calculated = Math.max(192, calculated);
     setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
 
-    // If the runtime is constrained (<=1GB), avoid heavy startup work when the
-    // deploy package already contains the prebuilt Next standalone app. Some
-    // ShardCloud Git deployments arrive as source only; in that case we must
-    // allow one recovery build or the public proxy stays on "Vortex iniciando".
     if (detectedMem <= 1024) {
-      const packagedStandaloneServer = path.join(
-        rootDir,
-        'frequency-panel',
-        'apps',
-        'web',
-        '.next',
-        'standalone',
-        'apps',
-        'web',
-        'server.js'
-      );
-      const hasPackagedWebBuild = fs.existsSync(packagedStandaloneServer);
       process.env.BUILD_API_ON_STARTUP = 'false';
       process.env.BUILD_WEB_ON_STARTUP = 'false';
-      if (!hasPackagedWebBuild) {
-        console.warn('[shardcloud] Next standalone ausente em baixa memoria. Pulando build no startup e usando fallback web para manter a porta publica online.');
-      }
-      // Keep the public dashboard online by starting the prebuilt Next standalone
-      // app when present. Source-only deploys fall back to the web dev server;
-      // building Next during startup in 1GB can make ShardCloud drop port 80.
-      process.env.START_FREQUENCY_WEB = 'true';
+      process.env.START_FREQUENCY_WEB = 'false';
       // favor a lightweight bot mode and reduce expensive startup tasks
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
       process.env.REGISTER_COMMANDS_ON_STARTUP = 'false';
-      setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '600000');
+      setRuntimeDefault('DISCORD_BOT_START_DELAY_MS', '0');
       setRuntimeDefault('DISCORD_BOT_NODE_OPTIONS', '--max-old-space-size=160');
       setRuntimeDefault('FREQUENCY_API_NODE_OPTIONS', '--max-old-space-size=160');
-      setRuntimeDefault('FREQUENCY_WEB_NODE_OPTIONS', '--max-old-space-size=192');
 
       // aggressive cache/interval defaults to save RAM/CPU
       setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '0');
@@ -182,12 +158,13 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('SHARDCLOUD_REQUIRE_PORT_80', 'true');
   setRuntimeDefault('START_DISCORD_BOT', 'true');
   setRuntimeDefault('START_FREQUENCY_API', 'true');
-  setRuntimeDefault('START_FREQUENCY_WEB', 'true');
-  // Permitir sobrescrever para desabilitar o Next/web em runtimes pequenos ou por configuracao
-  if (String(process.env.SKIP_FREQUENCY_WEB || process.env.NO_NEXT || '').trim().toLowerCase() === 'true') {
-    process.env.START_FREQUENCY_WEB = 'false';
-    console.log('[shardcloud] SKIP_FREQUENCY_WEB/NO_NEXT=true -> frequency web build/start disabled');
+  setRuntimeDefault('START_FREQUENCY_WEB', 'false');
+  if (process.env.START_FREQUENCY_WEB && !isFalseValue(process.env.START_FREQUENCY_WEB)) {
+    console.warn('[shardcloud] START_FREQUENCY_WEB ignorado: runtime Node-only nao inicia web separado.');
   }
+  process.env.START_FREQUENCY_WEB = 'false';
+  process.env.BUILD_WEB_ON_STARTUP = 'false';
+  console.log('[shardcloud] Node-only ativo: web build/start desabilitado.');
   setRuntimeDefault('BOT_LIGHT_MODE', 'true');
   setRuntimeDefault('FIVEM_SYSTEM_ENABLED', 'true');
   setRuntimeDefault('MONGODB_REQUIRED', 'false');
@@ -213,14 +190,10 @@ function applyShardCloudRuntimeDefaults() {
 applyShardCloudRuntimeDefaults();
 
 const panelDir = path.join(rootDir, 'frequency-panel');
-const webDir = path.join(panelDir, 'apps', 'web');
 let apiPort = String(process.env.INTERNAL_API_PORT || process.env.FREQUENCY_API_PORT || 4100);
 const webPort = String(process.env.PORT || process.env.WEB_PORT || 80);
 const botApiPort = String(process.env.BOT_API_PORT || 3000);
 const apiDist = path.join(panelDir, 'apps', 'api', 'dist', 'index.js');
-const standaloneServer = path.join(webDir, '.next', 'standalone', 'apps', 'web', 'server.js');
-const standaloneWebDir = path.dirname(standaloneServer);
-let webInternalPort = String(process.env.WEB_INTERNAL_PORT || 3001);
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL
   || process.env.VORTEX_TRANSCRIPT_BASE_URL
@@ -392,6 +365,59 @@ function serveRuntimeStatic(req, res, pathname) {
   return false;
 }
 
+function serveNodeSite(req, res, pathname) {
+  if (!['GET', 'HEAD'].includes(req.method || 'GET')) {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
+    return true;
+  }
+
+  const health = runtimeHealth();
+  const apiStatus = health.children['frequency-api']?.status || 'starting';
+  const botStatus = health.children['discord-bot']?.status || (health.config.hasDiscordToken ? 'starting' : 'missing token');
+  const safePath = pathname === '/' ? '/' : pathname.replace(/[<>&"]/g, '');
+  const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vortex</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#0b1220;color:#e5e7eb;font-family:Arial,sans-serif;display:grid;place-items:center}
+    main{width:min(760px,calc(100% - 32px));padding:28px;border:1px solid rgba(148,163,184,.24);border-radius:10px;background:#111827}
+    h1{margin:0 0 8px;font-size:26px}
+    p{color:#cbd5e1;line-height:1.5}
+    dl{display:grid;grid-template-columns:130px 1fr;gap:10px 14px;margin:22px 0}
+    dt{color:#94a3b8}
+    dd{margin:0;font-weight:700}
+    a{color:#67e8f9}
+    code{color:#fde68a}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vortex Online</h1>
+    <p>Runtime Node-only ativo. O bot, a API e os arquivos publicos estao no proprio Node.</p>
+    <dl>
+      <dt>Rota</dt><dd><code>${safePath}</code></dd>
+      <dt>Bot</dt><dd>${botStatus}</dd>
+      <dt>API</dt><dd>${apiStatus}</dd>
+      <dt>Modo</dt><dd>${health.mode}</dd>
+    </dl>
+    <p><a href="/health">/health</a> · <a href="/api/health">/api/health</a> · <a href="/api/auth/discord/start?next=/dashboard">entrar com Discord</a></p>
+  </main>
+</body>
+</html>`;
+
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+  res.end(html);
+  return true;
+}
+
 async function isFrequencyApiHealthy(port) {
   const result = await getJson(`http://127.0.0.1:${port}/health`);
   return Boolean(result?.statusCode === 200 && result.data?.ok && result.data?.service === 'vortex-frequency-api');
@@ -495,7 +521,6 @@ process.env.API_ORIGIN ||= publicBaseUrl || `http://localhost:${webPort}`;
 process.env.SITE_ORIGIN ||= publicBaseUrl || 'https://bot-vortex.shardweb.app';
 process.env.DISCORD_OAUTH_REDIRECT_URI ||= `${process.env.SITE_ORIGIN.replace(/\/+$/, '')}/api/auth/discord/callback`;
 process.env.INTERNAL_API_URL ||= `http://127.0.0.1:${apiPort}`;
-process.env.NEXT_PUBLIC_API_URL ||= '/api';
 
 function runtimeHealth() {
   return {
@@ -507,7 +532,6 @@ function runtimeHealth() {
       public: getPublicProxyPorts(),
       api: apiPort,
       botApi: botApiPort,
-      webInternal: webInternalPort,
     },
     config: {
       startPublicProxy: shouldStartPublicProxy,
@@ -533,8 +557,13 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
     if (serveRuntimeStatic(req, res, pathname)) return;
 
     const isApi = req.url?.startsWith('/api/');
-    const target = new URL(isApi ? process.env.INTERNAL_API_URL : `http://127.0.0.1:${webInternalPort}`);
-    const targetPath = isApi ? req.url.slice(4) || '/' : req.url || '/';
+    if (!isApi) {
+      serveNodeSite(req, res, pathname);
+      return;
+    }
+
+    const target = new URL(process.env.INTERNAL_API_URL);
+    const targetPath = req.url.slice(4) || '/';
     const upstream = http.request({
       hostname: target.hostname,
       port: target.port,
@@ -553,30 +582,8 @@ function createProxyServer(port, { fatalOnError = true } = {}) {
 
     upstream.on('error', (error) => {
       console.error('[shardcloud] proxy error:', error.message);
-      if (isApi) {
-        if (!res.headersSent) res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify({ ok: false, error: 'Vortex API unavailable' }));
-        return;
-      }
-
-      if (!res.headersSent) {
-        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      }
-      res.end(`<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="10">
-  <title>Vortex iniciando</title>
-  <style>
-    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif}
-    main{max-width:520px;padding:28px;border:1px solid rgba(96,165,250,.28);border-radius:10px;background:rgba(15,23,42,.72);text-align:center}
-    h1{margin:0 0 12px;font-size:22px}p{line-height:1.5;color:#cbd5e1}
-  </style>
-</head>
-<body><main><h1>Vortex iniciando</h1><p>O painel ainda esta subindo ou reiniciando. A pagina vai tentar novamente em alguns segundos.</p></main></body>
-</html>`);
+      if (!res.headersSent) res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, error: 'Vortex API unavailable' }));
     });
 
     req.pipe(upstream);
@@ -618,13 +625,6 @@ function startProxy() {
   }));
 }
 
-function copyIfExists(source, target) {
-  if (!fs.existsSync(source)) return false;
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.cpSync(source, target, { recursive: true, force: true });
-  return true;
-}
-
 function newestMtimeMs(target) {
   if (!fs.existsSync(target)) return 0;
   const stat = fs.statSync(target);
@@ -632,27 +632,10 @@ function newestMtimeMs(target) {
 
   let newest = stat.mtimeMs;
   for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-    if (entry.name === '.next' || entry.name === 'node_modules') continue;
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
     newest = Math.max(newest, newestMtimeMs(path.join(target, entry.name)));
   }
   return newest;
-}
-
-function shouldBuildWeb() {
-  if (process.env.FORCE_WEB_BUILD === 'true') return true;
-  if (!envFlag('BUILD_WEB_ON_STARTUP', false)) return false;
-  if (process.env.SHARDCLOUD_DEPLOY_MODE === 'git') return true;
-  if (!fs.existsSync(standaloneServer)) return true;
-
-  const standaloneMtime = fs.statSync(standaloneServer).mtimeMs;
-  const sourceMtime = Math.max(
-    newestMtimeMs(path.join(webDir, 'src')),
-    newestMtimeMs(path.join(webDir, 'public')),
-    newestMtimeMs(path.join(webDir, 'package.json')),
-    newestMtimeMs(path.join(webDir, 'next.config.mjs')),
-    newestMtimeMs(path.join(panelDir, 'package.json'))
-  );
-  return sourceMtime > standaloneMtime;
 }
 
 function shouldBuildApi() {
@@ -671,28 +654,12 @@ function shouldBuildApi() {
   return sourceMtime > distMtime;
 }
 
-function ensureStandaloneWebAssets() {
-  if (!fs.existsSync(standaloneServer)) return;
-
-  const copiedStatic = copyIfExists(
-    path.join(webDir, '.next', 'static'),
-    path.join(standaloneWebDir, '.next', 'static')
-  );
-  const copiedPublic = copyIfExists(
-    path.join(webDir, 'public'),
-    path.join(standaloneWebDir, 'public')
-  );
-
-  console.log(`[shardcloud] standalone assets ready: static=${copiedStatic ? 'yes' : 'no'}, public=${copiedPublic ? 'yes' : 'no'}`);
-}
-
 const shouldStartDiscordBot = envFlag('START_DISCORD_BOT', true);
 const shouldStartFrequencyApi = envFlag('START_FREQUENCY_API', true);
-const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', true);
+const shouldStartFrequencyWeb = envFlag('START_FREQUENCY_WEB', false);
 const shouldStartPublicProxy = shouldForcePublicProxy() || envFlag('START_PUBLIC_PROXY', true);
 const requireBuiltAssets = envFlag('REQUIRE_BUILT_ASSETS', false);
 
-let web = null;
 let proxyServers = [];
 
 function exitMissingBuiltAsset(label, relativePath) {
@@ -830,62 +797,10 @@ async function main() {
     console.log('[shardcloud] Frequency API disabled by START_FREQUENCY_API=false.');
   }
 
-  if (shouldStartFrequencyWeb && shouldBuildWeb()) {
-    console.log('[shardcloud] Building Next web for production...');
-    const built = run('npm', ['--prefix', 'frequency-panel', 'run', 'build:web'], {
-      cwd: rootDir,
-      env: {
-        INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-        NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-      },
-      fatal: false
-    });
-    if (!built) console.warn('[shardcloud] Next web build failed. Trying to start with available files.');
-  }
-
   if (shouldStartFrequencyWeb) {
-    if (requireBuiltAssets && !fs.existsSync(standaloneServer)) {
-      exitMissingBuiltAsset('Next standalone server', path.relative(rootDir, standaloneServer));
-    }
-
-    ensureStandaloneWebAssets();
-
-    if (await isPortBusy(webInternalPort)) {
-      const nextWebPort = await findFreePort(Number(webInternalPort) + 1);
-      if (!nextWebPort) {
-        console.warn(`[shardcloud] frequency-web skipped: port ${webInternalPort} is busy and no fallback port is available.`);
-        return;
-      }
-      console.warn(`[shardcloud] port ${webInternalPort} is busy. Starting frequency-web on ${nextWebPort}.`);
-      webInternalPort = nextWebPort;
-    } else {
-      web = fs.existsSync(standaloneServer)
-        ? start('frequency-web', 'node', [standaloneServer], {
-            cwd: webDir,
-            env: {
-              NODE_OPTIONS: process.env.FREQUENCY_WEB_NODE_OPTIONS || process.env.NODE_OPTIONS,
-              HOSTNAME: '0.0.0.0',
-              PORT: webInternalPort,
-              NODE_ENV: 'production',
-              INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-              NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-            },
-            fatal: false,
-            restart: true
-          })
-        : start('frequency-web-dev', 'npm', ['--prefix', 'frequency-panel', '--workspace', 'apps/web', 'run', 'dev', '--', '-p', webInternalPort, '-H', '127.0.0.1'], {
-            cwd: rootDir,
-            env: {
-              NODE_OPTIONS: process.env.FREQUENCY_WEB_NODE_OPTIONS || process.env.NODE_OPTIONS,
-              INTERNAL_API_URL: process.env.INTERNAL_API_URL,
-              NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
-            },
-            fatal: false,
-            restart: true
-          });
-    }
+    console.warn('[shardcloud] frequency-web ignorado: runtime Node-only serve a pagina publica sem web separado.');
   } else {
-    console.log('[shardcloud] Frequency web disabled by START_FREQUENCY_WEB=false.');
+    console.log('[shardcloud] Frequency web disabled; public page served by Node-only runtime.');
   }
 }
 

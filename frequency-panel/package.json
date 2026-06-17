@@ -4,8 +4,7 @@
   "private": true,
   "workspaces": [
     "apps/api",
-    "apps/bot",
-    "apps/web"
+    "apps/bot"
   ],
   "engines": {
     "node": ">=20.19.0",
@@ -14,13 +13,10 @@
   "scripts": {
     "dev": "npm run dev --workspace apps/api",
     "dev:api": "npm run dev --workspace apps/api",
-    "dev:web": "npm run dev --workspace apps/web",
     "dev:bot": "npm run dev --workspace apps/bot",
-    "build": "npm run build --workspace apps/api && npm run build --workspace apps/bot && npm run build --workspace apps/web",
+    "build": "npm run build --workspace apps/api && npm run build --workspace apps/bot",
     "build:api": "npm run build --workspace apps/api",
-    "build:web": "npm run build --workspace apps/web",
     "start:api": "npm run start --workspace apps/api",
-    "start:web": "npm run start --workspace apps/web",
     "start:bot": "npm run start --workspace apps/bot"
   },
   "dependencies": {

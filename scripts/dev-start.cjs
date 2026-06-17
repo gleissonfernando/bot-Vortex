@@ -5,6 +5,7 @@ process.env.WEB_INTERNAL_PORT ||= '3001';
 process.env.START_DISCORD_BOT ||= 'false';
 process.env.BUILD_API_ON_STARTUP ||= 'false';
 process.env.BUILD_WEB_ON_STARTUP ||= 'false';
+process.env.START_FREQUENCY_WEB ||= 'false';
 process.env.REQUIRE_BUILT_ASSETS ||= 'false';
 
 require('../shardcloud-start');

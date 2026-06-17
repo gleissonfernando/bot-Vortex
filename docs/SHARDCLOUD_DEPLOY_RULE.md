@@ -13,15 +13,15 @@ Esse comando faz o preflight completo:
 - confere `package.json`, `.shardcloud` e workflow do GitHub;
 - checa sintaxe dos arquivos JS do bot com `node --check`;
 - confirma que `/encomenda`, `/exibir` e `/painel` estao prontos para registro no Discord;
-- compila API, bot e web do `frequency-panel`;
-- confirma que existem `frequency-panel/apps/api/dist/index.js` e o Next standalone em `frequency-panel/apps/web/.next/standalone/apps/web/server.js`;
+- compila API e bot do `frequency-panel`;
+- confirma que existem `frequency-panel/apps/api/dist/index.js` e `frequency-panel/apps/bot/dist/index.js`;
 - falha antes do deploy se o pacote nao estiver pronto.
 
 ## Regra da ShardCloud
 
 O deploy oficial fica no GitHub Actions usando `shard-cloud/action@main`, com `commit <app_id>` seguido de `restart <app_id>`.
 
-Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos (`dist` e `.next/standalone`) e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches e `.env`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
+Antes da action enviar para a ShardCloud, o workflow roda `npm run deploy:check`, gera os artefatos `dist` da API e do bot, e remove arquivos de CI que nao devem entrar no deploy, como `node_modules`, caches e `.env`. Os `package-lock.json` precisam ir no pacote para a hospedagem instalar o mesmo grafo que passou no preflight.
 
 Por isso o `.shardcloud` deve ficar curto:
 
@@ -30,24 +30,24 @@ APPID=ccc23af3-03b5-4174-8143-f9da45518d1c
 MAIN=shardcloud-start.js
 LANGUAGE=node
 MEMORY=1024
-CUSTOM_COMMAND=NO_NEXT=true PORT=80 npm start
+CUSTOM_COMMAND=PORT=80 npm start
 ```
 
-O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres, conforme a regra da ShardCloud. Mantenha `NO_NEXT=true PORT=80 npm start` quando a hospedagem estiver em modo Node-only para garantir que o proxy/API e arquivos runtime, como transcripts, fiquem online sem subir o Next em 1GB; as demais flags de hospedagem ficam no `shardcloud-start.js` e nas variaveis do painel.
-O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud. Nao deixe um fallback de app id escondido no workflow.
+O `CUSTOM_COMMAND` precisa ficar abaixo de 250 caracteres. Mantenha `PORT=80 npm start` para garantir que o bot, proxy, API e arquivos runtime, como transcripts, fiquem online pelo Node-only. O `APPID` precisa ficar no `.shardcloud` para que `commit` e `restart` usem sempre o mesmo app da ShardCloud.
 
 ## Runtime da hospedagem
 
 `shardcloud-start.js` e o supervisor da Vortex na ShardCloud. Ele:
 
-- aplica defaults de producao para build de API/web, registro de comandos e uso de memoria;
-- evita build pesado do web no startup quando a hospedagem esta em 1GB;
-- inicia o bot Discord e a Frequency API; o Next standalone fica desabilitado no modo Node-only;
+- aplica defaults de producao para build de API, registro de comandos e uso de memoria;
+- nao faz build nem start de web separado;
+- inicia o bot Discord imediatamente e a Frequency API;
+- serve uma pagina publica simples pelo proprio Node para rotas como `/` e `/dashboard`;
 - serve arquivos runtime usados pelo site, como `/transcripts`, `/assets` e `/vendor/fontawesome`, direto pelo proxy publico;
 - abre o proxy publico por padrao e mantem a porta `80` obrigatoria na ShardCloud, mesmo se `PORT` vier errado;
-- expõe `/health` para diagnostico rapido no Next e no supervisor; `/_shardcloud/health` tambem existe no supervisor se a ShardCloud encaminhar trafego publico por ele;
+- expoe `/health` e `/_shardcloud/health` no supervisor;
 - reinicia processos internos que cairem;
-- gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados, para impedir loop de crash. Para sessoes estaveis, configure secrets fixos na ShardCloud.
+- gera `JWT_SECRET` e `INGEST_SECRET` efemeros apenas se eles nao estiverem configurados. Para sessoes estaveis, configure secrets fixos na ShardCloud.
 
 ## Diagnostico de 502 na ShardCloud
 
@@ -55,16 +55,18 @@ Quando `https://bot-vortex.shardweb.app/health` retorna a pagina `502 Bad Gatewa
 
 Verifique nesta ordem:
 
-- `CUSTOM_COMMAND=NO_NEXT=true PORT=80 npm start` no `.shardcloud`;
+- `CUSTOM_COMMAND=PORT=80 npm start` no `.shardcloud`;
 - `SHARDCLOUD_ALLOW_PUBLIC_PROXY_DISABLE` ausente ou diferente de `true`;
 - `SHARDCLOUD_REQUIRE_PORT_80` ausente ou diferente de `false`;
 - `PORT=80` e `WEB_PORT=80` na hospedagem;
 - `START_DISCORD_BOT` ausente ou diferente de `false`;
+- `DISCORD_BOT_START_DELAY_MS` ausente ou igual a `0`;
 - `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI` configurados na ShardCloud.
 
 Se `/health` voltar JSON, confira `config.startDiscordBot`, `config.hasDiscordToken` e `children.discord-bot` para saber se o bot iniciou, foi pulado por falta de token, ou foi desligado por variavel de ambiente.
 
 O arquivo `.shardignore` tambem deve continuar versionado como contrato do pacote, mas a CLI oficial da ShardCloud nao le esse arquivo. Por isso o workflow precisa remover explicitamente cache, segredos e JSONs de runtime antes do `commit`.
+
 Quando a validacao publica falhar, o workflow consulta o status do app pela API da ShardCloud e publica apenas `status`, `name`, `ram` e `vcpu` como anotacao do check. Nao use `logs`/`status` do CLI dentro da Action porque esses comandos ficam em streaming/interativos.
 
 ## Variaveis obrigatorias no GitHub Actions
@@ -75,13 +77,11 @@ Configure no GitHub, em `Settings > Secrets and variables > Actions`:
 SHARD_CLOUD_API_KEY=
 ```
 
-`SHARD_CLOUD_API_KEY` precisa ser uma API key criada no painel da ShardCloud em `Config > Integrations`, no mesmo usuario que tem permissao para atualizar o app.
-O app alvo fica em `APPID` dentro da `.shardcloud`. Se o app mudar, atualize esse arquivo e rode `npm run deploy:check`.
-Opcionalmente configure `SHARDCLOUD_PUBLIC_URL` se o dominio publico mudar.
+`SHARD_CLOUD_API_KEY` precisa ser uma API key criada no painel da ShardCloud em `Config > Integrations`, no mesmo usuario que tem permissao para atualizar o app. O app alvo fica em `APPID` dentro da `.shardcloud`. Se o app mudar, atualize esse arquivo e rode `npm run deploy:check`.
 
 ## Variaveis obrigatorias na hospedagem
 
-Configure na ShardCloud, nunca no Git. O bloco canônico tem 34 linhas:
+Configure na ShardCloud, nunca no Git. O bloco canonico tem 34 linhas:
 
 ```env
 DISCORD_TOKEN=
@@ -120,18 +120,19 @@ FREQUENCY_MEMBER_SYNC_INTERVAL_MS=900000
 POINT_AUTOMATION_INTERVAL_MS=900000
 ```
 
-As variaveis canonicas sao `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI`. O runtime tambem aceita os aliases comuns da ShardCloud (`TOKEN`, `CLIENT_ID`, `GUILD_ID`, `DATABASE_URL`, `MONGO_URI`, `DISCORD_BOT_TOKEN`) se voce precisar trocar algum nome, mas nao configure a variavel canonica e o alias ao mesmo tempo quando estiver mantendo o limite de 34 linhas.
+As variaveis canonicas sao `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` e `MONGODB_URI`. O runtime tambem aceita os aliases comuns da ShardCloud (`TOKEN`, `CLIENT_ID`, `GUILD_ID`, `DATABASE_URL`, `MONGO_URI`, `DISCORD_BOT_TOKEN`) se voce precisar trocar algum nome.
+
 `JWT_SECRET` e `INGEST_SECRET` precisam ter pelo menos 32 caracteres. `ADMIN_PASSWORD` precisa ter pelo menos 12 caracteres. Para validar o `.env` local sem mostrar segredos:
 
 ```bash
 npm run deploy:check:env
 ```
 
-## Erro `user cannot update project`
+## Erro `user cannot update project` ou `Project not found`
 
-Esse erro vem da API da ShardCloud, nao da build da Vortex.
+Esse erro vem da API da ShardCloud, nao da build da Vortex. Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem permissao para atualizar o app configurado, ou que o `APPID` nao aponta para o projeto correto.
 
-Ele significa que a API key ou integracao usada no GitHub/ShardCloud nao tem permissao para atualizar o app configurado. Corrija assim:
+Corrija assim:
 
 - No GitHub, em `Settings > Secrets and variables > Actions`, atualize `SHARD_CLOUD_API_KEY` com uma API key criada no mesmo usuario que e dono do app na ShardCloud.
 - Se o app ID mudou, atualize `APPID` na `.shardcloud` com o ID correto do projeto.

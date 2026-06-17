@@ -183,7 +183,7 @@ function walkJsFiles(target, output = []) {
     return output;
   }
   for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'dist') continue;
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
     walkJsFiles(path.join(target, entry.name), output);
   }
   return output;
@@ -316,10 +316,10 @@ function checkShardCloudFile() {
   }
 
   const customCommand = shard.CUSTOM_COMMAND || '';
-  if (customCommand === 'NO_NEXT=true PORT=80 npm start') {
+  if (customCommand === 'PORT=80 npm start') {
     ok('.shardcloud CUSTOM_COMMAND curto chama npm start na porta 80 em modo Node-only');
   } else {
-    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: NO_NEXT=true PORT=80 npm start');
+    fail('.shardcloud CUSTOM_COMMAND precisa ser simples: PORT=80 npm start');
   }
 
   if (customCommand.length <= 250) {
@@ -404,10 +404,10 @@ function checkShardCloudRuntime() {
     }
   }
 
-  if (/detectedMem <= 1024[\s\S]{0,700}START_FREQUENCY_WEB\s*=\s*['"]false['"]/.test(runtime)) {
-    fail('runtime ShardCloud nao pode desligar START_FREQUENCY_WEB automaticamente em MEMORY<=1024; isso deixa o site preso em "Vortex iniciando"');
+  if (/process\.env\.START_FREQUENCY_WEB\s*=\s*['"]false['"]/.test(runtime)) {
+    ok('runtime ShardCloud desliga web separado e serve pagina publica pelo Node');
   } else {
-    ok('runtime ShardCloud mantem o painel web ligado em MEMORY<=1024');
+    fail('runtime ShardCloud precisa manter START_FREQUENCY_WEB=false no modo Node-only');
   }
 
   if (/detectedMem <= 1024[\s\S]{0,500}calculated = Math\.min\(calculated, 256\)/.test(runtime)) {
@@ -418,16 +418,13 @@ function checkShardCloudRuntime() {
 
   const lowMemorySnippets = [
     "process.env.BUILD_API_ON_STARTUP = 'false'",
-    'packagedStandaloneServer',
-    'hasPackagedWebBuild',
     "process.env.BUILD_WEB_ON_STARTUP = 'false'",
-    "process.env.START_FREQUENCY_WEB = 'true'",
+    "process.env.START_FREQUENCY_WEB = 'false'",
     "process.env.REGISTER_COMMANDS_ON_STARTUP = 'false'",
     'DISCORD_BOT_START_DELAY_MS',
     'DISCORD_BOT_NODE_OPTIONS',
     'FREQUENCY_API_NODE_OPTIONS',
-    'FREQUENCY_WEB_NODE_OPTIONS',
-    'setTimeout(startDiscordBot, botStartDelayMs)'
+    'serveNodeSite(req, res, pathname)'
   ];
   for (const snippet of lowMemorySnippets) {
     if (runtime.includes(snippet)) {
@@ -533,10 +530,8 @@ function checkStrictEnv() {
 
 function checkBuildArtifacts() {
   requireFile('frequency-panel/apps/api/dist/index.js', 'Frequency API dist');
-  requireFile('frequency-panel/apps/web/.next/standalone/apps/web/server.js', 'Next standalone server');
-  requireFile('frequency-panel/apps/web/.next/static', 'Next static assets');
-  requireFile('frequency-panel/apps/web/public/vortex-logo.png', 'public vortex-logo.png');
-  requireFile('frequency-panel/apps/web/src/app/health/route.ts', 'Next /health route');
+  requireFile('frequency-panel/apps/bot/dist/index.js', 'Frequency bot dist');
+  requireFile('public/sistema-de-bau-banner.png', 'public static asset');
 }
 
 function main() {

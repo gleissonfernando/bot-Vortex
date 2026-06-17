@@ -49,8 +49,6 @@ jobs:
           rm -rf frequency-panel/node_modules
           rm -rf frequency-panel/apps/api/node_modules
           rm -rf frequency-panel/apps/bot/node_modules
-          rm -rf frequency-panel/apps/web/node_modules
-          rm -rf frequency-panel/apps/web/.next/cache
           rm -rf logs reports coverage .cache
           rm -f .env .env.*
           rm -f *.log

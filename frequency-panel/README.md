@@ -1,10 +1,9 @@
 # Vortex Frequency Panel
 
-Painel web profissional para gestao de frequencia de membros do Discord.
+Servicos Node.js para gestao de frequencia de membros do Discord.
 
 ## Stack
 
-- Frontend: Next.js, React, TailwindCSS, Recharts
 - Backend: Node.js, Express, JWT, MongoDB
 - Bot Discord: discord.js
 - Banco: MongoDB
@@ -16,7 +15,6 @@ frequency-panel/
   apps/
     api/          API Node.js com auth, membros, ponto, frequencia e exportacao
     bot/          Bot Discord que sincroniza membros e envia eventos de ponto
-    web/          Frontend Next.js com dashboard administrativo
   docker-compose.yml
   .env.example
 ```
@@ -24,7 +22,6 @@ frequency-panel/
 ## Funcionalidades
 
 - Login seguro com JWT.
-- Dashboard escuro com menu lateral.
 - Lista de membros do Discord.
 - Busca por nome, ID, status e cargo.
 - Perfil individual do membro.
@@ -69,13 +66,7 @@ npm install
 npm run dev:api
 ```
 
-7. Rode o frontend:
-
-```bash
-npm run dev:web
-```
-
-8. Rode o bot:
+7. Rode o bot:
 
 ```bash
 npm run dev:bot
@@ -83,7 +74,6 @@ npm run dev:bot
 
 ## URLs locais
 
-- Frontend: `http://localhost:3000`
 - API: `http://localhost:4100`
 - Healthcheck: `http://localhost:4100/health`
 
