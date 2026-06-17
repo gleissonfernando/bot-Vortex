@@ -110,7 +110,6 @@ const ratioOptions = [
 const punishmentOptions = [
   { id: 'log', name: 'Apenas Log' },
   { id: 'warn', name: 'Advertencia' },
-  { id: 'remove_admin_roles', name: 'Remover Cargos Administrativos' },
   { id: 'kick', name: 'Kick' },
   { id: 'ban', name: 'Ban' }
 ];

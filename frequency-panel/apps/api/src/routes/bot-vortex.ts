@@ -127,7 +127,7 @@ function normalizeIdList(value: unknown) {
 function normalizeProtection(value: any) {
   return {
     enabled: value?.enabled === true,
-    punishment: ['log', 'warn', 'remove_admin_roles', 'kick', 'ban'].includes(String(value?.punishment || ''))
+    punishment: ['log', 'warn', 'kick', 'ban'].includes(String(value?.punishment || ''))
       ? String(value.punishment)
       : 'log'
   };

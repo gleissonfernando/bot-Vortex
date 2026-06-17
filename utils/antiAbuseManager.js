@@ -21,7 +21,6 @@ const VOICE_LOCK_REASON = 'Anti-Abuso Vortex: bloquear desconexao/movimento de u
 const PUNISHMENT_LABELS = {
   log: 'Apenas Log',
   warn: 'Advertencia',
-  remove_admin_roles: 'Remover Cargos Administrativos',
   kick: 'Kick',
   ban: 'Ban',
 };
@@ -103,6 +102,27 @@ function isShieldedDisconnectEnabled(settings) {
 
 function getPunishment(settings, protectionKey) {
   return settings.protections?.[protectionKey]?.punishment || 'log';
+}
+
+function hasAdministratorPermission(role) {
+  return role?.permissions?.has?.(PermissionFlagsBits.Administrator, false) === true;
+}
+
+function hasExplicitMoveMembersPermission(role) {
+  return role?.permissions?.has?.(PermissionFlagsBits.MoveMembers, false) === true;
+}
+
+function getConfiguredAdminRoleIds() {
+  const config = readConfig();
+  return new Set(normalizeIds([
+    ...(Array.isArray(config.VORTEX_ACCESS_ROLES?.admin) ? config.VORTEX_ACCESS_ROLES.admin : []),
+    ...(Array.isArray(config.VORTEX_ROLE_LEVELS?.admin) ? config.VORTEX_ROLE_LEVELS.admin : []),
+  ]));
+}
+
+function isProtectedAdminRole(role, configuredAdminRoleIds = getConfiguredAdminRoleIds()) {
+  if (!role?.id) return false;
+  return hasAdministratorPermission(role) || configuredAdminRoleIds.has(String(role.id));
 }
 
 function sleep(ms) {
@@ -286,23 +306,6 @@ async function applyPunishment(guild, executorId, protectionKey, targetId, setti
     return { punishment, applied: 'warned' };
   }
 
-  if (punishment === 'remove_admin_roles') {
-    const removable = member.roles.cache.filter((role) => {
-      if (role.id === guild.id || role.managed || !role.editable) return false;
-      return role.permissions.has(PermissionFlagsBits.Administrator)
-        || role.permissions.has(PermissionFlagsBits.ManageGuild)
-        || role.permissions.has(PermissionFlagsBits.ManageChannels)
-        || role.permissions.has(PermissionFlagsBits.ManageRoles)
-        || role.permissions.has(PermissionFlagsBits.KickMembers)
-        || role.permissions.has(PermissionFlagsBits.BanMembers)
-        || role.permissions.has(PermissionFlagsBits.MoveMembers)
-        || role.permissions.has(PermissionFlagsBits.ManageWebhooks);
-    });
-    if (!removable.size) return { punishment, applied: 'no_admin_roles' };
-    await member.roles.remove(removable, `Anti-Abuso Vortex: ${PROTECTION_LABELS[protectionKey] || protectionKey}`).catch(() => null);
-    return { punishment, applied: `removed_roles:${removable.size}` };
-  }
-
   if (punishment === 'kick') {
     if (!member.kickable) return { punishment, applied: 'not_kickable' };
     await member.kick(`Anti-Abuso Vortex: ${PROTECTION_LABELS[protectionKey] || protectionKey}`).catch(() => null);
@@ -323,10 +326,11 @@ async function removeVoiceControlRoles(guild, executorId) {
   const member = await guild.members.fetch(executorId).catch(() => null);
   if (!member?.roles?.cache) return { applied: 'member_not_found', removed: 0 };
 
+  const configuredAdminRoleIds = getConfiguredAdminRoleIds();
   const removable = member.roles.cache.filter((role) => {
     if (role.id === guild.id || role.managed || !role.editable) return false;
-    return role.permissions.has(PermissionFlagsBits.Administrator)
-      || role.permissions.has(PermissionFlagsBits.MoveMembers);
+    if (isProtectedAdminRole(role, configuredAdminRoleIds)) return false;
+    return hasExplicitMoveMembersPermission(role);
   });
 
   if (!removable.size) return { applied: 'no_voice_control_roles', removed: 0 };
@@ -359,24 +363,28 @@ async function lockAntiDisconnectChannel(channel) {
 
 async function removeMoveMembersFromRoles(guild) {
   const roles = await guild.roles.fetch().catch(() => guild.roles.cache);
-  const summary = { checked: 0, updated: 0, removedAdministrator: 0, removedMoveMembers: 0, failed: 0 };
+  const summary = { checked: 0, updated: 0, removedAdministrator: 0, skippedAdministrator: 0, removedMoveMembers: 0, failed: 0 };
+  const configuredAdminRoleIds = getConfiguredAdminRoleIds();
 
   for (const role of roles.values()) {
     if (!role || role.id === guild.id || role.managed || !role.editable) continue;
     summary.checked += 1;
 
-    const hasAdministrator = role.permissions.has(PermissionFlagsBits.Administrator, false);
-    const hasMoveMembers = role.permissions.has(PermissionFlagsBits.MoveMembers, false);
-    if (!hasAdministrator && !hasMoveMembers) continue;
+    const hasAdministrator = isProtectedAdminRole(role, configuredAdminRoleIds);
+    const hasMoveMembers = hasExplicitMoveMembersPermission(role);
+    if (!hasMoveMembers) continue;
+    if (hasAdministrator) {
+      summary.skippedAdministrator += 1;
+      continue;
+    }
 
-    const permissions = role.permissions.remove(PermissionFlagsBits.Administrator, PermissionFlagsBits.MoveMembers);
+    const permissions = role.permissions.remove(PermissionFlagsBits.MoveMembers);
     await role.edit({ permissions }, VOICE_LOCK_REASON).then(() => {
       summary.updated += 1;
-      if (hasAdministrator) summary.removedAdministrator += 1;
       if (hasMoveMembers) summary.removedMoveMembers += 1;
     }).catch((error) => {
       summary.failed += 1;
-      logger.warn(`Anti-Abuso: nao foi possivel remover Administrator/MoveMembers do cargo ${role.name} (${role.id}): ${error.message}`);
+      logger.warn(`Anti-Abuso: nao foi possivel remover MoveMembers do cargo ${role.name} (${role.id}): ${error.message}`);
     });
   }
 
