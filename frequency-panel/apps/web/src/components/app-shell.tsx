@@ -21,7 +21,7 @@ import {
   Users
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { apiFetch, clearToken } from '@/lib/api';
+import { ApiError, apiFetch, clearToken } from '@/lib/api';
 import { Link, usePathname, useRouter } from '@/lib/router';
 
 const ANTI_ABUSE_MANAGER_IDS = new Set([
@@ -110,7 +110,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    apiFetch<{ user: ShellUser }>('/auth/me').then((data) => setUser(data.user)).catch(() => router.push('/'));
+    apiFetch<{ user: ShellUser }>('/auth/me')
+      .then((data) => setUser(data.user))
+      .catch((error) => {
+        clearToken();
+        router.replace(`/login?error=${encodeURIComponent(authErrorMessage(error))}`);
+      });
   }, [router]);
 
   useEffect(() => {
@@ -267,6 +272,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
     </div>
   );
+}
+
+function authErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return 'Sessao expirada. Entre novamente.';
+  if (error instanceof Error && error.message && error.message !== 'Unauthorized') return error.message;
+  return 'Nao foi possivel confirmar sua sessao. Entre novamente.';
 }
 
 function ProductBanner({ canManageSecurity }: { canManageSecurity: boolean }) {

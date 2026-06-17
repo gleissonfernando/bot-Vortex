@@ -110,7 +110,7 @@ export async function sessionFromRegisteredDiscordUser(input) {
     };
 }
 export async function sessionFromDiscordOAuthUser(input) {
-    const siteUser = await findSiteUser(input.guildId, input.discordId).catch(() => null);
+    const siteUser = await findAuthorizedSiteUser(input.guildId, input.discordId, input.guilds);
     if (!siteUser) {
         return { ok: false, error: 'Acesso negado. Sua conta nao foi cadastrada pela administracao.' };
     }
@@ -130,12 +130,28 @@ export async function sessionFromDiscordOAuthUser(input) {
         username: input.username,
         avatar: input.avatar || siteUser.discord_avatar_url || null,
         guilds: input.guilds,
-        guildId: input.guildId
+        guildId: siteUser.guild_id || input.guildId
     };
     return {
         ok: true,
         session: signSession(sessionUser)
     };
+}
+async function findAuthorizedSiteUser(primaryGuildId, discordId, guilds) {
+    const guildIds = [...new Set([primaryGuildId, ...guilds].map((guildId) => String(guildId || '').trim()).filter(Boolean))];
+    for (const guildId of guildIds) {
+        const siteUser = await findSiteUser(guildId, discordId).catch((error) => {
+            console.warn('[frequency-api] Falha ao consultar acesso do usuario no site', {
+                guildId,
+                discordId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return null;
+        });
+        if (siteUser)
+            return siteUser;
+    }
+    return null;
 }
 function siteUserToSession(siteUser, discordName) {
     return {

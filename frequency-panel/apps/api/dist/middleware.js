@@ -10,7 +10,19 @@ export async function requireAuth(req, res, next) {
     if (!user)
         return res.status(401).json({ ok: false, error: 'Unauthorized' });
     if (user.discordId) {
-        const siteUser = await findSiteUser(user.guildId || env.discordGuildId, user.discordId).catch(() => null);
+        let siteUser = null;
+        try {
+            siteUser = await findSiteUser(user.guildId || env.discordGuildId, user.discordId);
+        }
+        catch (error) {
+            console.warn('[frequency-api] Falha ao confirmar acesso do usuario; mantendo sessao assinada.', {
+                guildId: user.guildId || env.discordGuildId,
+                discordId: user.discordId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            req.user = user;
+            return next();
+        }
         if (!siteUser || siteUser.status !== 'active') {
             res.clearCookie('vortex_access_token', { path: '/' });
             res.clearCookie('vortex_refresh_token', { path: '/' });

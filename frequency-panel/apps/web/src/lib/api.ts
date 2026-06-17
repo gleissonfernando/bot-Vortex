@@ -4,6 +4,13 @@ const REFRESH_TOKEN_KEY = 'vortex_frequency_refresh_token';
 
 export type ApiResult<T> = T & { ok: boolean; error?: string };
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export function getToken() {
   if (typeof window === 'undefined') return '';
   return localStorage.getItem(TOKEN_KEY) || '';
@@ -33,9 +40,8 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     if (refreshed) response = await fetchWithAuth(path, init);
   }
 
-  if (response.status === 401 && typeof window !== 'undefined') {
+  if (response.status === 401) {
     clearToken();
-    window.location.href = '/';
   }
 
   const data = await response.json().catch(() => ({
@@ -45,7 +51,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       : 'A API retornou uma resposta invalida'
   }));
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
+    throw new ApiError(data.error || `HTTP ${response.status}`, response.status);
   }
   return data;
 }

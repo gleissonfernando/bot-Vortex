@@ -132,7 +132,6 @@ authRouter.get('/discord/callback', async (req, res) => {
     const token = await exchangeDiscordCode(code);
     const discordUser = await fetchDiscordUser(token.access_token);
     const discordGuilds = await fetchDiscordGuilds(token.access_token);
-    const guildMember = await fetchDiscordGuildMember(discordUser.id);
 
     const avatarUrl = discordAvatarUrl(discordUser);
     const result = await sessionFromDiscordOAuthUser({
@@ -150,6 +149,8 @@ authRouter.get('/discord/callback', async (req, res) => {
       return res.redirect(`${loginUrl()}?error=${encodeURIComponent(result.error)}`);
     }
 
+    const sessionGuildId = result.session.user.guildId || env.discordGuildId;
+    const guildMember = await fetchDiscordGuildMember(discordUser.id, sessionGuildId);
     req.user = result.session.user;
     await updateSiteUser(discordUser.id, {
       discord_name: discordUser.global_name || discordUser.username || discordUser.id,
@@ -157,7 +158,7 @@ authRouter.get('/discord/callback', async (req, res) => {
       discord_avatar_url: avatarUrl,
       discord_roles: Array.isArray(guildMember.member?.roles) ? guildMember.member.roles.map(String) : [],
       discord_guilds: discordGuilds.map((guild) => guild.id)
-    } as any, env.discordGuildId).catch((error) => {
+    } as any, sessionGuildId).catch((error) => {
       console.warn('[frequency-api] OAuth Discord nao atualizou site_user existente', {
         discordId: discordUser.id,
         error: error instanceof Error ? error.message : String(error)
@@ -428,9 +429,9 @@ async function fetchDiscordGuilds(accessToken: string) {
   return Array.isArray(guilds) ? guilds.map((guild) => ({ id: String(guild.id || '') })).filter((guild) => guild.id) : [];
 }
 
-async function fetchDiscordGuildMember(discordId: string) {
-  if (!env.discordBotToken || !env.discordGuildId) return { ok: false };
-  const response = await fetch(`https://discord.com/api/v10/guilds/${env.discordGuildId}/members/${discordId}`, {
+async function fetchDiscordGuildMember(discordId: string, guildId = env.discordGuildId) {
+  if (!env.discordBotToken || !guildId) return { ok: false };
+  const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`, {
     headers: { Authorization: `Bot ${env.discordBotToken}` }
   });
   return { ok: response.ok, member: response.ok ? await response.json() : null };
