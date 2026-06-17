@@ -81,14 +81,15 @@ function applyShardCloudRuntimeDefaults() {
   setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'true');
   setRuntimeDefault('NEXT_TELEMETRY_DISABLED', '1');
   // Calcular NODE_OPTIONS com base na memoria atribuida pela ShardCloud (process.env.MEMORY)
-  // Tentamos usar 80% da memoria disponivel, com um limite inferior seguro.
+  // Usamos um teto conservador porque a ShardCloud roda proxy + API + bot + web
+  // no mesmo container. Em 1GB, heaps grandes demais derrubam a porta publica.
   try {
     const detectedMem = Number(process.env.MEMORY) || 1024;
-    // Use uma fração conservadora da memoria para o heap (60%) para reduzir OOM/CPU
-    let calculated = Math.floor(detectedMem * 0.6);
+    let calculated = Math.floor(detectedMem * 0.45);
     // Nunca exceder a memoria fisica minus uma margem (64MB)
-    if (calculated > detectedMem - 64) calculated = Math.max(Math.floor(detectedMem - 64), 384);
-    calculated = Math.max(256, calculated);
+    if (calculated > detectedMem - 64) calculated = Math.max(Math.floor(detectedMem - 64), 256);
+    if (detectedMem <= 1024) calculated = Math.min(calculated, 256);
+    calculated = Math.max(192, calculated);
     setRuntimeDefault('NODE_OPTIONS', `--max-old-space-size=${calculated}`);
 
     // If the runtime is constrained (<=1GB), avoid heavy startup work
@@ -102,9 +103,6 @@ function applyShardCloudRuntimeDefaults() {
       setRuntimeDefault('BOT_LIGHT_MODE', 'true');
       setRuntimeDefault('START_DISCORD_BOT', 'true');
       setRuntimeDefault('REGISTER_COMMANDS_ON_STARTUP', 'false');
-
-      // cap heap for low-memory to avoid OS swapping
-      if (calculated > 512) calculated = 512;
 
       // aggressive cache/interval defaults to save RAM/CPU
       setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '0');

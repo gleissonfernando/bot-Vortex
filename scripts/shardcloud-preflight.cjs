@@ -409,6 +409,12 @@ function checkShardCloudRuntime() {
   } else {
     ok('runtime ShardCloud mantem o painel web ligado em MEMORY<=1024');
   }
+
+  if (/detectedMem <= 1024[\s\S]{0,500}calculated = Math\.min\(calculated, 256\)/.test(runtime)) {
+    ok('runtime ShardCloud limita NODE_OPTIONS em MEMORY<=1024 para evitar OOM');
+  } else {
+    fail('runtime ShardCloud precisa limitar NODE_OPTIONS em MEMORY<=1024; heaps altos derrubam proxy/API/web no host de 1GB');
+  }
 }
 
 function checkEnvExamples() {
