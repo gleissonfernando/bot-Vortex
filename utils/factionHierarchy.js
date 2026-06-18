@@ -112,9 +112,37 @@ function formatMemberList(members) {
   return `${lines.join('\n')}${hidden ? `\n... mais ${hidden} membro(s).` : ''}`.slice(0, 1024);
 }
 
+async function fetchHierarchyMembers(guild) {
+  const cachedMembers = guild.members.cache;
+  try {
+    const fetchedMembers = await guild.members.fetch({
+      withPresences: false,
+      cache: false,
+      force: true,
+    });
+
+    if (fetchedMembers?.size) {
+      return {
+        members: fetchedMembers,
+        source: `API Discord (${fetchedMembers.size})`,
+      };
+    }
+  } catch (error) {
+    logger.warn('Nao consegui buscar todos os membros para a hierarquia da fac; usando cache local.', {
+      guildId: guild.id,
+      error: error?.message || String(error),
+    });
+  }
+
+  return {
+    members: cachedMembers,
+    source: `Cache Discord (${cachedMembers.size})`,
+  };
+}
+
 async function buildFactionHierarchyEmbed(guild) {
   const hierarchy = getFactionHierarchyConfig();
-  const members = await guild.members.fetch().catch(() => guild.members.cache);
+  const { members, source } = await fetchHierarchyMembers(guild);
   const listedMemberIds = new Set();
 
   const embed = new EmbedBuilder()
@@ -126,7 +154,7 @@ async function buildFactionHierarchyEmbed(guild) {
       'Quando alguem recebe ou perde um cargo configurado, este painel e atualizado.',
     ].join('\n'))
     .setTimestamp()
-    .setFooter({ text: `Atualizado em ${formatDate(new Date())}` });
+    .setFooter({ text: `Atualizado em ${formatDate(new Date())} • Fonte: ${source}` });
 
   for (const role of FACTION_HIERARCHY_ROLES) {
     const roleIds = normalizeRoleIds(hierarchy.roles[role.key]);

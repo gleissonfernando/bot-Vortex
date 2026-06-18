@@ -145,7 +145,7 @@ function applyShardCloudRuntimeDefaults() {
 
       // aggressive cache/interval defaults to save RAM/CPU
       setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '0');
-      setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '10');
+      setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '300');
       setRuntimeDefault('DISCORD_CACHE_MAX_PRESENCES', '0');
       setRuntimeDefault('LIVE_ALERT_CHECK_INTERVAL_MS', process.env.LIVE_ALERT_CHECK_INTERVAL_MS || '3600000');
       setRuntimeDefault('FREQUENCY_MEMBER_SYNC_INTERVAL_MS', process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || '3600000');
@@ -181,7 +181,7 @@ function applyShardCloudRuntimeDefaults() {
 
   // Conservative cache and interval defaults to lower CPU/RAM usage
   setRuntimeDefault('DISCORD_CACHE_MAX_MESSAGES', '5');
-  setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '20');
+  setRuntimeDefault('DISCORD_CACHE_MAX_GUILD_MEMBERS', '300');
   setRuntimeDefault('DISCORD_CACHE_MAX_PRESENCES', '0');
   setRuntimeDefault('LIVE_ALERT_CHECK_INTERVAL_MS', process.env.LIVE_ALERT_CHECK_INTERVAL_MS || '300000');
   setRuntimeDefault('FREQUENCY_MEMBER_SYNC_INTERVAL_MS', process.env.FREQUENCY_MEMBER_SYNC_INTERVAL_MS || '1800000');
@@ -773,7 +773,7 @@ async function main() {
             PROFILE_SYNC_CHANNELS_ON_STARTUP: botLightMode ? 'false' : (process.env.PROFILE_SYNC_CHANNELS_ON_STARTUP || 'true'),
             SYNC_CHANNEL_ACCESS_ON_READY: botLightMode ? 'false' : (process.env.SYNC_CHANNEL_ACCESS_ON_READY || 'true'),
             DISCORD_CACHE_MAX_MESSAGES: process.env.DISCORD_CACHE_MAX_MESSAGES || (botLightMode ? '10' : '25'),
-            DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || (botLightMode ? '50' : '100'),
+            DISCORD_CACHE_MAX_GUILD_MEMBERS: process.env.DISCORD_CACHE_MAX_GUILD_MEMBERS || (botLightMode ? '300' : '500'),
             DISCORD_CACHE_MAX_PRESENCES: process.env.DISCORD_CACHE_MAX_PRESENCES || (fivemSystemEnabled ? '100' : (botLightMode ? '0' : '500')),
             MONGODB_REQUIRED: process.env.BOT_MONGODB_REQUIRED || 'false'
           },
