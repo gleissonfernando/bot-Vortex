@@ -104,6 +104,7 @@ commands/pontos.json
 commands/queuedChannelLogs.json
 commands/scheduled_messages.json
 commands/stats.json
+commands/vortexActions.json
 commands/*cache*.json
 commands/*backup*.json
 !commands/config.example.json

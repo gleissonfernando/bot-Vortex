@@ -9,6 +9,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { handleBauButton, handleBauModal } = require('../utils/bauManager');
 const { handleOrderButton, handleOrderModal, handleOrderSelect } = require('../utils/orderManager');
+const { handleActionButton, handleActionModal, handleActionSelect } = require('../utils/actionManager');
 const { getMasterRoleIds, getMasterUserIds, hasAnyVortexRole, hasVortexAccess, hasPanelAccess, hasMasterAccess } = require('../utils/permissions');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
@@ -423,6 +424,18 @@ module.exports = {
             return runInteractionHandler(interaction, `Encomenda modal: ${interaction.customId}`, () => handleOrderModal(interaction));
         }
 
+        if (interaction.isButton() && String(interaction.customId || '').startsWith('vortex_action_')) {
+            return runInteractionHandler(interaction, `Sistema de Acao botao: ${interaction.customId}`, () => handleActionButton(interaction));
+        }
+
+        if (interaction.isStringSelectMenu() && String(interaction.customId || '').startsWith('vortex_action_')) {
+            return runInteractionHandler(interaction, `Sistema de Acao select: ${interaction.customId}`, () => handleActionSelect(interaction));
+        }
+
+        if (interaction.isModalSubmit() && String(interaction.customId || '').startsWith('modal_vortex_action_')) {
+            return runInteractionHandler(interaction, `Sistema de Acao modal: ${interaction.customId}`, () => handleActionModal(interaction));
+        }
+
         const exibir = client.commands.get('exibir');
         if (exibir && interaction.isStringSelectMenu() && String(interaction.customId || '').startsWith('exibir_panel_select')) {
             return await exibir.handleSelectMenu(interaction);
@@ -720,7 +733,6 @@ module.exports = {
         }
     }
 };
-
 
 
 

@@ -69,6 +69,7 @@ const {
   normalizeHexColor,
   setPanelVisualTheme,
 } = require('../../utils/panelTheme');
+const { listActions } = require('../../utils/actionManager');
 const { upsertSiteUser } = require('../../utils/siteUserManager');
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
@@ -109,6 +110,7 @@ const COMMAND_PERMISSION_OPTIONS = [
     { label: '/perfil', value: 'perfil', description: 'Quem pode consultar e atualizar perfil' },
     { label: '/cadastro', value: 'cadastro', description: 'Quem pode ligar cadastro por mensagens' },
     { label: '/encomenda', value: 'encomenda', description: 'Quem pode abrir e criar encomendas' },
+    { label: '/acao', value: 'acao', description: 'Quem pode gerenciar o Sistema de Acao Vortex' },
     { label: '/bau membro', value: 'bau', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: '/bau-membros', value: 'bau-membros', description: 'Quem pode publicar e cadastrar produtos no bau' },
     { label: 'Acesso ao site', value: 'cadastrar-site', description: 'Quem pode cadastrar usuarios no site' },
@@ -123,6 +125,7 @@ const PANEL_TOOL_OPTIONS = [
     { label: 'Ausências', value: 'tab_ausencias', description: 'Cargos, retornos e mensagens de ausência', emoji: '📆' },
     { label: 'Comandos', value: 'tab_commands', description: 'Permissões por comando ou ação', emoji: '⌨️' },
     { label: 'Encomendas Vortex', value: 'tab_orders', description: 'Pedidos, familias, carrinho e historico', emoji: '\u{1F4E6}' },
+    { label: 'Sistema de Acao', value: 'tab_actions', description: 'Cadastro, fila e relatorios de acoes', emoji: '\u{1F52B}' },
     { label: 'Perfil', value: 'tab_perfil', description: 'Cadastros, cobranças e perfis salvos', emoji: '👤' },
     { label: 'Mensagens', value: 'tab_mirror_messages', description: 'Transformar mensagens em painel do bot', emoji: '💬' },
     { label: 'Visual', value: 'tab_visual', description: 'Cor e banner dos painéis em Components V2', emoji: '🎨' },
@@ -176,6 +179,7 @@ function getPanelTabMeta(tab) {
         case 'tab_ausencias': return { icon: '📆', title: 'GESTÃO DE AUSÊNCIAS' };
         case 'tab_commands': return { icon: '⌨️', title: 'PERMISSÕES DE COMANDOS' };
         case 'tab_orders': return { icon: '\u{1F4E6}', title: 'ENCOMENDAS VORTEX' };
+        case 'tab_actions': return { icon: '\u{1F52B}', title: 'SISTEMA DE ACAO VORTEX' };
         case 'tab_perfil': return { icon: '👤', title: 'PERFIS' };
         case 'tab_mirror_messages': return { icon: '💬', title: 'MENSAGENS EM PAINEL' };
         case 'tab_adjust_calls': return { icon: '🔧', title: 'AJUSTE DE CALLS' };
@@ -2156,6 +2160,59 @@ async function renderDashboard(interaction, tab, edit = false) {
         .setLabel('Historico')
         .setStyle(ButtonStyle.Secondary),
     );
+  } else if (tab === 'tab_actions') {
+    const actions = await listActions(guild.id);
+    const selected = actions[0] || null;
+    const activeCount = actions.filter((action) => !action.finalizada).length;
+    const selectedText = selected
+      ? [
+          `Selecionada: **${selected.nome}**`,
+          `ID: \`${selected.id}\` | Status: \`${selected.status}\` | Limite: **${selected.limite}**`,
+          `Confirmados: **${selected.confirmados.length}** | Reservas: **${selected.reservas.length}**`,
+          `Canal: ${selected.canalId ? `<#${selected.canalId}>` : '`Nao iniciado`'} | Mensagem: ${selected.mensagemId ? `\`${selected.mensagemId}\`` : '`Nao criada`'}`,
+        ].join('\n')
+      : 'Nenhuma ação cadastrada ainda.';
+
+    embed.setAuthor({ name: `VORTEX ${tabMeta.icon} | SISTEMA DE ACAO`, iconURL: guild.iconURL() || client.user.displayAvatarURL() })
+      .setColor('#E11D48')
+      .setDescription([
+        '### Sistema de Ação Vortex',
+        '',
+        'Cadastre, edite, inicie, finalize e gere relatórios das ações pelo Discord.',
+        'Ao iniciar, o painel público será enviado no canal atual e ficará atualizando a mesma mensagem.',
+        '',
+        `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
+        '',
+        selectedText,
+      ].join('\n'));
+
+    actionRow.addComponents(
+      new ButtonBuilder().setCustomId('vortex_action_create').setLabel('Cadastrar ação').setEmoji('➕').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('vortex_action_edit').setLabel('Editar ação').setEmoji('✏️').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
+      new ButtonBuilder().setCustomId('vortex_action_delete').setLabel('Excluir ação').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(!selected),
+      new ButtonBuilder().setCustomId('vortex_action_start').setLabel('Iniciar ação').setEmoji('🚀').setStyle(ButtonStyle.Primary).setDisabled(!selected)
+    );
+
+    extraRows = [
+      ...(actions.length ? [
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('vortex_action_admin_select')
+            .setPlaceholder('Selecionar ação cadastrada')
+            .addOptions(actions.slice(0, 25).map((action, index) => ({
+              label: action.nome.slice(0, 100),
+              value: action.id,
+              description: `ID ${action.id} • ${action.status}`.slice(0, 100),
+              default: index === 0,
+            })))
+        ),
+      ] : []),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('vortex_action_finish').setLabel('Finalizar ação').setEmoji('🏁').setStyle(ButtonStyle.Danger).setDisabled(!selected),
+        new ButtonBuilder().setCustomId('vortex_action_report').setLabel('Gerar relatório').setEmoji('🧾').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
+        new ButtonBuilder().setCustomId('vortex_action_refresh_admin').setLabel('Atualizar').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
+      ),
+    ];
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
     
