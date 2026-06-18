@@ -513,15 +513,6 @@ async function startAction(interaction, action) {
   action.data = formatLocalDate(action.iniciadaEm);
   action.canalId = channel.id;
 
-  if (action.mensagemId) {
-    const existing = await channel.messages.fetch(action.mensagemId).catch(() => null);
-    if (existing) {
-      await existing.edit(buildActionPanelPayload(action, interaction));
-      await saveAction(action);
-      return safeReply(interaction, { content: `Painel da ação **${action.nome}** atualizado em ${channel}.`, ephemeral: true });
-    }
-  }
-
   const message = await channel.send(buildActionPanelPayload(action, interaction));
   action.mensagemId = message.id;
   await saveAction(action);
