@@ -15,10 +15,11 @@ const { hasAnyVortexRole, hasVortexAccess, hasCommandRole, hasMasterAccess } = r
 const { safeReply, safeShowModal, safeUpdate } = require('./safeReply');
 
 const ACTIONS_PATH = path.join(__dirname, '..', 'commands', 'vortexActions.json');
+const DEFAULT_REPORT_CHANNEL_ID = '1503862826262073474';
 const selectedActions = new Map();
 
-const STATUS_OPTIONS = ['Aberta', 'Em andamento', 'Vitoria', 'Derrota', 'Cancelada'];
-const FINAL_STATUSES = new Set(['Vitoria', 'Derrota', 'Cancelada']);
+const STATUS_OPTIONS = ['Aberta', 'Em andamento', 'Finalizada', 'Cancelada'];
+const FINAL_STATUSES = new Set(['Finalizada', 'Cancelada']);
 
 function mongoReady() {
   return mongoose.connection?.readyState === 1 && mongoose.connection?.db;
@@ -44,6 +45,7 @@ function writeLocalStore(store) {
 
 function normalizeStatus(value) {
   const raw = String(value || 'Aberta').trim();
+  if (/^(vitoria|vitória|derrota)$/i.test(raw)) return 'Finalizada';
   const normalized = STATUS_OPTIONS.find((status) => status.toLowerCase() === raw.toLowerCase());
   return normalized || 'Aberta';
 }
@@ -73,6 +75,7 @@ function normalizeParticipants(list) {
 
 function normalizeAction(action = {}) {
   const id = String(action.id || action.actionId || action.action_number || '').trim();
+  const rawStatus = String(action.status || '').trim();
   const status = normalizeStatus(action.status);
   return {
     id,
@@ -85,10 +88,11 @@ function normalizeAction(action = {}) {
     valorRoubado: Number(action.valorRoubado ?? action.stolenValue ?? 0) || 0,
     negociador: String(action.negociador || action.negotiator || '').trim(),
     mvp: String(action.mvp || '').trim(),
-    resultado: String(action.resultado || action.result || '').trim(),
+    resultado: String(action.resultado || action.result || (/^(vitoria|vitória|derrota)$/i.test(rawStatus) ? rawStatus : '')).trim(),
     confirmados: normalizeParticipants(action.confirmados || action.confirmed),
     reservas: normalizeParticipants(action.reservas || action.reserves),
     canalId: String(action.canalId || action.channelId || ''),
+    relatorioCanalId: String(action.relatorioCanalId || action.reportChannelId || action.relatorio_canal_id || DEFAULT_REPORT_CHANNEL_ID),
     mensagemId: String(action.mensagemId || action.messageId || ''),
     criadoPor: String(action.criadoPor || action.createdBy || ''),
     criadoEm: action.criadoEm || action.createdAt || new Date().toISOString(),
@@ -101,6 +105,7 @@ function serializeForMongo(action) {
     ...action,
     guild_id: action.guildId,
     canal_id: action.canalId,
+    relatorio_canal_id: action.relatorioCanalId,
     mensagem_id: action.mensagemId,
     criado_por: action.criadoPor,
     criado_em: action.criadoEm,
@@ -223,6 +228,19 @@ function formatArmaments(value) {
   return lines.map((line, index) => `${index + 1}. ${line}`).join('\n');
 }
 
+function parseChannelId(value) {
+  const match = String(value || '').match(/\d{17,20}/);
+  return match ? match[0] : '';
+}
+
+function parseActionChannels(value) {
+  const ids = String(value || '').match(/\d{17,20}/g) || [];
+  return {
+    canalId: ids[0] || '',
+    relatorioCanalId: ids[1] || DEFAULT_REPORT_CHANNEL_ID,
+  };
+}
+
 function buildActionPanelPayload(action, interactionOrGuild = null) {
   const guild = interactionOrGuild?.guild || interactionOrGuild;
   const iconUrl = guild?.iconURL?.() || null;
@@ -248,9 +266,6 @@ function buildActionPanelPayload(action, interactionOrGuild = null) {
     '',
     '🚪 **Sair da ação**',
     'Sai da ação e atualiza a fila automaticamente.',
-    '',
-    '🚀 **Gerência**',
-    'Acesso restrito. Abre um painel exclusivo com ferramentas de gerente.',
   ].join('\n');
 
   const rows = [
@@ -265,12 +280,8 @@ function buildActionPanelPayload(action, interactionOrGuild = null) {
         .setCustomId(`vortex_action_leave_${action.id}`)
         .setEmoji('🚪')
         .setLabel('Sair')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`vortex_action_manager_${action.id}`)
-        .setEmoji('🚀')
-        .setLabel('Painel do Gerente')
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(blocked)
     ),
   ];
 
@@ -331,7 +342,8 @@ async function buildActionAdminPanelPayload(interaction) {
         `Selecionada: **${selected.nome}**`,
         `ID: \`${selected.id}\` | Status: \`${selected.status}\` | Limite: **${selected.limite}**`,
         `Confirmados: **${selected.confirmados.length}** | Reservas: **${selected.reservas.length}**`,
-        `Canal: ${selected.canalId ? `<#${selected.canalId}>` : '`Nao iniciado`'} | Mensagem: ${selected.mensagemId ? `\`${selected.mensagemId}\`` : '`Nao criada`'}`,
+        `Painel: ${selected.canalId ? `<#${selected.canalId}>` : '`Nao configurado`'} | Relatorio: <#${selected.relatorioCanalId || DEFAULT_REPORT_CHANNEL_ID}>`,
+        `Mensagem: ${selected.mensagemId ? `\`${selected.mensagemId}\`` : '`Nao criada`'}`,
       ].join('\n')
     : 'Nenhuma ação cadastrada ainda.';
 
@@ -369,7 +381,7 @@ async function buildActionAdminPanelPayload(interaction) {
       '### Sistema de Ação Vortex',
       '',
       'Cadastre, edite, inicie, finalize e gere relatórios das ações pelo Discord.',
-      'Ao iniciar, o painel público será enviado no canal atual e ficará atualizando a mesma mensagem.',
+      'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
       '',
       `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
       '',
@@ -400,22 +412,13 @@ function buildActionModal(mode, action = null) {
   addModalText(modal, 'armamentos', 'Armamentos', TextInputStyle.Paragraph, true, action?.armamentos || '');
   addModalText(
     modal,
-    'extras',
-    'Valor | Negociador | Status',
+    'canais',
+    'Canal painel | Canal relatorio',
     TextInputStyle.Short,
-    false,
-    action ? `${action.valorRoubado || 0} | ${action.negociador || ''} | ${action.status || 'Aberta'}` : '0 |  | Aberta'
+    true,
+    action ? `${action.canalId || ''} | ${action.relatorioCanalId || DEFAULT_REPORT_CHANNEL_ID}` : ''
   );
   return modal;
-}
-
-function parseExtras(value) {
-  const [valor = '0', negociador = '', status = 'Aberta'] = String(value || '').split('|').map((item) => item.trim());
-  return {
-    valorRoubado: parseMoney(valor),
-    negociador,
-    status: normalizeStatus(status),
-  };
 }
 
 function getSelectedOrLatest(interaction) {
@@ -434,9 +437,10 @@ async function refreshPublicPanel(client, action) {
 }
 
 async function startAction(interaction, action) {
-  const channel = interaction.channel;
+  const channelId = action.canalId || interaction.channelId;
+  const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
   if (!channel?.isTextBased?.()) {
-    return safeReply(interaction, { content: 'Canal invalido para iniciar ação.', ephemeral: true });
+    return safeReply(interaction, { content: 'Canal configurado para o painel e invalido ou nao foi encontrado.', ephemeral: true });
   }
   action.status = action.status === 'Aberta' ? 'Aberta' : normalizeStatus(action.status);
   action.finalizada = false;
@@ -477,14 +481,27 @@ function removeUser(action, userId) {
   return wasConfirmed;
 }
 
+async function sendActionReport(interaction, action) {
+  const reportChannelId = action.relatorioCanalId || DEFAULT_REPORT_CHANNEL_ID;
+  const channel = await interaction.client.channels.fetch(reportChannelId).catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    await safeReply(interaction, {
+      content: `Nao encontrei o canal de relatorio <#${reportChannelId}>. O relatorio foi enviado aqui.`,
+      ephemeral: true,
+    });
+    return interaction.channel.send(buildActionReportPayload(action, interaction));
+  }
+  return channel.send(buildActionReportPayload(action, channel.guild || interaction));
+}
+
 async function finishAction(interaction, action, { sendReport = true } = {}) {
   action.finalizada = true;
-  if (!FINAL_STATUSES.has(action.status)) action.status = action.resultado === 'Derrota' ? 'Derrota' : 'Vitoria';
-  if (!action.resultado) action.resultado = action.status;
+  action.status = 'Finalizada';
+  if (!action.resultado) action.resultado = 'Vitoria';
   await saveAction(action);
   await refreshPublicPanel(interaction.client, action);
   if (sendReport) {
-    return interaction.channel.send(buildActionReportPayload(action, interaction));
+    return sendActionReport(interaction, action);
   }
   return null;
 }
@@ -565,6 +582,17 @@ function buildMetaModal(action) {
   return modal;
 }
 
+function buildFinalizeModal(action) {
+  const modal = new ModalBuilder()
+    .setCustomId(`modal_vortex_action_finish_${action.id}`)
+    .setTitle('Finalizar ação Vortex');
+  addModalText(modal, 'resultado', 'Resultado: Vitoria ou Derrota', TextInputStyle.Short, true, action.resultado || 'Vitoria');
+  addModalText(modal, 'mvp', 'MVP', TextInputStyle.Short, false, action.mvp || '');
+  addModalText(modal, 'valorRoubado', 'Valor roubado', TextInputStyle.Short, false, action.valorRoubado || 0);
+  addModalText(modal, 'negociador', 'Negociador', TextInputStyle.Short, false, action.negociador || '');
+  return modal;
+}
+
 async function handleActionButton(interaction) {
   const customId = String(interaction.customId || '');
   if (customId === 'vortex_action_create') {
@@ -592,11 +620,10 @@ async function handleActionButton(interaction) {
     }
     if (customId === 'vortex_action_start') return startAction(interaction, action);
     if (customId === 'vortex_action_finish') {
-      await finishAction(interaction, action);
-      return safeReply(interaction, { content: `Ação **${action.nome}** finalizada.`, ephemeral: true });
+      return safeShowModal(interaction, buildFinalizeModal(action));
     }
     if (customId === 'vortex_action_report') {
-      await interaction.channel.send(buildActionReportPayload(action, interaction));
+      await sendActionReport(interaction, action);
       return safeReply(interaction, { content: 'Relatório gerado.', ephemeral: true });
     }
   }
@@ -631,6 +658,9 @@ async function handleActionButton(interaction) {
   if (leaveMatch) {
     const action = await getAction(interaction.guildId, leaveMatch[1]);
     if (!action) return safeReply(interaction, { content: 'Ação nao encontrada.', ephemeral: true });
+    if (action.finalizada || action.status === 'Cancelada') {
+      return safeReply(interaction, { content: 'Essa ação está finalizada ou cancelada.', ephemeral: true });
+    }
     const wasIn = [...action.confirmados, ...action.reservas].some((participant) => participant.userId === interaction.user.id);
     if (!wasIn) return safeReply(interaction, { content: 'Voce nao está nessa ação.', ephemeral: true });
     removeUser(action, interaction.user.id);
@@ -666,8 +696,7 @@ async function handleActionButton(interaction) {
     }
     const action = await getAction(interaction.guildId, finishMatch[1]);
     if (!action) return safeReply(interaction, { content: 'Ação nao encontrada.', ephemeral: true });
-    await finishAction(interaction, action);
-    return safeReply(interaction, { content: `Ação **${action.nome}** finalizada e relatório gerado.`, ephemeral: true });
+    return safeShowModal(interaction, buildFinalizeModal(action));
   }
 
   const reportMatch = customId.match(/^vortex_action_manager_report_(.+)$/);
@@ -677,7 +706,7 @@ async function handleActionButton(interaction) {
     }
     const action = await getAction(interaction.guildId, reportMatch[1]);
     if (!action) return safeReply(interaction, { content: 'Ação nao encontrada.', ephemeral: true });
-    await interaction.channel.send(buildActionReportPayload(action, interaction));
+    await sendActionReport(interaction, action);
     return safeReply(interaction, { content: 'Relatório gerado.', ephemeral: true });
   }
 
@@ -755,7 +784,13 @@ async function handleActionModal(interaction) {
     const existing = customId.startsWith('modal_vortex_action_edit_')
       ? await getAction(interaction.guildId, editId)
       : null;
-    const extras = parseExtras(interaction.fields.getTextInputValue('extras'));
+    const channels = parseActionChannels(interaction.fields.getTextInputValue('canais'));
+    if (!channels.canalId) {
+      return safeReply(interaction, {
+        content: 'Informe o ID ou mencao do canal onde o painel da ação será enviado.',
+        ephemeral: true,
+      });
+    }
     const action = normalizeAction({
       ...(existing || {}),
       id: existing?.id || await nextActionId(interaction.guildId),
@@ -764,7 +799,9 @@ async function handleActionModal(interaction) {
       data: interaction.fields.getTextInputValue('data'),
       limite: interaction.fields.getTextInputValue('limite'),
       armamentos: interaction.fields.getTextInputValue('armamentos'),
-      ...extras,
+      canalId: channels.canalId,
+      relatorioCanalId: channels.relatorioCanalId || DEFAULT_REPORT_CHANNEL_ID,
+      status: existing?.status || 'Aberta',
       criadoPor: existing?.criadoPor || interaction.user.id,
       criadoEm: existing?.criadoEm || new Date().toISOString(),
     });
@@ -794,6 +831,25 @@ async function handleActionModal(interaction) {
     return safeReply(interaction, { content: 'Resumo da ação atualizado.', ephemeral: true });
   }
 
+  const finishMatch = customId.match(/^modal_vortex_action_finish_(.+)$/);
+  if (finishMatch) {
+    if (!hasActionManagerPermission(interaction.member, interaction.user.id)) {
+      return safeReply(interaction, { content: 'Acesso restrito aos gerentes/admins.', ephemeral: true });
+    }
+    const action = await getAction(interaction.guildId, finishMatch[1]);
+    if (!action) return safeReply(interaction, { content: 'Ação nao encontrada.', ephemeral: true });
+    const resultado = interaction.fields.getTextInputValue('resultado') || 'Vitoria';
+    action.resultado = /derrota/i.test(resultado) ? 'Derrota' : 'Vitoria';
+    action.mvp = interaction.fields.getTextInputValue('mvp') || '';
+    action.valorRoubado = parseMoney(interaction.fields.getTextInputValue('valorRoubado'));
+    action.negociador = interaction.fields.getTextInputValue('negociador') || '';
+    await finishAction(interaction, action);
+    return safeReply(interaction, {
+      content: `Ação **${action.nome}** finalizada. Relatório enviado em <#${action.relatorioCanalId || DEFAULT_REPORT_CHANNEL_ID}>.`,
+      ephemeral: true,
+    });
+  }
+
   return null;
 }
 
@@ -814,8 +870,7 @@ async function finishActionById(interaction, actionId = '', resultado = '') {
   const action = actionId ? await getAction(interaction.guildId, actionId) : await getLatestAction(interaction.guildId);
   if (!action) return safeReply(interaction, { content: 'Nenhuma ação encontrada.', ephemeral: true });
   if (resultado) {
-    action.resultado = resultado;
-    action.status = normalizeStatus(resultado);
+    action.resultado = /derrota/i.test(resultado) ? 'Derrota' : 'Vitoria';
   }
   await finishAction(interaction, action);
   return safeReply(interaction, { content: `Ação **${action.nome}** finalizada.`, ephemeral: true });
@@ -827,7 +882,7 @@ async function reportActionById(interaction, actionId = '') {
   }
   const action = actionId ? await getAction(interaction.guildId, actionId) : await getLatestAction(interaction.guildId);
   if (!action) return safeReply(interaction, { content: 'Nenhuma ação encontrada.', ephemeral: true });
-  await interaction.channel.send(buildActionReportPayload(action, interaction));
+  await sendActionReport(interaction, action);
   return safeReply(interaction, { content: 'Relatório gerado.', ephemeral: true });
 }
 

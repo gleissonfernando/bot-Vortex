@@ -2169,7 +2169,8 @@ async function renderDashboard(interaction, tab, edit = false) {
           `Selecionada: **${selected.nome}**`,
           `ID: \`${selected.id}\` | Status: \`${selected.status}\` | Limite: **${selected.limite}**`,
           `Confirmados: **${selected.confirmados.length}** | Reservas: **${selected.reservas.length}**`,
-          `Canal: ${selected.canalId ? `<#${selected.canalId}>` : '`Nao iniciado`'} | Mensagem: ${selected.mensagemId ? `\`${selected.mensagemId}\`` : '`Nao criada`'}`,
+          `Painel: ${selected.canalId ? `<#${selected.canalId}>` : '`Nao configurado`'} | Relatorio: <#${selected.relatorioCanalId || '1503862826262073474'}>`,
+          `Mensagem: ${selected.mensagemId ? `\`${selected.mensagemId}\`` : '`Nao criada`'}`,
         ].join('\n')
       : 'Nenhuma ação cadastrada ainda.';
 
@@ -2179,7 +2180,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '### Sistema de Ação Vortex',
         '',
         'Cadastre, edite, inicie, finalize e gere relatórios das ações pelo Discord.',
-        'Ao iniciar, o painel público será enviado no canal atual e ficará atualizando a mesma mensagem.',
+        'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
         '',
         `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
         '',
