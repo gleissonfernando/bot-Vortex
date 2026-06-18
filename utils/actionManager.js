@@ -369,6 +369,12 @@ async function buildActionAdminPanelPayload(interaction) {
       .setEmoji('🚀')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(!selected),
+    new ButtonBuilder()
+      .setCustomId('vortex_action_finish')
+      .setLabel('Finalizar ação')
+      .setEmoji('🏁')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!selected),
   ));
 
   return buildThemedPanelPayload('painel', {
@@ -377,7 +383,7 @@ async function buildActionAdminPanelPayload(interaction) {
     description: [
       '### Sistema de Ação Vortex',
       '',
-      'Selecione uma ação cadastrada e clique em **Iniciar ação**.',
+      'Selecione uma ação cadastrada para **Iniciar** ou **Finalizar ação**.',
       'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
       '',
       `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
