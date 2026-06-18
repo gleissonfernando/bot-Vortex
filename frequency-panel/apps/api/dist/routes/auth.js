@@ -146,7 +146,11 @@ authRouter.get('/discord/callback', async (req, res) => {
             guildCount: discordGuilds.length,
             redirectTo: `${env.siteOrigin}${next}`
         });
-        return res.redirect(`${env.siteOrigin}${next}`);
+        return sendDiscordAuthBridge(res, {
+            token: result.session.token,
+            refreshToken: result.session.refreshToken,
+            redirectTo: `${env.siteOrigin}${next}`
+        });
     }
     catch (error) {
         console.warn('[frequency-api] Falha no OAuth Discord:', error);
@@ -220,6 +224,52 @@ function setSessionCookies(res, token, refreshToken) {
 function clearSessionCookies(res) {
     res.clearCookie('vortex_access_token', cookieOptions);
     res.clearCookie('vortex_refresh_token', cookieOptions);
+}
+function sendDiscordAuthBridge(res, input) {
+    const nonce = randomBytes(16).toString('base64url');
+    const payload = JSON.stringify({
+        token: input.token,
+        refreshToken: input.refreshToken,
+        redirectTo: input.redirectTo
+    }).replace(/</g, '\\u003c');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', [
+        "default-src 'none'",
+        `script-src 'nonce-${nonce}'`,
+        "style-src 'unsafe-inline'",
+        "base-uri 'none'",
+        "frame-ancestors 'none'"
+    ].join('; '));
+    return res.status(200).send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrando...</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#020617;color:#e5e7eb;font-family:Arial,sans-serif}
+    main{width:min(420px,calc(100vw - 32px));text-align:center}
+    p{color:#94a3b8}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Entrando no Vortex...</h1>
+    <p>Validando sua sessao do Discord.</p>
+  </main>
+  <script nonce="${nonce}">
+    (() => {
+      const data = ${payload};
+      try {
+        localStorage.setItem('vortex_frequency_token', data.token);
+        localStorage.setItem('vortex_frequency_refresh_token', data.refreshToken);
+      } catch {}
+      window.location.replace(data.redirectTo || '/dashboard');
+    })();
+  </script>
+</body>
+</html>`);
 }
 function getCookie(req, name) {
     const cookies = String(req.headers.cookie || '').split(';');
