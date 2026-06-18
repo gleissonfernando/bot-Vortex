@@ -2179,7 +2179,7 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Sistema de Ação Vortex',
         '',
-        'Cadastre, edite, inicie, finalize e gere relatórios das ações pelo Discord.',
+        'Selecione uma ação cadastrada e clique em **Iniciar ação**.',
         'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
         '',
         `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
@@ -2188,10 +2188,12 @@ async function renderDashboard(interaction, tab, edit = false) {
       ].join('\n'));
 
     actionRow.addComponents(
-      new ButtonBuilder().setCustomId('vortex_action_create').setLabel('Cadastrar ação').setEmoji('➕').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('vortex_action_edit').setLabel('Editar ação').setEmoji('✏️').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
-      new ButtonBuilder().setCustomId('vortex_action_delete').setLabel('Excluir ação').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(!selected),
-      new ButtonBuilder().setCustomId('vortex_action_start').setLabel('Iniciar ação').setEmoji('🚀').setStyle(ButtonStyle.Primary).setDisabled(!selected)
+      new ButtonBuilder()
+        .setCustomId('vortex_action_start')
+        .setLabel('Iniciar ação')
+        .setEmoji('🚀')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!selected)
     );
 
     extraRows = [
@@ -2208,11 +2210,6 @@ async function renderDashboard(interaction, tab, edit = false) {
             })))
         ),
       ] : []),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('vortex_action_finish').setLabel('Finalizar ação').setEmoji('🏁').setStyle(ButtonStyle.Danger).setDisabled(!selected),
-        new ButtonBuilder().setCustomId('vortex_action_report').setLabel('Gerar relatório').setEmoji('🧾').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
-        new ButtonBuilder().setCustomId('vortex_action_refresh_admin').setLabel('Atualizar').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
-      ),
     ];
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
