@@ -32,7 +32,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 type OrderStatus = 'pending' | 'separating' | 'transport' | 'delivered' | 'cancelled';
 type ItemCategory = 'munitions' | 'weapons' | 'general' | 'drugs' | 'custom';
 type OrderCurrency = 'BRL' | 'USD';
-type TabKey = 'dashboard' | 'families' | 'discounts' | 'orders' | 'logs' | 'stock' | 'settings';
+type TabKey = 'dashboard' | 'families' | 'munitions' | 'discounts' | 'orders' | 'logs' | 'stock' | 'settings';
 type FamilyMunitionPrices = { hk_mag?: number; tec_five?: number; mtar_mp7?: number };
 
 type DiscordCategory = { id: string; name: string; position: number };
@@ -85,8 +85,25 @@ type InventoryItem = {
   active: boolean;
 };
 
+type Munition = {
+  id: string;
+  guildId: string;
+  nome: string;
+  name: string;
+  identificador: string;
+  identifier: string;
+  ativo: boolean;
+  active: boolean;
+  ordem: number;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type OrderLine = {
   inventoryItemId: string;
+  munitionId?: string;
+  munitionIdentifier?: string;
   name: string;
   category: ItemCategory;
   categoryLabel?: string;
@@ -187,6 +204,8 @@ type FavoriteOrder = {
 type CartLine = {
   key: string;
   inventoryItemId: string;
+  munitionId?: string;
+  munitionIdentifier?: string;
   name: string;
   category: ItemCategory;
   quantity: number;
@@ -204,6 +223,7 @@ const categoryOptions: Array<{ value: ItemCategory; label: string }> = [
 const tabs: Array<{ key: TabKey; label: string; icon: typeof BarChart3 }> = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { key: 'families', label: 'Familias', icon: Users },
+  { key: 'munitions', label: 'Municoes', icon: PackagePlus },
   { key: 'discounts', label: 'Descontos', icon: Percent },
   { key: 'orders', label: 'Pedidos', icon: ClipboardList },
   { key: 'logs', label: 'Logs', icon: History },
@@ -254,6 +274,14 @@ const initialInventoryForm = {
   active: true
 };
 
+const initialMunitionForm = {
+  id: '',
+  nome: '',
+  identificador: '',
+  ordem: '1',
+  ativo: true
+};
+
 const initialCouponForm = {
   id: '',
   name: '',
@@ -272,6 +300,7 @@ export default function OrdersPage() {
   const [roles, setRoles] = useState<DiscordRole[]>([]);
   const [families, setFamilies] = useState<OrderFamily[]>([]);
   const [coupons, setCoupons] = useState<OrderCoupon[]>([]);
+  const [munitions, setMunitions] = useState<Munition[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [logs, setLogs] = useState<OrderLog[]>([]);
@@ -283,8 +312,10 @@ export default function OrdersPage() {
   const [discordError, setDiscordError] = useState('');
   const [familyForm, setFamilyForm] = useState(initialFamilyForm);
   const [couponForm, setCouponForm] = useState(initialCouponForm);
+  const [munitionForm, setMunitionForm] = useState(initialMunitionForm);
   const [inventoryForm, setInventoryForm] = useState(initialInventoryForm);
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [munitionEntries, setMunitionEntries] = useState<Record<string, { quantity: string; unitPrice: string }>>({});
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState<OrderCurrency>('BRL');
   const [selectedCouponId, setSelectedCouponId] = useState('');
@@ -298,6 +329,7 @@ export default function OrdersPage() {
   const [settingsForm, setSettingsForm] = useState({ orderCategoryId: '', orderChannelId: '', defaultLogsWebhookUrl: '' });
 
   const activeFamilies = useMemo(() => families.filter((family) => family.active), [families]);
+  const activeMunitions = useMemo(() => munitions.filter((munition) => munition.active).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)), [munitions]);
   const selectedFamily = useMemo(() => families.find((family) => family.id === selectedFamilyId) || null, [families, selectedFamilyId]);
   const availableCoupons = useMemo(() => coupons.filter((coupon) => {
     if (!coupon.active) return false;
@@ -307,7 +339,24 @@ export default function OrdersPage() {
   }), [coupons, selectedFamilyId]);
   const selectedCoupon = useMemo(() => availableCoupons.find((coupon) => coupon.id === selectedCouponId) || null, [availableCoupons, selectedCouponId]);
   const filteredFavorites = useMemo(() => favorites.filter((favorite) => !selectedFamilyId || favorite.familyId === selectedFamilyId), [favorites, selectedFamilyId]);
-  const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + item.quantity * item.unitPrice, 0), [cart]);
+  const munitionLines = useMemo<CartLine[]>(() => activeMunitions.flatMap((munition) => {
+    const entry = munitionEntries[munition.id] || { quantity: '', unitPrice: '' };
+    const quantity = Math.max(0, Math.floor(Number(entry.quantity) || 0));
+    const unitPrice = Math.max(0, Number(entry.unitPrice) || 0);
+    if (!quantity || !Number.isFinite(unitPrice) || unitPrice <= 0) return [];
+    return [{
+      key: `munition-${munition.id}`,
+      inventoryItemId: '',
+      munitionId: munition.id,
+      munitionIdentifier: munition.identifier,
+      name: munition.name,
+      category: 'munitions' as ItemCategory,
+      quantity,
+      unitPrice
+    }];
+  }), [activeMunitions, munitionEntries]);
+  const orderDraftLines = useMemo(() => [...munitionLines, ...cart], [munitionLines, cart]);
+  const cartSubtotal = useMemo(() => orderDraftLines.reduce((total, item) => total + item.quantity * item.unitPrice, 0), [orderDraftLines]);
   const cartDiscount = useMemo(() => selectedCoupon ? Math.round(cartSubtotal * (selectedCoupon.percentage / 100) * 100) / 100 : 0, [cartSubtotal, selectedCoupon]);
   const cartTotal = useMemo(() => Math.max(0, cartSubtotal - cartDiscount), [cartSubtotal, cartDiscount]);
 
@@ -323,12 +372,13 @@ export default function OrdersPage() {
     setLoading(true);
     setMessage('');
     try {
-      const [ordersData, settingsData, optionsData, familiesData, couponsData, inventoryData, logsData, favoritesData] = await Promise.all([
+      const [ordersData, settingsData, optionsData, familiesData, couponsData, munitionsData, inventoryData, logsData, favoritesData] = await Promise.all([
         apiFetch<{ orders: OrderItem[]; stats: OrderStats }>(`/orders${queryString ? `?${queryString}` : ''}`),
         apiFetch<{ settings: OrderSettings }>('/orders/settings'),
         apiFetch<{ categories: DiscordCategory[]; textChannels: DiscordTextChannel[]; roles: DiscordRole[]; error?: string | null }>('/orders/discord-options').catch(() => null),
         apiFetch<{ families: OrderFamily[] }>('/orders/families?includeInactive=true'),
         apiFetch<{ coupons: OrderCoupon[] }>('/orders/coupons?includeInactive=true'),
+        apiFetch<{ munitions: Munition[] }>('/orders/munitions?includeInactive=true'),
         apiFetch<{ inventory: InventoryItem[] }>('/orders/inventory?includeInactive=true'),
         apiFetch<{ logs: OrderLog[] }>('/orders/logs?limit=200'),
         apiFetch<{ favorites: FavoriteOrder[] }>('/orders/favorites')
@@ -344,6 +394,7 @@ export default function OrdersPage() {
       });
       setFamilies(familiesData.families || []);
       setCoupons(couponsData.coupons || []);
+      setMunitions(munitionsData.munitions || []);
       setInventory(inventoryData.inventory || []);
       setLogs(logsData.logs || []);
       setFavorites(favoritesData.favorites || []);
@@ -392,6 +443,21 @@ export default function OrdersPage() {
 
   function setCouponField(key: keyof typeof initialCouponForm, value: string | boolean | string[]) {
     setCouponForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setMunitionField(key: keyof typeof initialMunitionForm, value: string | boolean) {
+    setMunitionForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setMunitionEntry(munitionId: string, field: 'quantity' | 'unitPrice', value: string) {
+    setMunitionEntries((current) => ({
+      ...current,
+      [munitionId]: {
+        quantity: current[munitionId]?.quantity || '',
+        unitPrice: current[munitionId]?.unitPrice || '',
+        [field]: value
+      }
+    }));
   }
 
   function changeCurrency(currency: OrderCurrency) {
@@ -548,6 +614,54 @@ export default function OrdersPage() {
     }
   }
 
+  async function saveMunition() {
+    setSaving(true);
+    setMessage('');
+    try {
+      const payload = {
+        nome: munitionForm.nome,
+        identificador: munitionForm.identificador || undefined,
+        ordem: Number(munitionForm.ordem || 1),
+        ativo: munitionForm.ativo
+      };
+      await apiFetch(munitionForm.id ? `/orders/munitions/${munitionForm.id}` : '/orders/munitions', {
+        method: munitionForm.id ? 'PUT' : 'POST',
+        body: JSON.stringify(payload)
+      });
+      setMunitionForm(initialMunitionForm);
+      setMessage(munitionForm.id ? 'Municao atualizada.' : 'Municao cadastrada.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao salvar municao.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function editMunition(munition: Munition) {
+    setMunitionForm({
+      id: munition.id,
+      nome: munition.name,
+      identificador: munition.identifier,
+      ordem: String(munition.order || 1),
+      ativo: munition.active
+    });
+    setActiveTab('munitions');
+  }
+
+  async function disableMunition(munition: Munition) {
+    setSaving(true);
+    try {
+      await apiFetch(`/orders/munitions/${munition.id}`, { method: 'DELETE' });
+      setMessage('Municao removida do formulario.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao remover municao.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveInventoryItem() {
     setSaving(true);
     setMessage('');
@@ -648,8 +762,8 @@ export default function OrdersPage() {
       setMessage('Selecione uma familia.');
       return;
     }
-    if (!cart.length) {
-      setMessage('Adicione pelo menos um item ao carrinho.');
+    if (!orderDraftLines.length) {
+      setMessage('Preencha pelo menos uma municao ou adicione um item ao pedido.');
       return;
     }
     setSaving(true);
@@ -664,8 +778,9 @@ export default function OrdersPage() {
           responsibleName,
           saveAsFavorite,
           favoriteName,
-          items: cart.map((item) => ({
+          items: orderDraftLines.map((item) => ({
             inventoryItemId: item.inventoryItemId,
+            munitionId: item.munitionId || undefined,
             name: item.name,
             category: item.category,
             quantity: item.quantity,
@@ -675,6 +790,7 @@ export default function OrdersPage() {
       });
       setMessage(`Pedido #${data.order.orderNumber} criado.`);
       setCart([]);
+      setMunitionEntries({});
       setSelectedCouponId('');
       setResponsibleName('');
       setSaveAsFavorite(false);
@@ -688,7 +804,7 @@ export default function OrdersPage() {
   }
 
   async function saveFavoriteFromCart() {
-    if (!selectedFamilyId || !cart.length || !favoriteName.trim()) {
+    if (!selectedFamilyId || !orderDraftLines.length || !favoriteName.trim()) {
       setMessage('Selecione familia, itens e nome do modelo.');
       return;
     }
@@ -699,8 +815,9 @@ export default function OrdersPage() {
         body: JSON.stringify({
           familyId: selectedFamilyId,
           name: favoriteName,
-          items: cart.map((item) => ({
+          items: orderDraftLines.map((item) => ({
             inventoryItemId: item.inventoryItemId,
+            munitionId: item.munitionId || undefined,
             name: item.name,
             category: item.category,
             quantity: item.quantity,
@@ -720,14 +837,27 @@ export default function OrdersPage() {
 
   function useFavorite(favorite: FavoriteOrder) {
     setSelectedFamilyId(favorite.familyId);
-    setCart(favorite.items.map((item, index) => ({
-      key: item.inventoryItemId || `favorite-${favorite.id}-${index}`,
-      inventoryItemId: item.inventoryItemId,
-      name: item.name,
-      category: item.category,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice
-    })));
+    const nextMunitionEntries: Record<string, { quantity: string; unitPrice: string }> = {};
+    const nextCart: CartLine[] = [];
+    favorite.items.forEach((item, index) => {
+      if (item.munitionId) {
+        nextMunitionEntries[item.munitionId] = {
+          quantity: String(item.quantity),
+          unitPrice: String(item.unitPrice)
+        };
+        return;
+      }
+      nextCart.push({
+        key: item.inventoryItemId || `favorite-${favorite.id}-${index}`,
+        inventoryItemId: item.inventoryItemId,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice
+      });
+    });
+    setMunitionEntries(nextMunitionEntries);
+    setCart(nextCart);
     setActiveTab('orders');
   }
 
@@ -822,6 +952,19 @@ export default function OrdersPage() {
           />
         ) : null}
 
+        {activeTab === 'munitions' ? (
+          <MunitionsTab
+            munitionForm={munitionForm}
+            setMunitionField={setMunitionField}
+            saveMunition={saveMunition}
+            resetMunition={() => setMunitionForm(initialMunitionForm)}
+            munitions={munitions}
+            editMunition={editMunition}
+            disableMunition={disableMunition}
+            saving={saving}
+          />
+        ) : null}
+
         {activeTab === 'discounts' ? (
           <CouponsTab
             couponForm={couponForm}
@@ -839,6 +982,11 @@ export default function OrdersPage() {
         {activeTab === 'orders' ? (
           <OrdersTab
             families={activeFamilies}
+            munitions={activeMunitions}
+            munitionEntries={munitionEntries}
+            setMunitionEntry={setMunitionEntry}
+            munitionLines={munitionLines}
+            clearMunitionEntry={(munitionId) => setMunitionEntries((current) => ({ ...current, [munitionId]: { quantity: '', unitPrice: '' } }))}
             inventory={inventory.filter((item) => item.active)}
             orders={orders}
             selectedFamilyId={selectedFamilyId}
@@ -865,7 +1013,10 @@ export default function OrdersPage() {
             cartTotal={cartTotal}
             updateCartQuantity={updateCartQuantity}
             removeCartLine={(key) => setCart((current) => current.filter((item) => item.key !== key))}
-            clearCart={() => setCart([])}
+            clearCart={() => {
+              setCart([]);
+              setMunitionEntries({});
+            }}
             createOrder={createOrder}
             saving={saving}
             favorites={filteredFavorites}
@@ -1135,6 +1286,90 @@ function FamiliesTab(props: {
   );
 }
 
+function MunitionsTab(props: {
+  munitionForm: typeof initialMunitionForm;
+  setMunitionField: (key: keyof typeof initialMunitionForm, value: string | boolean) => void;
+  saveMunition: () => void;
+  resetMunition: () => void;
+  munitions: Munition[];
+  editMunition: (munition: Munition) => void;
+  disableMunition: (munition: Munition) => void;
+  saving: boolean;
+}) {
+  const canSaveMunition = Boolean(
+    props.munitionForm.nome.trim()
+    && (props.munitionForm.identificador.trim() === '' || /^[a-z0-9_]+$/.test(props.munitionForm.identificador.trim()))
+    && Number(props.munitionForm.ordem) > 0
+  );
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[0.85fr_1.4fr]">
+      <section className="panel p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-white">{props.munitionForm.id ? 'Editar Municao' : 'Adicionar Municao'}</h2>
+          <button onClick={props.resetMunition} className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/[0.08]">
+            <Plus size={15} />
+            Adicionar
+          </button>
+        </div>
+        <div className="mt-5 grid gap-4">
+          <Input label="Nome da Municao" value={props.munitionForm.nome} onChange={(value) => props.setMunitionField('nome', value)} />
+          <Input label="Identificador" value={props.munitionForm.identificador} onChange={(value) => props.setMunitionField('identificador', value)} />
+          <Input label="Ordem de Exibicao" type="number" value={props.munitionForm.ordem} onChange={(value) => props.setMunitionField('ordem', value)} />
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <input type="checkbox" checked={props.munitionForm.ativo} onChange={(event) => props.setMunitionField('ativo', event.target.checked)} className="h-4 w-4" />
+            Municao ativa
+          </label>
+          <div className="flex justify-end gap-2">
+            <button onClick={props.resetMunition} className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.08]">
+              <X size={16} />
+              Limpar
+            </button>
+            <button onClick={props.saveMunition} disabled={props.saving || !canSaveMunition} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
+              <Save size={16} />
+              Salvar
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel overflow-hidden">
+        <TableHeader title="Gerenciar Municoes" count={props.munitions.length} />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Nome</th>
+                <th className="px-4 py-3">Identificador</th>
+                <th className="px-4 py-3">Ordem</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Acoes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {props.munitions.map((munition) => (
+                <tr key={munition.id}>
+                  <td className="px-4 py-3 font-semibold text-white">{munition.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-300">{munition.identifier}</td>
+                  <td className="px-4 py-3 text-slate-300">{munition.order}</td>
+                  <td className="px-4 py-3"><StatePill active={munition.active} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <IconButton title="Editar Municao" onClick={() => props.editMunition(munition)} icon={Edit3} />
+                      <IconButton title="Remover Municao" onClick={() => props.disableMunition(munition)} icon={Trash2} tone="danger" disabled={!munition.active} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!props.munitions.length ? <EmptyRow colSpan={5} text="Nenhuma municao cadastrada." /> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function CouponsTab(props: {
   couponForm: typeof initialCouponForm;
   setCouponField: (key: keyof typeof initialCouponForm, value: string | boolean | string[]) => void;
@@ -1236,6 +1471,11 @@ function CouponsTab(props: {
 
 function OrdersTab(props: {
   families: OrderFamily[];
+  munitions: Munition[];
+  munitionEntries: Record<string, { quantity: string; unitPrice: string }>;
+  setMunitionEntry: (munitionId: string, field: 'quantity' | 'unitPrice', value: string) => void;
+  munitionLines: CartLine[];
+  clearMunitionEntry: (munitionId: string) => void;
   inventory: InventoryItem[];
   orders: OrderItem[];
   selectedFamilyId: string;
@@ -1275,6 +1515,9 @@ function OrdersTab(props: {
   deleteFavorite: (favorite: FavoriteOrder) => void;
   setOrderStatus: (order: OrderItem, status: OrderStatus) => void;
 }) {
+  const extraCart = props.cart;
+  const hasDraftLines = props.munitionLines.length + extraCart.length > 0;
+
   return (
     <div className="space-y-5">
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.25fr]">
@@ -1308,6 +1551,34 @@ function OrdersTab(props: {
               </label>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-white">Municoes da Encomenda</h3>
+                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">{props.munitions.length}</span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {props.munitions.map((munition) => {
+                  const entry = props.munitionEntries[munition.id] || { quantity: '', unitPrice: '' };
+                  const quantity = Math.max(0, Math.floor(Number(entry.quantity) || 0));
+                  const unitPrice = Math.max(0, Number(entry.unitPrice) || 0);
+                  const subtotal = quantity * unitPrice;
+                  return (
+                    <div key={munition.id} className="rounded-lg border border-white/10 bg-black/10 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-white">{munition.name}</h4>
+                        {subtotal > 0 ? <span className="text-xs font-semibold text-emerald-100">{formatMoney(subtotal, props.selectedCurrency)}</span> : null}
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <Input label="Quantidade" type="number" value={entry.quantity} onChange={(value) => props.setMunitionEntry(munition.id, 'quantity', value)} />
+                        <Input label="Valor Unitario" type="number" value={entry.unitPrice} onChange={(value) => props.setMunitionEntry(munition.id, 'unitPrice', value)} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {!props.munitions.length ? <Empty text="Nenhuma municao ativa cadastrada." /> : null}
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+              <h3 className="mb-3 text-sm font-semibold text-white">Itens extras</h3>
               <div className="grid gap-3 lg:grid-cols-[1fr_110px_auto]">
                 <label className="block">
                   <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Item do estoque</span>
@@ -1355,7 +1626,21 @@ function OrdersTab(props: {
           </div>
           <div className="p-4">
             <div className="space-y-2">
-              {props.cart.map((item) => (
+              {props.munitionLines.map((item) => (
+                <div key={item.key} className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[1fr_130px_120px_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{item.name}</p>
+                    <p className="text-xs text-slate-500">Municao cadastrada</p>
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <p>Qtd. {item.quantity.toLocaleString('pt-BR')}</p>
+                    <p>Un. {formatMoney(item.unitPrice, props.selectedCurrency)}</p>
+                  </div>
+                  <div className="text-sm font-semibold text-slate-200">{formatMoney(item.quantity * item.unitPrice, props.selectedCurrency)}</div>
+                  <IconButton title="Limpar" onClick={() => item.munitionId && props.clearMunitionEntry(item.munitionId)} icon={X} tone="danger" />
+                </div>
+              ))}
+              {extraCart.map((item) => (
                 <div key={item.key} className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[1fr_110px_120px_auto] sm:items-center">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-white">{item.name}</p>
@@ -1366,7 +1651,7 @@ function OrdersTab(props: {
                   <IconButton title="Remover" onClick={() => props.removeCartLine(item.key)} icon={Trash2} tone="danger" />
                 </div>
               ))}
-              {!props.cart.length ? <Empty text="Carrinho vazio." /> : null}
+              {!hasDraftLines ? <Empty text="Pedido vazio." /> : null}
             </div>
             <div className="mt-4 grid gap-2 rounded-lg border border-white/10 bg-white/[0.025] p-4 text-sm">
               <div className="flex justify-between gap-3 text-slate-300">
@@ -1388,7 +1673,7 @@ function OrdersTab(props: {
                 <input type="checkbox" checked={props.saveAsFavorite} onChange={(event) => props.setSaveAsFavorite(event.target.checked)} className="h-4 w-4" />
                 Salvar Modelo
               </label>
-              <button onClick={props.saveFavoriteFromCart} disabled={!props.cart.length || !props.favoriteName.trim()} className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-white hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={props.saveFavoriteFromCart} disabled={!hasDraftLines || !props.favoriteName.trim()} className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-white hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50">
                 <Star size={16} />
                 Salvar
               </button>
@@ -1398,7 +1683,7 @@ function OrdersTab(props: {
                 <Trash2 size={16} />
                 Limpar
               </button>
-              <button onClick={props.createOrder} disabled={props.saving || !props.selectedFamilyId || !props.cart.length} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
+              <button onClick={props.createOrder} disabled={props.saving || !props.selectedFamilyId || !hasDraftLines} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700">
                 <Check size={16} />
                 Finalizar Pedido
               </button>

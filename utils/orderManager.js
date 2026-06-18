@@ -44,20 +44,33 @@ const GROUPED_QUANTITY_FIELD_PREFIX = 'grouped_quantity_';
 const GROUPED_VALUE_FIELD_PREFIX = 'grouped_value_';
 const FAMILY_MUNITION_PRICES_FIELD = 'munition_prices';
 const FAMILY_DEFAULT_DISCOUNT_FIELD = 'default_discount';
+const ORDER_MUNITION_MODAL_ID = 'modal_order_munition';
+const ORDER_MUNITION_NAME_FIELD = 'order_munition_name';
+const ORDER_MUNITION_IDENTIFIER_FIELD = 'order_munition_identifier';
+const ORDER_MUNITION_ORDER_FIELD = 'order_munition_order';
+const ORDER_MUNITION_ACTIVE_FIELD = 'order_munition_active';
+const MODAL_FIELD_PAGE_SIZE = 5;
 
 const orderSessions = new Map();
 const familySelections = new Map();
+const munitionSelections = new Map();
 
 const ORDER_STATUSES = new Set(['pending', 'separating', 'transport', 'delivered', 'cancelled']);
 const CURRENCY_OPTIONS = [
   { label: 'Real (BRL)', value: 'BRL', description: 'Calcular em reais', emoji: '\u{1F4B8}' },
   { label: 'Dolar (USD)', value: 'USD', description: 'Calcular em dolar', emoji: '\u{1F4B5}' },
 ];
-const GROUPED_ORDER_ITEMS = [
-  { key: 'hk_mag', label: 'HK/MAG', emoji: '\u{1F52B}' },
-  { key: 'tec_five', label: 'TEC/FIVE', emoji: '\u{1F52B}' },
-  { key: 'mtar_mp7', label: 'MTAR/MP7', emoji: '\u{1F52B}' },
+const DEFAULT_MUNITIONS = [
+  { key: 'hk_mag', label: 'HK/MAG', emoji: '\u{1F52B}', order: 1 },
+  { key: 'tec_five', label: 'TEC/FIVE', emoji: '\u{1F52B}', order: 2 },
+  { key: 'mtar_mp7', label: 'MTAR/MP7', emoji: '\u{1F52B}', order: 3 },
+  { key: 'ak103', label: 'AK103', emoji: '\u{1F52B}', order: 4 },
+  { key: 'thompson', label: 'THOMPSON', emoji: '\u{1F52B}', order: 5 },
+  { key: 'g36', label: 'G36', emoji: '\u{1F52B}', order: 6 },
+  { key: 'fal', label: 'FAL', emoji: '\u{1F52B}', order: 7 },
+  { key: 'municao_sniper', label: 'MUNICAO SNIPER', emoji: '\u{1F52B}', order: 8 },
 ];
+const GROUPED_ORDER_ITEMS = DEFAULT_MUNITIONS;
 const CATEGORY_OPTIONS = [
   { label: 'Municoes', value: 'munitions', description: 'Balas e municoes por arma' },
   { label: 'Armas', value: 'weapons', description: 'Armas cadastradas no estoque' },
@@ -117,6 +130,79 @@ function createSlug(value) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 70);
   return slug || `familia-${Date.now()}`;
+}
+
+function createIdentifier(value) {
+  const identifier = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return identifier || `munition_${Date.now()}`;
+}
+
+function normalizeMunitionDoc(doc) {
+  if (!doc) return null;
+  return {
+    id: String(doc._id || ''),
+    key: String(doc.identificador || doc.identifier || createIdentifier(doc.nome || doc.name || 'munition')),
+    label: String(doc.nome || doc.name || 'Municao').slice(0, 100),
+    emoji: '\u{1F52B}',
+    order: Math.max(1, Number(doc.ordem || doc.order || 1)),
+    active: doc.ativo !== false && doc.active !== false,
+  };
+}
+
+function fallbackMunitions() {
+  return DEFAULT_MUNITIONS.map((item) => ({ ...item, id: '', active: true }));
+}
+
+function sessionMunitions(session) {
+  if (Array.isArray(session?.munitions)) {
+    return session.munitions.filter((item) => item?.active !== false);
+  }
+  return fallbackMunitions();
+}
+
+function normalizeMunitionList(rows, useFallback = true) {
+  const normalized = (rows || [])
+    .map(normalizeMunitionDoc)
+    .filter(Boolean)
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || String(a.label).localeCompare(String(b.label)));
+  return normalized.length ? normalized : (useFallback ? fallbackMunitions() : []);
+}
+
+async function ensureDefaultMunitions(guildId) {
+  const collection = getCollection('munitions');
+  const existing = await collection.countDocuments({ guild_id: guildId });
+  if (!existing) {
+    const now = new Date();
+    await collection.insertMany(DEFAULT_MUNITIONS.map((item) => ({
+      _id: new mongoose.Types.ObjectId(),
+      guild_id: guildId,
+      nome: item.label,
+      identificador: item.key,
+      ativo: true,
+      ordem: item.order,
+      created_at: now,
+      updated_at: now,
+    }))).catch(() => null);
+  }
+  return collection;
+}
+
+async function listMunitions(guildId, includeInactive = false) {
+  const collection = await ensureDefaultMunitions(guildId);
+  const filter = { guild_id: guildId };
+  if (!includeInactive) filter.ativo = true;
+  const rows = await collection
+    .find(filter)
+    .sort({ ativo: -1, ordem: 1, nome: 1 })
+    .limit(100)
+    .toArray();
+  return normalizeMunitionList(rows, false);
 }
 
 function parsePositiveInt(value) {
@@ -179,18 +265,21 @@ function inventoryPrice(item, currency = 'BRL') {
     : Number(item?.price_brl_cents ?? fallback);
 }
 
-function emptyGroupedItems() {
-  return Object.fromEntries(GROUPED_ORDER_ITEMS.map((item) => [item.key, {
+function emptyGroupedItems(munitions = GROUPED_ORDER_ITEMS) {
+  return Object.fromEntries(munitions.map((item) => [item.key, {
     key: item.key,
     label: item.label,
+    emoji: item.emoji,
+    munition_id: item.id || null,
     quantity: 0,
+    unitPriceCents: 0,
     valueCents: 0,
   }]));
 }
 
 function groupedOrderLines(session) {
   const groupedItems = session.groupedItems || {};
-  return GROUPED_ORDER_ITEMS
+  return sessionMunitions(session)
     .map((meta) => ({ ...meta, ...(groupedItems[meta.key] || {}) }))
     .filter((item) => Number(item.quantity || 0) > 0 && Number(item.valueCents || 0) > 0);
 }
@@ -214,7 +303,8 @@ function groupedOrderSummary(session) {
     ? lines.flatMap((item) => [
       `${item.emoji || '\u{1F52B}'} **${item.label}**`,
       `Quantidade: **${Number(item.quantity || 0).toLocaleString('pt-BR')}**`,
-      `Valor: **${formatOrderMoney(item.valueCents || 0, currency)}**`,
+      `Valor Unitario: **${formatOrderMoney(item.unitPriceCents || 0, currency)}**`,
+      `Subtotal: **${formatOrderMoney(item.valueCents || 0, currency)}**`,
     ]).join('\n')
     : 'Nenhum produto preenchido.';
 
@@ -233,14 +323,16 @@ function groupedOrderSummary(session) {
 
 function parseGroupedProductInput(input) {
   const raw = String(input || '').trim();
-  if (!raw) return { quantity: 0, valueCents: 0 };
+  if (!raw) return { quantity: 0, unitPriceCents: 0, valueCents: 0 };
   const explicitParts = raw.split(/[|;]/).map((part) => part.trim()).filter(Boolean);
   const parts = explicitParts.length >= 2 ? explicitParts : (raw.match(/\d[\d.,]*/g) || []);
   const quantity = parsePositiveInt(parts[0] || '0') || 0;
-  const amount = parseMoney(parts.slice(1).join(' ') || '0', 0);
+  const unitPrice = parseMoney(parts.slice(1).join(' ') || '0', 0);
+  const unitPriceCents = cents(unitPrice || 0);
   return {
     quantity,
-    valueCents: cents(amount || 0),
+    unitPriceCents,
+    valueCents: unitPriceCents * quantity,
   };
 }
 
@@ -300,21 +392,21 @@ function groupedValueFieldId(item) {
 function groupedOrderSubject(session) {
   const currency = resolveCurrency(session.currency);
   return groupedOrderLines(session)
-    .map((item) => `${item.label} ${Number(item.quantity || 0).toLocaleString('pt-BR')} | ${formatOrderMoney(item.valueCents || 0, currency)}`)
+    .map((item) => `${item.label} ${Number(item.quantity || 0).toLocaleString('pt-BR')} x ${formatOrderMoney(item.unitPriceCents || 0, currency)} = ${formatOrderMoney(item.valueCents || 0, currency)}`)
     .join('; ');
 }
 
-function matchGroupedOrderItem(value) {
+function matchGroupedOrderItem(value, munitions = GROUPED_ORDER_ITEMS) {
   const normalized = normalizeSearchText(value);
   if (!normalized) return null;
-  return GROUPED_ORDER_ITEMS.find((item) => {
+  return munitions.find((item) => {
     const label = normalizeSearchText(item.label);
     const key = normalizeSearchText(item.key);
     return normalized.includes(label) || normalized.includes(key) || label.includes(normalized) || key.includes(normalized);
   }) || null;
 }
 
-function parseMunitionUnitPrices(value) {
+function parseMunitionUnitPrices(value, munitions = GROUPED_ORDER_ITEMS) {
   const result = {};
   const segments = String(value || '')
     .split(/\r?\n|;/)
@@ -322,7 +414,7 @@ function parseMunitionUnitPrices(value) {
     .filter(Boolean);
 
   for (const segment of segments) {
-    const meta = matchGroupedOrderItem(segment);
+    const meta = matchGroupedOrderItem(segment, munitions);
     if (!meta) continue;
     const explicit = segment.split(/[=:|]/).slice(1).join(' ').trim();
     const numbers = segment.match(/\d[\d.,]*/g) || [];
@@ -336,24 +428,24 @@ function parseMunitionUnitPrices(value) {
   return result;
 }
 
-function familyMunitionUnitPrices(family) {
+function familyMunitionUnitPrices(family, munitions = GROUPED_ORDER_ITEMS) {
   const source = family?.munition_unit_prices || family?.munition_prices || {};
-  return GROUPED_ORDER_ITEMS.reduce((prices, item) => {
+  return munitions.reduce((prices, item) => {
     prices[item.key] = Math.max(0, Number(source?.[item.key] || 0));
     return prices;
   }, {});
 }
 
-function formatFamilyPriceInput(family) {
-  const prices = familyMunitionUnitPrices(family);
-  return GROUPED_ORDER_ITEMS
+function formatFamilyPriceInput(family, munitions = GROUPED_ORDER_ITEMS) {
+  const prices = familyMunitionUnitPrices(family, munitions);
+  return munitions
     .map((item) => `${item.label}=${moneyFromCents(prices[item.key] || 0)}`)
     .join('; ');
 }
 
-function formatFamilyPricesShort(family, currency = 'BRL') {
-  const prices = familyMunitionUnitPrices(family);
-  const configured = GROUPED_ORDER_ITEMS
+function formatFamilyPricesShort(family, currency = 'BRL', munitions = GROUPED_ORDER_ITEMS) {
+  const prices = familyMunitionUnitPrices(family, munitions);
+  const configured = munitions
     .filter((item) => Number(prices[item.key] || 0) > 0)
     .map((item) => `${item.label}: ${formatOrderMoney(prices[item.key], currency)}`);
   return configured.length ? configured.join(' | ') : 'nao configurado';
@@ -390,15 +482,19 @@ function discountSummaryLabel(session) {
   return 'Nao';
 }
 
-function applyFamilyPricesToGroupedItems(groupedItems, family) {
-  const prices = familyMunitionUnitPrices(family);
+function applyFamilyPricesToGroupedItems(groupedItems, family, munitions = GROUPED_ORDER_ITEMS) {
+  const prices = familyMunitionUnitPrices(family, munitions);
   const missing = [];
-  for (const item of GROUPED_ORDER_ITEMS) {
+  for (const item of munitions) {
     const line = groupedItems[item.key];
     if (!line || !Number(line.quantity || 0)) continue;
-    if (Number(line.valueCents || 0) > 0) continue;
+    if (Number(line.unitPriceCents || 0) > 0) {
+      line.valueCents = Number(line.unitPriceCents || 0) * Number(line.quantity || 0);
+      continue;
+    }
     const unitPrice = Number(prices[item.key] || 0);
     if (unitPrice > 0) {
+      line.unitPriceCents = unitPrice;
       line.valueCents = unitPrice * Number(line.quantity || 0);
     } else {
       missing.push(item.label);
@@ -407,8 +503,8 @@ function applyFamilyPricesToGroupedItems(groupedItems, family) {
   return missing;
 }
 
-function parseOrderTicketSubject(subject) {
-  const grouped = emptyGroupedItems();
+function parseOrderTicketSubject(subject, munitions = GROUPED_ORDER_ITEMS) {
+  const grouped = emptyGroupedItems(munitions);
   const segments = String(subject || '')
     .split(/\r?\n|;/)
     .map((line) => line.trim())
@@ -416,7 +512,7 @@ function parseOrderTicketSubject(subject) {
 
   for (const segment of segments) {
     const normalized = normalizeSearchText(segment);
-    const meta = GROUPED_ORDER_ITEMS.find((item) => {
+    const meta = munitions.find((item) => {
       const labelKey = normalizeSearchText(item.label);
       const itemKey = normalizeSearchText(item.key);
       return normalized.includes(labelKey) || normalized.includes(itemKey);
@@ -429,7 +525,9 @@ function parseOrderTicketSubject(subject) {
       key: meta.key,
       label: meta.label,
       emoji: meta.emoji,
+      munition_id: meta.id || null,
       quantity: parsed.quantity,
+      unitPriceCents: parsed.unitPriceCents,
       valueCents: parsed.valueCents,
     };
   }
@@ -437,51 +535,72 @@ function parseOrderTicketSubject(subject) {
   return grouped;
 }
 
-function applyGroupedQuantityFields(session, fields) {
-  session.groupedItems = session.groupedItems || emptyGroupedItems();
+function groupedModalPageItems(session, page = 0) {
+  const start = Math.max(0, Number(page || 0)) * MODAL_FIELD_PAGE_SIZE;
+  return sessionMunitions(session).slice(start, start + MODAL_FIELD_PAGE_SIZE);
+}
+
+function hasGroupedModalNextPage(session, page = 0) {
+  return sessionMunitions(session).length > (Number(page || 0) + 1) * MODAL_FIELD_PAGE_SIZE;
+}
+
+function groupedModalPageFromId(customId, prefix) {
+  const suffix = String(customId || '').replace(prefix, '').replace(/^[:_-]+/, '');
+  const page = Number(suffix || 0);
+  return Number.isFinite(page) && page >= 0 ? Math.floor(page) : 0;
+}
+
+function applyGroupedQuantityFields(session, fields, page = 0) {
+  session.groupedItems = session.groupedItems || emptyGroupedItems(sessionMunitions(session));
   let totalQuantity = 0;
 
-  for (const item of GROUPED_ORDER_ITEMS) {
+  for (const item of groupedModalPageItems(session, page)) {
     const current = session.groupedItems[item.key] || {};
     const quantity = parsePositiveInt(modalTextValue(fields, groupedQuantityFieldId(item))) || 0;
-    totalQuantity += quantity;
+    const previousQuantity = Number(current.quantity || 0);
+    totalQuantity += quantity || previousQuantity;
     session.groupedItems[item.key] = {
       key: item.key,
       label: item.label,
       emoji: item.emoji,
+      munition_id: item.id || current.munition_id || null,
       quantity,
-      valueCents: quantity ? Number(current.valueCents || 0) : 0,
+      unitPriceCents: quantity ? Number(current.unitPriceCents || 0) : 0,
+      valueCents: quantity ? Number(current.unitPriceCents || 0) * quantity : 0,
     };
   }
 
-  return totalQuantity;
+  return Object.values(session.groupedItems || {}).reduce((total, item) => total + Number(item.quantity || 0), 0) || totalQuantity;
 }
 
-function applyGroupedValueFields(session, fields) {
-  session.groupedItems = session.groupedItems || emptyGroupedItems();
+function applyGroupedValueFields(session, fields, page = 0) {
+  session.groupedItems = session.groupedItems || emptyGroupedItems(sessionMunitions(session));
   const errors = [];
 
-  for (const item of GROUPED_ORDER_ITEMS) {
+  for (const item of groupedModalPageItems(session, page)) {
     const current = session.groupedItems[item.key] || {};
     const rawValue = modalTextValue(fields, groupedValueFieldId(item));
     const parsedValue = parseMoney(rawValue, 0);
     const quantity = Number(current.quantity || 0);
 
     if (parsedValue === null) {
-      errors.push(`Valor Total ${item.label}`);
+      errors.push(`Valor Unitario ${item.label}`);
       continue;
     }
     if (!quantity && Number(parsedValue || 0) > 0) {
       errors.push(`Quantidade ${item.label}`);
       continue;
     }
+    const unitPriceCents = cents(parsedValue || 0);
 
     session.groupedItems[item.key] = {
       key: item.key,
       label: item.label,
       emoji: item.emoji,
+      munition_id: item.id || current.munition_id || null,
       quantity,
-      valueCents: cents(parsedValue || 0),
+      unitPriceCents,
+      valueCents: unitPriceCents * quantity,
     };
   }
 
@@ -838,6 +957,27 @@ async function applyStockDelta(guildId, items, direction) {
   if (operations.length) await getCollection('order_inventory').bulkWrite(operations);
 }
 
+async function persistOrderItems(guildId, orderId, orderNumber, items, createdAt = new Date()) {
+  if (!Array.isArray(items) || !items.length) return;
+  await getCollection('order_items').insertMany(items.map((item) => ({
+    _id: new mongoose.Types.ObjectId(),
+    guild_id: guildId,
+    order_id: String(orderId),
+    order_number: orderNumber || null,
+    munition_id: item.munition_id || null,
+    inventory_item_id: item.inventory_item_id || null,
+    nome: item.name,
+    identificador: item.munition_identifier || null,
+    categoria: item.category || 'custom',
+    quantidade: Number(item.quantity || 0),
+    valor_unitario: moneyFromCents(Number(item.unit_price_cents || 0)),
+    valor_unitario_cents: Number(item.unit_price_cents || 0),
+    subtotal: moneyFromCents(Number(item.total_value_cents || 0)),
+    subtotal_cents: Number(item.total_value_cents || 0),
+    created_at: createdAt,
+  }))).catch(() => null);
+}
+
 function buildOrderApprovalPayload(order) {
   const currency = resolveCurrency(order.currency);
   const items = (order.items || []).map((line) => [
@@ -1148,14 +1288,15 @@ async function showOrderTicketModal(interaction) {
 
 async function buildOrderAdminPanelPayload(interaction = null) {
   const guildId = interaction ? getGuildId(interaction) : String(process.env.GUILD_ID || 'global');
-  const [families, coupons, products, settings] = isMongoReady()
+  const [families, coupons, munitions, products, settings] = isMongoReady()
     ? await Promise.all([
       getCollection('order_families').countDocuments({ guild_id: guildId }),
       getCollection('order_coupons').countDocuments({ guild_id: guildId }),
+      ensureDefaultMunitions(guildId).then((collection) => collection.countDocuments({ guild_id: guildId })),
       getCollection('order_inventory').countDocuments({ guild_id: guildId }),
       getSettings(guildId),
     ])
-    : [0, 0, 0, null];
+    : [0, 0, 0, 0, null];
 
   const embed = new EmbedBuilder()
     .setColor('#0EA5E9')
@@ -1164,6 +1305,7 @@ async function buildOrderAdminPanelPayload(interaction = null) {
     .setDescription([
       `Familias cadastradas: **${families}**`,
       `Cupons cadastrados: **${coupons}**`,
+      `Municoes cadastradas: **${munitions}**`,
       `Produtos cadastrados: **${products}**`,
       `Canal de registro: ${settings?.order_channel_id ? `<#${settings.order_channel_id}>` : '**nao configurado**'}`,
       '',
@@ -1176,6 +1318,7 @@ async function buildOrderAdminPanelPayload(interaction = null) {
     row(
       button('order_publish_public_panel', 'Publicar Painel Publico', ButtonStyle.Success, { emoji: ORDER_PANEL_EMOJI }),
       button('order_family_manage', 'Familias', ButtonStyle.Secondary),
+      button('order_munition_manage', 'Gerenciar Municoes', ButtonStyle.Secondary),
       button('order_history', 'Historico', ButtonStyle.Secondary),
     ),
     row(
@@ -1266,17 +1409,18 @@ async function showGroupedOrderForm(interaction) {
   return respondPanel(interaction, buildPayload('orders', embed, components), true);
 }
 
-function buildGroupedQuantitiesModal(session) {
+function buildGroupedQuantitiesModal(session, page = 0) {
   const groupedItems = session.groupedItems || {};
+  const pageItems = groupedModalPageItems(session, page);
   const modal = new ModalBuilder()
-    .setCustomId(GROUPED_QUANTITIES_MODAL_ID)
-    .setTitle('Nova Encomenda - Quantidades');
+    .setCustomId(`${GROUPED_QUANTITIES_MODAL_ID}:${page}`)
+    .setTitle(page > 0 ? `Quantidades ${page + 1}` : 'Nova Encomenda - Quantidades');
 
-  modal.addComponents(...GROUPED_ORDER_ITEMS.map((item) => {
+  modal.addComponents(...pageItems.map((item) => {
     const current = groupedItems[item.key] || {};
     return row(new TextInputBuilder()
       .setCustomId(groupedQuantityFieldId(item))
-      .setLabel(`Quantidade ${item.label}`)
+      .setLabel(`Quantidade ${item.label}`.slice(0, 45))
       .setPlaceholder('Ex: 100')
       .setValue(current.quantity ? String(current.quantity).slice(0, 12) : '')
       .setStyle(TextInputStyle.Short)
@@ -1287,21 +1431,22 @@ function buildGroupedQuantitiesModal(session) {
   return modal;
 }
 
-function buildGroupedValuesModal(session) {
+function buildGroupedValuesModal(session, page = 0) {
   const groupedItems = session.groupedItems || {};
   const currency = resolveCurrency(session.currency);
   const labelSuffix = currency === 'USD' ? '$' : 'R$';
+  const pageItems = groupedModalPageItems(session, page);
   const modal = new ModalBuilder()
-    .setCustomId(GROUPED_VALUES_MODAL_ID)
-    .setTitle(`Nova Encomenda - Valores ${currency}`);
+    .setCustomId(`${GROUPED_VALUES_MODAL_ID}:${page}`)
+    .setTitle(page > 0 ? `Valores Unitarios ${page + 1}` : `Valores Unitarios ${currency}`);
 
-  modal.addComponents(...GROUPED_ORDER_ITEMS.map((item) => {
+  modal.addComponents(...pageItems.map((item) => {
     const current = groupedItems[item.key] || {};
     return row(new TextInputBuilder()
       .setCustomId(groupedValueFieldId(item))
-      .setLabel(`Valor Total ${item.label}`)
-      .setPlaceholder(`Ex: ${labelSuffix}50000`)
-      .setValue(current.valueCents ? String(moneyFromCents(current.valueCents)).slice(0, 18) : '')
+      .setLabel(`Valor Unitario ${item.label}`.slice(0, 45))
+      .setPlaceholder(`Ex: ${labelSuffix}15`)
+      .setValue(current.unitPriceCents ? String(moneyFromCents(current.unitPriceCents)).slice(0, 18) : '')
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
       .setMaxLength(18));
@@ -1311,7 +1456,7 @@ function buildGroupedValuesModal(session) {
 }
 
 function buildGroupedItemsModal(session) {
-  return buildGroupedQuantitiesModal(session);
+  return buildGroupedQuantitiesModal(session, 0);
 }
 
 async function showGroupedConfirmation(interaction) {
@@ -1660,6 +1805,47 @@ function buildFamilyModal(mode, family = null) {
     );
 }
 
+function buildMunitionModal(mode, munition = null) {
+  const identifier = String(munition?.key || munition?.identificador || '');
+  return new ModalBuilder()
+    .setCustomId(mode === 'edit' ? `${ORDER_MUNITION_MODAL_ID}_edit_${String(munition?.id || '')}` : `${ORDER_MUNITION_MODAL_ID}_create`)
+    .setTitle(mode === 'edit' ? 'Editar Municao' : 'Adicionar Municao')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId(ORDER_MUNITION_NAME_FIELD)
+        .setLabel('Nome da Municao')
+        .setPlaceholder('Ex: HK/MAG')
+        .setValue(String(munition?.label || '').slice(0, 100))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(100)),
+      row(new TextInputBuilder()
+        .setCustomId(ORDER_MUNITION_IDENTIFIER_FIELD)
+        .setLabel('Identificador')
+        .setPlaceholder('Ex: hk_mag')
+        .setValue(identifier.slice(0, 80))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setMaxLength(80)),
+      row(new TextInputBuilder()
+        .setCustomId(ORDER_MUNITION_ORDER_FIELD)
+        .setLabel('Ordem de Exibicao')
+        .setPlaceholder('Ex: 1')
+        .setValue(String(munition?.order || 1).slice(0, 8))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(8)),
+      row(new TextInputBuilder()
+        .setCustomId(ORDER_MUNITION_ACTIVE_FIELD)
+        .setLabel('Ativo? sim/nao')
+        .setPlaceholder('sim')
+        .setValue(munition?.active === false ? 'nao' : 'sim')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setMaxLength(5)),
+    );
+}
+
 function buildCancelModal(orderId) {
   return new ModalBuilder()
     .setCustomId(`modal_order_cancel_${orderId}`)
@@ -1821,12 +2007,14 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
     subject: session.subject || null,
     items: lines.map((line) => ({
       inventory_item_id: null,
+      munition_id: line.munition_id || line.id || null,
+      munition_identifier: line.key || null,
       name: line.label,
       emoji: line.emoji,
       category: 'munitions',
       package_quantity: 1,
       quantity: Number(line.quantity || 0),
-      unit_price_cents: line.quantity ? Math.round(Number(line.valueCents || 0) / Number(line.quantity || 1)) : Number(line.valueCents || 0),
+      unit_price_cents: Number(line.unitPriceCents || 0),
       total_value_cents: Number(line.valueCents || 0),
     })),
     currency,
@@ -1852,6 +2040,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
   };
 
   await getCollection('orders').insertOne(order);
+  await persistOrderItems(session.guildId, orderId, order.order_number, order.items, now);
   if (coupon?._id) {
     await getCollection('order_coupons').updateOne(
       { _id: coupon._id, guild_id: session.guildId },
@@ -1993,6 +2182,7 @@ async function finalizeOrder(interaction) {
     };
 
     await getCollection('orders').insertOne(order);
+    await persistOrderItems(session.guildId, orderId, order.order_number, order.items, now);
     if (coupon?._id) {
       await getCollection('order_coupons').updateOne(
         { _id: coupon._id, guild_id: session.guildId },
@@ -2102,6 +2292,7 @@ async function finalizeOrder(interaction) {
 
   await applyStockDelta(session.guildId, order.items, -1);
   await getCollection('orders').insertOne(order);
+  await persistOrderItems(session.guildId, orderId, order.order_number, order.items, now);
   order.approval_message_id = await sendApprovalMessage(interaction, order);
   if (order.approval_message_id) {
     await getCollection('orders').updateOne(
@@ -2228,6 +2419,77 @@ async function removeSelectedFamily(interaction) {
   }, family, await getSettings(getGuildId(interaction)), interaction);
   familySelections.delete(sessionKey(interaction));
   return showFamilyManager(interaction);
+}
+
+async function showMunitionManager(interaction) {
+  if (!hasOrderManagerPermission(interaction.member)) {
+    return safeReply(interaction, { content: 'Voce nao tem permissao para gerenciar municoes.', ephemeral: true });
+  }
+
+  const guildId = getGuildId(interaction);
+  const munitions = await listMunitions(guildId, true);
+  const selectedId = munitionSelections.get(sessionKey(interaction)) || String(munitions[0]?.id || '');
+  const selected = munitions.find((munition) => String(munition.id) === selectedId) || munitions[0] || null;
+  if (selected) munitionSelections.set(sessionKey(interaction), String(selected.id));
+
+  const select = munitions.length
+    ? new StringSelectMenuBuilder()
+      .setCustomId('order_select_munition_manage')
+      .setPlaceholder('Selecionar municao')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(munitions.slice(0, 25).map((munition) => ({
+        label: String(munition.label || 'Municao').slice(0, 100),
+        value: String(munition.id),
+        description: `${munition.active ? 'Ativa' : 'Inativa'} | ${munition.key} | ordem ${munition.order}`.slice(0, 100),
+        default: selected && String(munition.id) === String(selected.id),
+      })))
+    : null;
+
+  const embed = new EmbedBuilder()
+    .setColor('#0EA5E9')
+    .setTitle('Gerenciar Municoes')
+    .setDescription(selected ? [
+      `Selecionada: **${selected.label}**`,
+      `Identificador: **${selected.key}**`,
+      `Ordem de exibicao: **${selected.order}**`,
+      `Status: **${selected.active ? 'Ativa' : 'Inativa'}**`,
+      '',
+      'Toda municao ativa aparece automaticamente no formulario de nova encomenda.',
+    ].join('\n') : 'Nenhuma municao cadastrada ainda.');
+
+  const components = [];
+  if (select) components.push(row(select));
+  components.push(row(
+    button('order_munition_create', 'Adicionar Municao', ButtonStyle.Success, { emoji: '\u{2795}' }),
+    button('order_munition_edit', 'Editar Municao', ButtonStyle.Primary, { disabled: !selected }),
+    button('order_munition_remove', 'Remover Municao', ButtonStyle.Danger, { disabled: !selected || selected.active === false }),
+  ));
+  components.push(row(
+    button('order_family_manage', 'Familias', ButtonStyle.Secondary),
+    linkButton(`${ORDER_DASHBOARD_URL}/dashboard/orders`, 'Painel Web'),
+  ));
+
+  return respondPanel(interaction, buildPayload('orders', embed, components), true);
+}
+
+async function selectedMunitionForManager(interaction) {
+  const selectedId = munitionSelections.get(sessionKey(interaction));
+  const id = objectId(selectedId);
+  if (!id) return null;
+  const doc = await getCollection('munitions').findOne({ _id: id, guild_id: getGuildId(interaction) });
+  return normalizeMunitionDoc(doc);
+}
+
+async function removeSelectedMunition(interaction) {
+  const selected = await selectedMunitionForManager(interaction);
+  if (!selected) return showMunitionManager(interaction);
+  await getCollection('munitions').updateOne(
+    { _id: objectId(selected.id), guild_id: getGuildId(interaction) },
+    { $set: { ativo: false, updated_at: new Date() } },
+  );
+  munitionSelections.delete(sessionKey(interaction));
+  return showMunitionManager(interaction);
 }
 
 async function showFamilyMembers(interaction) {
@@ -2427,6 +2689,7 @@ async function handleOrderButton(interaction) {
   }
 
   if (interaction.customId === 'order_family_manage') return showFamilyManager(interaction);
+  if (interaction.customId === 'order_munition_manage') return showMunitionManager(interaction);
   if (interaction.customId === 'order_history') return showGlobalHistory(interaction);
   if (interaction.customId === 'order_back_cart') return showCart(interaction);
   if (interaction.customId === 'order_add_item') return showInventorySelect(interaction);
@@ -2506,6 +2769,21 @@ async function handleOrderButton(interaction) {
   }
   if (interaction.customId === 'order_family_view') return showFamilyMembers(interaction);
   if (interaction.customId === 'order_family_history') return showFamilyHistory(interaction);
+
+  if (interaction.customId === 'order_munition_create') {
+    if (!hasOrderManagerPermission(interaction.member)) return safeReply(interaction, { content: 'Sem permissao.', ephemeral: true });
+    return safeShowModal(interaction, buildMunitionModal('create'));
+  }
+  if (interaction.customId === 'order_munition_edit') {
+    if (!hasOrderManagerPermission(interaction.member)) return safeReply(interaction, { content: 'Sem permissao.', ephemeral: true });
+    const munition = await selectedMunitionForManager(interaction);
+    if (!munition) return showMunitionManager(interaction);
+    return safeShowModal(interaction, buildMunitionModal('edit', munition));
+  }
+  if (interaction.customId === 'order_munition_remove') {
+    if (!hasOrderManagerPermission(interaction.member)) return safeReply(interaction, { content: 'Sem permissao.', ephemeral: true });
+    return removeSelectedMunition(interaction);
+  }
 
   if (/^order_(approve|cancel|transport|delivered)_/.test(interaction.customId) && !hasOrderManagerPermission(interaction.member)) {
     return safeReply(interaction, { content: 'Voce nao tem permissao para alterar o status de encomendas.', ephemeral: true });
@@ -2664,6 +2942,11 @@ async function handleOrderSelect(interaction) {
     return showFamilyManager(interaction);
   }
 
+  if (interaction.customId === 'order_select_munition_manage') {
+    munitionSelections.set(sessionKey(interaction), String(interaction.values[0] || ''));
+    return showMunitionManager(interaction);
+  }
+
   return safeReply(interaction, { content: 'Selecao de encomenda invalida.', ephemeral: true });
 }
 
@@ -2677,8 +2960,12 @@ async function resolveOrderTicketSetup(interaction, {
   }
 
   const guildId = getGuildId(interaction);
-  const family = await resolveOrderTicketFamily(guildId, familyInput);
+  const [family, munitions] = await Promise.all([
+    resolveOrderTicketFamily(guildId, familyInput),
+    listMunitions(guildId),
+  ]);
   if (!family) return { ok: false, message: 'Categoria/familia de encomenda nao encontrada.' };
+  if (!munitions.length) return { ok: false, message: 'Cadastre pelo menos uma municao ativa no Gerenciar Municoes antes de abrir encomendas.' };
 
   const session = getSession(interaction);
   session.familyId = String(family._id);
@@ -2691,6 +2978,8 @@ async function resolveOrderTicketSetup(interaction, {
   session.currencySelected = true;
   session.subject = '';
   session.couponInput = String(couponInput || '').trim();
+  session.munitions = munitions;
+  session.groupedItems = emptyGroupedItems(munitions);
 
   if (session.couponInput) {
     const coupon = await findCouponByCode(session.guildId, session.familyId, session.couponInput);
@@ -2721,15 +3010,15 @@ async function submitOrderTicketModal(interaction, {
   if (!setup.ok) return safeEdit(interaction, { content: setup.message });
   const { session, family } = setup;
 
-  const groupedItems = parseOrderTicketSubject(subject);
-  const missingPrices = applyFamilyPricesToGroupedItems(groupedItems, family);
+  const munitions = sessionMunitions(session);
+  const groupedItems = parseOrderTicketSubject(subject, munitions);
+  const missingPrices = applyFamilyPricesToGroupedItems(groupedItems, family, munitions);
   const parsedLines = groupedOrderLines({ groupedItems });
   if (!parsedLines.length) {
     return safeEdit(interaction, {
       content: [
         'Informe pelo menos um produto no assunto e cadastre o valor unitario da muni na familia.',
-        'Modelo com valor automatico: `HK/MAG 100; TEC/FIVE 50; MTAR/MP7 25`',
-        'Ou informe valor manual: `HK/MAG 100 | R$ 50000`',
+        'Modelo: `HK/MAG 5000 | 15; TEC/FIVE 3000 | 10; MTAR/MP7 2000 | 25`',
       ].join('\n'),
     });
   }
@@ -2757,7 +3046,7 @@ async function handleOrderModal(interaction) {
       currency: interaction.fields.getRadioGroup(ORDER_TICKET_CURRENCY_FIELD, true),
     });
     if (!setup.ok) return safeReply(interaction, { content: setup.message, ephemeral: true });
-    return safeShowModal(interaction, buildGroupedQuantitiesModal(setup.session));
+    return safeShowModal(interaction, buildGroupedQuantitiesModal(setup.session, 0));
   }
 
   if (interaction.customId === ORDER_TICKET_TEXT_MODAL_ID) {
@@ -2805,21 +3094,24 @@ async function handleOrderModal(interaction) {
   if (interaction.customId === 'modal_order_grouped_items') {
     await safeDeferReply(interaction, { ephemeral: true });
     const session = getSession(interaction);
-    session.groupedItems = session.groupedItems || emptyGroupedItems();
-    for (const item of GROUPED_ORDER_ITEMS) {
+    const munitions = sessionMunitions(session);
+    session.groupedItems = session.groupedItems || emptyGroupedItems(munitions);
+    for (const item of munitions) {
       const parsed = parseGroupedProductInput(interaction.fields.getTextInputValue(item.key));
       session.groupedItems[item.key] = {
         key: item.key,
         label: item.label,
         emoji: item.emoji,
+        munition_id: item.id || null,
         quantity: parsed.quantity,
+        unitPriceCents: parsed.unitPriceCents,
         valueCents: parsed.valueCents,
       };
     }
     if (session.familyId) {
       const familyId = objectId(session.familyId);
       const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
-      if (family) applyFamilyPricesToGroupedItems(session.groupedItems, family);
+      if (family) applyFamilyPricesToGroupedItems(session.groupedItems, family, sessionMunitions(session));
     }
     if (!groupedOrderLines(session).length) {
       return safeEdit(interaction, { content: 'Preencha pelo menos um produto com quantidade e valor maior que zero, ou cadastre o valor unitario da muni na familia.' });
@@ -2828,31 +3120,41 @@ async function handleOrderModal(interaction) {
     return showGroupedConfirmation(interaction);
   }
 
-  if (interaction.customId === GROUPED_QUANTITIES_MODAL_ID) {
+  if (String(interaction.customId || '').startsWith(GROUPED_QUANTITIES_MODAL_ID)) {
     const session = getSession(interaction);
-    const totalQuantity = applyGroupedQuantityFields(session, interaction.fields);
+    const page = groupedModalPageFromId(interaction.customId, GROUPED_QUANTITIES_MODAL_ID);
+    const totalQuantity = applyGroupedQuantityFields(session, interaction.fields, page);
     if (!totalQuantity) {
       return safeReply(interaction, { content: 'Preencha pelo menos uma quantidade maior que zero.', ephemeral: true });
     }
-    return safeShowModal(interaction, buildGroupedValuesModal(session));
+    if (hasGroupedModalNextPage(session, page)) {
+      return safeShowModal(interaction, buildGroupedQuantitiesModal(session, page + 1));
+    }
+    return safeShowModal(interaction, buildGroupedValuesModal(session, 0));
   }
 
-  if (interaction.customId === GROUPED_VALUES_MODAL_ID) {
-    await safeDeferReply(interaction, { ephemeral: true });
+  if (String(interaction.customId || '').startsWith(GROUPED_VALUES_MODAL_ID)) {
     const session = getSession(interaction);
-    const fieldErrors = applyGroupedValueFields(session, interaction.fields);
+    const page = groupedModalPageFromId(interaction.customId, GROUPED_VALUES_MODAL_ID);
+    const fieldErrors = applyGroupedValueFields(session, interaction.fields, page);
     if (fieldErrors.length) {
-      return safeEdit(interaction, { content: `Revise estes campos: ${fieldErrors.join(', ')}.` });
+      return safeReply(interaction, { content: `Revise estes campos: ${fieldErrors.join(', ')}.`, ephemeral: true });
     }
+
+    if (hasGroupedModalNextPage(session, page)) {
+      return safeShowModal(interaction, buildGroupedValuesModal(session, page + 1));
+    }
+
+    await safeDeferReply(interaction, { ephemeral: true });
 
     let missingPrices = [];
     if (session.familyId) {
       const familyId = objectId(session.familyId);
       const family = familyId ? await getCollection('order_families').findOne({ _id: familyId, guild_id: session.guildId, active: true }) : null;
-      if (family) missingPrices = applyFamilyPricesToGroupedItems(session.groupedItems, family);
+      if (family) missingPrices = applyFamilyPricesToGroupedItems(session.groupedItems, family, sessionMunitions(session));
     }
     if (missingPrices.length) {
-      return safeEdit(interaction, { content: `Informe o Valor Total de ${missingPrices.join(', ')} ou cadastre o valor unitario na familia.` });
+      return safeEdit(interaction, { content: `Informe o Valor Unitario de ${missingPrices.join(', ')} ou cadastre o valor unitario na familia.` });
     }
     if (!groupedOrderLines(session).length) {
       return safeEdit(interaction, { content: 'Preencha pelo menos um produto com quantidade e valor maior que zero.' });
@@ -2882,6 +3184,73 @@ async function handleOrderModal(interaction) {
       total_value_cents: unitPriceCents * quantity,
     });
     return safeEdit(interaction, { content: `${quantity.toLocaleString('pt-BR')}x ${name} adicionado ao carrinho.` });
+  }
+
+  if (interaction.customId === `${ORDER_MUNITION_MODAL_ID}_create` || interaction.customId.startsWith(`${ORDER_MUNITION_MODAL_ID}_edit_`)) {
+    if (!hasOrderManagerPermission(interaction.member)) return safeReply(interaction, { content: 'Sem permissao.', ephemeral: true });
+    await safeDeferReply(interaction, { ephemeral: true });
+    const guildId = getGuildId(interaction);
+    const now = new Date();
+    const name = modalTextValue(interaction.fields, ORDER_MUNITION_NAME_FIELD).slice(0, 100);
+    const identifierInput = modalTextValue(interaction.fields, ORDER_MUNITION_IDENTIFIER_FIELD);
+    const identifier = createIdentifier(identifierInput || name);
+    const order = parsePositiveInt(modalTextValue(interaction.fields, ORDER_MUNITION_ORDER_FIELD)) || 1;
+    const activeText = normalizeSearchText(modalTextValue(interaction.fields, ORDER_MUNITION_ACTIVE_FIELD) || 'sim');
+    const active = !['nao', 'no', 'false', '0', 'inativa', 'inativo'].includes(activeText);
+    if (!name || name.length < 2) return safeEdit(interaction, { content: 'Informe o nome da municao.' });
+
+    const editId = interaction.customId.startsWith(`${ORDER_MUNITION_MODAL_ID}_edit_`)
+      ? objectId(interaction.customId.replace(`${ORDER_MUNITION_MODAL_ID}_edit_`, ''))
+      : null;
+
+    if (editId) {
+      const result = await getCollection('munitions').findOneAndUpdate(
+        { _id: editId, guild_id: guildId },
+        {
+          $set: {
+            nome: name,
+            identificador: identifier,
+            ativo: active,
+            ordem: order,
+            updated_at: now,
+          },
+        },
+        { returnDocument: 'after' },
+      );
+      if (!result) return safeEdit(interaction, { content: 'Municao nao encontrada.' });
+      munitionSelections.set(sessionKey(interaction), String(result._id));
+      await insertOrderLog({
+        guild_id: guildId,
+        action: 'munition_updated',
+        actor_id: getActor(interaction).id,
+        actor_name: getActor(interaction).name,
+        details: { source: 'discord', munition: name, identificador: identifier, ordem: order, ativo: active },
+        created_at: now,
+      }, null, await getSettings(guildId), interaction);
+      return safeEdit(interaction, { content: `Municao ${name} atualizada.` });
+    }
+
+    const doc = {
+      _id: new mongoose.Types.ObjectId(),
+      guild_id: guildId,
+      nome: name,
+      identificador: identifier,
+      ativo: active,
+      ordem: order,
+      created_at: now,
+      updated_at: now,
+    };
+    await getCollection('munitions').insertOne(doc);
+    munitionSelections.set(sessionKey(interaction), String(doc._id));
+    await insertOrderLog({
+      guild_id: guildId,
+      action: 'munition_created',
+      actor_id: getActor(interaction).id,
+      actor_name: getActor(interaction).name,
+      details: { source: 'discord', munition: name, identificador: identifier, ordem: order, ativo: active },
+      created_at: now,
+    }, null, await getSettings(guildId), interaction);
+    return safeEdit(interaction, { content: `Municao ${name} cadastrada.` });
   }
 
   if (interaction.customId === 'modal_order_family_create' || interaction.customId.startsWith('modal_order_family_edit_')) {

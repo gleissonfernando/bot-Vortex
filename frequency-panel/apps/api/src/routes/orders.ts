@@ -13,6 +13,16 @@ const ORDER_NUMBER_OFFSET = 3846;
 const orderStatuses = ['pending', 'separating', 'transport', 'delivered', 'cancelled'] as const;
 const itemCategories = ['munitions', 'weapons', 'general', 'drugs', 'custom'] as const;
 const currencies = ['BRL', 'USD'] as const;
+const defaultMunitions = [
+  { nome: 'HK/MAG', identificador: 'hk_mag', ordem: 1 },
+  { nome: 'TEC/FIVE', identificador: 'tec_five', ordem: 2 },
+  { nome: 'MTAR/MP7', identificador: 'mtar_mp7', ordem: 3 },
+  { nome: 'AK103', identificador: 'ak103', ordem: 4 },
+  { nome: 'THOMPSON', identificador: 'thompson', ordem: 5 },
+  { nome: 'G36', identificador: 'g36', ordem: 6 },
+  { nome: 'FAL', identificador: 'fal', ordem: 7 },
+  { nome: 'MUNICAO SNIPER', identificador: 'municao_sniper', ordem: 8 }
+] as const;
 
 type OrderStatus = typeof orderStatuses[number];
 type ItemCategory = typeof itemCategories[number];
@@ -71,8 +81,21 @@ type InventoryItemDoc = {
   updated_at: Date;
 };
 
+type MunitionDoc = {
+  _id?: ObjectId;
+  guild_id: string;
+  nome: string;
+  identificador: string;
+  ativo: boolean;
+  ordem: number;
+  created_at: Date;
+  updated_at: Date;
+};
+
 type OrderLineItem = {
   inventory_item_id?: string | null;
+  munition_id?: string | null;
+  munition_identifier?: string | null;
   name: string;
   category: ItemCategory;
   package_quantity?: number;
@@ -98,6 +121,24 @@ type OrderCouponDoc = {
   created_by_name?: string | null;
   created_at: Date;
   updated_at: Date;
+};
+
+type OrderItemDoc = {
+  _id?: ObjectId;
+  guild_id: string;
+  order_id: string;
+  order_number?: number | null;
+  munition_id?: string | null;
+  inventory_item_id?: string | null;
+  nome: string;
+  identificador?: string | null;
+  categoria: ItemCategory;
+  quantidade: number;
+  valor_unitario: number;
+  valor_unitario_cents: number;
+  subtotal: number;
+  subtotal_cents: number;
+  created_at: Date;
 };
 
 type OrderDoc = {
@@ -217,8 +258,39 @@ const inventorySchema = z.object({
   active: z.boolean().default(true)
 });
 
+const munitionIdentifierSchema = z.string()
+  .trim()
+  .min(2, 'Informe o identificador.')
+  .max(80)
+  .regex(/^[a-z0-9_]+$/, 'Use apenas letras minusculas, numeros e underscore.');
+
+const munitionSchema = z.object({
+  guildId: discordId.optional(),
+  nome: z.string().trim().min(2, 'Informe o nome da municao.').max(100).optional(),
+  name: z.string().trim().min(2, 'Informe o nome da municao.').max(100).optional(),
+  identificador: munitionIdentifierSchema.optional(),
+  identifier: munitionIdentifierSchema.optional(),
+  ordem: z.coerce.number().int().min(1).max(1000).optional(),
+  order: z.coerce.number().int().min(1).max(1000).optional(),
+  ativo: z.boolean().optional(),
+  active: z.boolean().optional()
+}).refine((value) => Boolean(value.nome || value.name), 'Informe o nome da municao.');
+
+const munitionUpdateSchema = z.object({
+  guildId: discordId.optional(),
+  nome: z.string().trim().min(2, 'Informe o nome da municao.').max(100).optional(),
+  name: z.string().trim().min(2, 'Informe o nome da municao.').max(100).optional(),
+  identificador: munitionIdentifierSchema.optional(),
+  identifier: munitionIdentifierSchema.optional(),
+  ordem: z.coerce.number().int().min(1).max(1000).optional(),
+  order: z.coerce.number().int().min(1).max(1000).optional(),
+  ativo: z.boolean().optional(),
+  active: z.boolean().optional()
+});
+
 const orderLineSchema = z.object({
   inventoryItemId: objectIdSchema.optional().or(z.literal('')),
+  munitionId: objectIdSchema.optional().or(z.literal('')),
   name: z.string().trim().max(100).optional().or(z.literal('')),
   category: z.enum(itemCategories).default('custom'),
   quantity: z.coerce.number().int().positive('Quantidade precisa ser maior que zero.').max(100_000_000),
@@ -357,6 +429,17 @@ function createSlug(value: string) {
   return slug || `item-${Date.now()}`;
 }
 
+function createIdentifier(value: string) {
+  const identifier = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return identifier || `munition_${Date.now()}`;
+}
+
 function cents(value: number) {
   return Math.max(0, Math.round(Number(value || 0) * 100));
 }
@@ -429,6 +512,45 @@ function categoryLabel(category: ItemCategory) {
     custom: 'Personalizado'
   };
   return labels[category] || category;
+}
+
+async function ensureDefaultMunitions(guildId: string) {
+  const munitions = await collection<MunitionDoc>('munitions');
+  const existing = await munitions.countDocuments({ guild_id: guildId });
+  if (!existing) {
+    const now = new Date();
+    await munitions.insertMany(defaultMunitions.map((item) => ({
+      _id: new ObjectId(),
+      guild_id: guildId,
+      nome: item.nome,
+      identificador: item.identificador,
+      ativo: true,
+      ordem: item.ordem,
+      created_at: now,
+      updated_at: now
+    }))).catch(async () => {
+      // Another process can seed first during startup; reading again is enough.
+    });
+  }
+  return munitions;
+}
+
+function normalizeMunition(doc: MunitionDoc) {
+  const row = serializeDoc(doc) as any;
+  return {
+    id: String(doc._id),
+    guildId: doc.guild_id,
+    nome: doc.nome,
+    name: doc.nome,
+    identificador: doc.identificador,
+    identifier: doc.identificador,
+    ativo: doc.ativo,
+    active: doc.ativo,
+    ordem: Number(doc.ordem || 1),
+    order: Number(doc.ordem || 1),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 function normalizeSettings(doc: OrderSettingsDoc | null, channels?: Awaited<ReturnType<typeof fetchDiscordChannels>> | null) {
@@ -531,6 +653,8 @@ function normalizeOrder(doc: OrderDoc) {
     responsibleName: doc.responsible_name || '',
     items: doc.items.map((item) => ({
       inventoryItemId: item.inventory_item_id || '',
+      munitionId: item.munition_id || '',
+      munitionIdentifier: item.munition_identifier || '',
       name: item.name,
       category: item.category,
       categoryLabel: categoryLabel(item.category),
@@ -599,6 +723,8 @@ function normalizeFavorite(doc: FavoriteOrderDoc) {
     name: doc.name,
     items: doc.items.map((item) => ({
       inventoryItemId: item.inventory_item_id || '',
+      munitionId: item.munition_id || '',
+      munitionIdentifier: item.munition_identifier || '',
       name: item.name,
       category: item.category,
       categoryLabel: categoryLabel(item.category),
@@ -624,30 +750,49 @@ async function nextOrderNumber(guildId: string) {
 }
 
 async function buildOrderItems(guildId: string, requested: z.infer<typeof orderLineSchema>[], currency: OrderCurrency = 'BRL') {
-  const inventory = await collection<InventoryItemDoc>('order_inventory');
+  const [inventory, munitions] = await Promise.all([
+    collection<InventoryItemDoc>('order_inventory'),
+    ensureDefaultMunitions(guildId)
+  ]);
   const ids = requested
     .map((item) => item.inventoryItemId)
+    .filter((value): value is string => Boolean(value && ObjectId.isValid(value)));
+  const munitionIds = requested
+    .map((item) => item.munitionId)
     .filter((value): value is string => Boolean(value && ObjectId.isValid(value)));
   const stockItems = ids.length
     ? await inventory.find({ guild_id: guildId, _id: { $in: ids.map((id) => new ObjectId(id)) } }).toArray()
     : [];
+  const munitionRows = munitionIds.length
+    ? await munitions.find({ guild_id: guildId, _id: { $in: munitionIds.map((id) => new ObjectId(id)) } }).toArray()
+    : [];
   const stockById = new Map(stockItems.map((item) => [String(item._id), item]));
+  const munitionById = new Map(munitionRows.map((item) => [String(item._id), item]));
 
   const items: OrderLineItem[] = [];
   for (const input of requested) {
     const stockItem = input.inventoryItemId ? stockById.get(input.inventoryItemId) : null;
+    const munition = input.munitionId ? munitionById.get(input.munitionId) : null;
     if (input.inventoryItemId && !stockItem) {
       throw new Error('Um item selecionado nao existe mais no estoque.');
+    }
+    if (input.munitionId && !munition) {
+      throw new Error('Uma municao selecionada nao existe mais no cadastro.');
     }
     if (stockItem && !stockItem.active) {
       throw new Error(`${stockItem.name} esta desativado no estoque.`);
     }
-    const name = stockItem?.name || String(input.name || 'Item personalizado').trim();
+    if (munition && !munition.ativo) {
+      throw new Error(`${munition.nome} esta desativada no cadastro de municoes.`);
+    }
+    const name = stockItem?.name || munition?.nome || String(input.name || 'Item personalizado').trim();
     if (!name || name.length < 2) throw new Error('Informe o nome do item personalizado.');
-    const category = stockItem?.category || input.category || 'custom';
+    const category = stockItem?.category || (munition ? 'munitions' : input.category || 'custom');
     const unitPriceCents = stockItem ? inventoryPrice(stockItem, currency) : cents(Number(input.unitPrice || 0));
     items.push({
       inventory_item_id: stockItem?._id ? String(stockItem._id) : null,
+      munition_id: munition?._id ? String(munition._id) : null,
+      munition_identifier: munition?.identificador || null,
       name,
       category,
       package_quantity: Number(stockItem?.package_quantity || 1),
@@ -673,6 +818,28 @@ async function applyStockDelta(guildId: string, items: OrderLineItem[], directio
     }));
   if (!operations.length) return;
   await (await collection<InventoryItemDoc>('order_inventory')).bulkWrite(operations);
+}
+
+async function persistOrderItems(guildId: string, orderId: ObjectId | string, orderNumber: number | null, items: OrderLineItem[], createdAt = new Date()) {
+  if (!items.length) return;
+  const docs: OrderItemDoc[] = items.map((item) => ({
+    _id: new ObjectId(),
+    guild_id: guildId,
+    order_id: String(orderId),
+    order_number: orderNumber,
+    munition_id: item.munition_id || null,
+    inventory_item_id: item.inventory_item_id || null,
+    nome: item.name,
+    identificador: item.munition_identifier || null,
+    categoria: item.category,
+    quantidade: Number(item.quantity || 0),
+    valor_unitario: moneyFromCents(Number(item.unit_price_cents || 0)),
+    valor_unitario_cents: Number(item.unit_price_cents || 0),
+    subtotal: moneyFromCents(Number(item.total_value_cents || 0)),
+    subtotal_cents: Number(item.total_value_cents || 0),
+    created_at: createdAt
+  }));
+  await (await collection<OrderItemDoc>('order_items')).insertMany(docs);
 }
 
 async function findApplicableCoupon(guildId: string, couponId: string | undefined, familyId: string) {
@@ -1158,6 +1325,93 @@ ordersRouter.delete('/families/:id', asyncRoute(async (req, res) => {
   return res.json({ ok: true });
 }));
 
+ordersRouter.get('/munitions', asyncRoute(async (req, res) => {
+  const guildId = defaultGuildId(req);
+  const includeInactive = String(req.query.includeInactive || '') === 'true';
+  const munitions = await ensureDefaultMunitions(guildId);
+  const filter: Filter<MunitionDoc> = { guild_id: guildId };
+  if (!includeInactive) filter.ativo = true;
+  const rows = await munitions
+    .find(filter)
+    .sort({ ativo: -1, ordem: 1, nome: 1 })
+    .toArray();
+  return res.json({ ok: true, guildId, munitions: rows.map(normalizeMunition) });
+}));
+
+ordersRouter.post('/munitions', asyncRoute(async (req, res) => {
+  const input = munitionSchema.parse(req.body);
+  const guildId = input.guildId || defaultGuildId(req);
+  const now = new Date();
+  const nome = String(input.nome || input.name || '').trim();
+  const identificador = String(input.identificador || input.identifier || createIdentifier(nome)).trim();
+  const doc: MunitionDoc = {
+    _id: new ObjectId(),
+    guild_id: guildId,
+    nome,
+    identificador,
+    ativo: input.ativo ?? input.active ?? true,
+    ordem: Number(input.ordem ?? input.order ?? 1),
+    created_at: now,
+    updated_at: now
+  };
+  await (await collection<MunitionDoc>('munitions')).insertOne(doc);
+  const actor = getActor(req);
+  await insertOrderLog({
+    guild_id: guildId,
+    action: 'munition_created',
+    actor_id: actor.id,
+    actor_name: actor.name,
+    details: { munition: doc.nome, identificador: doc.identificador, ordem: doc.ordem },
+    created_at: now
+  });
+  publishDashboardEvent({ type: 'orders.updated', payload: { guildId, action: 'munition_created' } });
+  return res.status(201).json({ ok: true, munition: normalizeMunition(doc) });
+}));
+
+ordersRouter.put('/munitions/:id', asyncRoute(async (req, res) => {
+  const input = munitionUpdateSchema.parse(req.body);
+  const guildId = input.guildId || defaultGuildId(req);
+  const id = objectIdParam(req);
+  const update: Partial<MunitionDoc> = { updated_at: new Date() };
+  const nome = String(input.nome || input.name || '').trim();
+  if (nome) update.nome = nome;
+  const identificador = String(input.identificador || input.identifier || '').trim();
+  if (identificador) update.identificador = identificador;
+  if (input.ordem !== undefined || input.order !== undefined) update.ordem = Number(input.ordem ?? input.order);
+  if (input.ativo !== undefined || input.active !== undefined) update.ativo = input.ativo ?? input.active ?? true;
+
+  const result = await (await collection<MunitionDoc>('munitions')).findOneAndUpdate(
+    { _id: id, guild_id: guildId },
+    { $set: update },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Municao nao encontrada.' });
+  const actor = getActor(req);
+  await insertOrderLog({
+    guild_id: guildId,
+    action: 'munition_updated',
+    actor_id: actor.id,
+    actor_name: actor.name,
+    details: { munition: result.nome, identificador: result.identificador, ordem: result.ordem, ativo: result.ativo },
+    created_at: new Date()
+  });
+  publishDashboardEvent({ type: 'orders.updated', payload: { guildId, action: 'munition_updated' } });
+  return res.json({ ok: true, munition: normalizeMunition(result) });
+}));
+
+ordersRouter.delete('/munitions/:id', asyncRoute(async (req, res) => {
+  const guildId = defaultGuildId(req);
+  const id = objectIdParam(req);
+  const result = await (await collection<MunitionDoc>('munitions')).findOneAndUpdate(
+    { _id: id, guild_id: guildId },
+    { $set: { ativo: false, updated_at: new Date() } },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Municao nao encontrada.' });
+  publishDashboardEvent({ type: 'orders.updated', payload: { guildId, action: 'munition_deleted' } });
+  return res.json({ ok: true, munition: normalizeMunition(result) });
+}));
+
 ordersRouter.get('/inventory', asyncRoute(async (req, res) => {
   const guildId = defaultGuildId(req);
   const includeInactive = String(req.query.includeInactive || '') === 'true';
@@ -1512,6 +1766,7 @@ ordersRouter.post('/', asyncRoute(async (req, res) => {
     doc.approval_message_id = await sendApprovalMessage(doc.approval_channel_id, doc).catch(() => '');
   }
   await (await collection<OrderDoc>('orders')).insertOne(doc);
+  await persistOrderItems(guildId, orderId, doc.order_number, items, now);
   if (coupon?._id) {
     await (await collection<OrderCouponDoc>('order_coupons')).updateOne(
       { _id: coupon._id, guild_id: guildId },
