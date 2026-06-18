@@ -9,7 +9,7 @@ const { createApprovedSetChannel, handleApprovedChannelGuide, getApprovedSetChan
 const { getUserProfile, registerApprovedProfile } = require('../utils/profileManager');
 const { handleBauButton, handleBauModal } = require('../utils/bauManager');
 const { handleOrderButton, handleOrderModal, handleOrderSelect } = require('../utils/orderManager');
-const { hasAnyVortexRole, hasVortexAccess, hasPanelAccess } = require('../utils/permissions');
+const { getMasterRoleIds, getMasterUserIds, hasAnyVortexRole, hasVortexAccess, hasPanelAccess, hasMasterAccess } = require('../utils/permissions');
 const { applyApprovedHierarchy } = require('../utils/vortexHierarchy');
 const { handleCallInteraction, handleModal: handleCallModal } = require('../config/callManager');
 const { safeReply, safeEdit, safeDeferReply, safeShowModal } = require('../utils/safeReply');
@@ -20,7 +20,8 @@ const STATS_PATH = path.join(__dirname, '..', 'commands', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
 const PEDIDOS_PATH = path.join(__dirname, '..', 'commands', 'pedidos_ativos.json');
 const ERROR_LOG_CHANNEL_ID = '1497685822525149337';
-const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
+const SUPERIOR_IDS = getMasterRoleIds();
+const SUPERIOR_USER_IDS = getMasterUserIds();
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 
 function loadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; } }
@@ -31,7 +32,7 @@ function hasStaffPermission(member) {
 }
 
 function hasMasterPermission(member) {
-    return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
+    return hasMasterAccess(member);
 }
 
 function hasAbsenceAccess(member) {
@@ -63,7 +64,7 @@ function hasConfiguredCommandAccess(interaction, commandName) {
     const conf = loadJSON(CONFIG_PATH);
     const permissions = conf.COMMAND_ROLE_PERMISSIONS || {};
     const allowedRoles = Array.isArray(permissions[commandName]) ? permissions[commandName].map(String) : [];
-    if (SUPERIOR_IDS.some(roleId => interaction.member.roles.cache.has(roleId))) return true;
+    if (hasMasterAccess(interaction.member, interaction.user?.id)) return true;
     if (allowedRoles.length > 0) {
         return allowedRoles.some(roleId => interaction.member.roles.cache.has(roleId));
     }
@@ -505,7 +506,8 @@ module.exports = {
                     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
                     { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels] },
-                    ...SUPERIOR_IDS.map(roleId => ({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }))
+                    ...SUPERIOR_IDS.map(roleId => ({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] })),
+                    ...SUPERIOR_USER_IDS.map(userId => ({ id: userId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }))
                 ]
             });
 

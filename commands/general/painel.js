@@ -38,7 +38,7 @@ const {
   addBillingExemptUserId,
   deleteUserProfile,
 } = require('../../utils/profileManager');
-const { hasAnyVortexRole, hasVortexAccess, hasCommandRole, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
+const { getMasterRoleIds, getMasterUserIds, hasAnyVortexRole, hasVortexAccess, hasCommandRole, hasMasterAccess, hasPanelAccess: canUsePanel } = require('../../utils/permissions');
 const { ensureVortexHierarchyConfig, getVortexAutoRoles, setVortexAutoRoles } = require('../../utils/vortexHierarchy');
 const {
   FACTION_HIERARCHY_ROLES,
@@ -73,7 +73,8 @@ const { upsertSiteUser } = require('../../utils/siteUserManager');
 const STATS_PATH = path.join(__dirname, '..', 'stats.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const PANEL_ERROR_LOG_CHANNEL_ID = '1497685822525149337';
-const SUPERIOR_IDS = ['1497703127074345040', '1498884908028792942'];
+const SUPERIOR_IDS = getMasterRoleIds();
+const SUPERIOR_USER_IDS = getMasterUserIds();
 const SUPERIOR_ID = SUPERIOR_IDS[0];
 const NOTICE_DM_REENABLE_USER_IDS = ['289227932432334869', '761011766440230932'];
 const LOGS_MANAGER_IDS = ['289227932432334869'];
@@ -212,12 +213,19 @@ function hasPanelAccess(member) {
 }
 
 function hasMasterPermission(member) {
-    return Boolean(member?.roles?.cache && SUPERIOR_IDS.some(roleId => member.roles.cache.has(roleId)));
+    return hasMasterAccess(member);
+}
+
+function formatMasterAccessText() {
+    return [
+        ...SUPERIOR_IDS.map(roleId => `<@&${roleId}>`),
+        ...SUPERIOR_USER_IDS.map(userId => `<@${userId}>`),
+    ].join(' ') || '`Nao configurado`';
 }
 
 function hasLogsManagerPermission(interaction) {
     return LOGS_MANAGER_IDS.includes(String(interaction.user?.id))
-        || hasMasterPermission(interaction.member)
+        || hasMasterAccess(interaction.member, interaction.user?.id)
         || Boolean(interaction.member?.roles?.cache && LOGS_MANAGER_IDS.some(roleId => interaction.member.roles.cache.has(roleId)));
 }
 
@@ -758,7 +766,7 @@ module.exports = {
     if (!hasStaffPermission(interaction.member) && !hasLogsManagerPermission(interaction)) return safeReply(interaction, { content: '❌ Sem permissão para usar esta ação.', ephemeral: true });
 
     if ((customId === 'tab_manutencao' || ['toggle_maint', 'test_notice'].includes(customId)) && !hasMasterPermission(interaction.member)) {
-      return safeReply(interaction, { content: `❌ Somente os cargos ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem usar a manutenção.`, ephemeral: true });
+      return safeReply(interaction, { content: `❌ Somente ${formatMasterAccessText()} pode usar a manutenção.`, ephemeral: true });
     }
 
     if (customId === 'site_access_register') {
@@ -2071,10 +2079,10 @@ async function renderDashboard(interaction, tab, edit = false) {
         '**Médio:** analisa set e envia avisos.',
         '**Membro:** usa ações básicas liberadas pela equipe.',
         '',
-        `**Master:** ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')}`,
+        `**Master:** ${formatMasterAccessText()}`,
       ].join('\n'))
       .addFields(
-        { name: 'Acesso total', value: SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' '), inline: false },
+        { name: 'Acesso total', value: formatMasterAccessText(), inline: false },
         { name: 'Admin Vortex', value: formatRoleList(levels.admin), inline: false },
         { name: 'Médio Vortex', value: formatRoleList(levels.medio), inline: false },
         { name: 'Membro Vortex', value: formatRoleList(levels.membro), inline: false },
@@ -2161,7 +2169,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         `**Ativado por:** <@${conf.MAINTENANCE_BY || 'N/A'}>`,
         `**Tempo:** ${since}`,
         '',
-        `Somente ${SUPERIOR_IDS.map(roleId => `<@&${roleId}>`).join(' ')} podem alterar este modo.`,
+        `Somente ${formatMasterAccessText()} pode alterar este modo.`,
       ].join('\n'))
       .addFields(
           { name: '✅ Continua liberado', value: '`/painel`, `/set` para staff', inline: true },

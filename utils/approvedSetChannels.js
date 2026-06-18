@@ -3,6 +3,7 @@ const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { logger } = require('./logger');
 const { safeReply, safeUpdate } = require('./safeReply');
+const { getMasterUserIds } = require('./permissions');
 
 const APPROVED_SET_CATEGORY_ID = process.env.APPROVED_SET_CATEGORY_ID || '1515044135470497912';
 const APPROVED_SET_CHANNELS_PATH = path.join(__dirname, '..', 'commands', 'approvedSetChannels.json');
@@ -118,6 +119,7 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
   };
   const payload = buildApprovedSetChannelPayload(profile);
   const managementRoleIds = getManagementRoleIds();
+  const managementUserIds = getMasterUserIds();
   const channel = await guild.channels.create({
     name: payload.channelName,
     type: ChannelType.GuildText,
@@ -152,6 +154,15 @@ async function createApprovedSetChannel(guild, member, { nomeGame = null, idGame
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      })),
+      ...managementUserIds.map((userId) => ({
+        id: userId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ManageChannels,
           PermissionFlagsBits.ReadMessageHistory,
         ],
       })),

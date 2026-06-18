@@ -3,6 +3,14 @@ const path = require('path');
 const { safeReply } = require('./safeReply');
 const { ensureVortexHierarchyConfig } = require('./vortexHierarchy');
 const MASTER_ROLE_IDS = ['1497703127074345040', '1498884908028792942'];
+const DEFAULT_MASTER_USER_IDS = ['1426287249020158018'];
+
+function splitEnvIds(value) {
+    return String(value || '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean);
+}
 
 function normalizeIds(list) {
     if (!Array.isArray(list)) return [];
@@ -30,7 +38,39 @@ function getPanelConfig() {
 function getVortexRoleIds(levels = []) {
     const panelConfig = getPanelConfig();
     const configured = panelConfig.VORTEX_ACCESS_ROLES || {};
-    return levels.flatMap(level => normalizeIds(configured[level] || []));
+    const legacy = panelConfig.VORTEX_ROLE_LEVELS || {};
+    return levels.flatMap(level => normalizeIds([
+        ...(configured[level] || []),
+        ...(legacy[level] || []),
+    ]));
+}
+
+function getMasterRoleIds() {
+    return [...MASTER_ROLE_IDS];
+}
+
+function getMasterUserIds() {
+    return normalizeIds([
+        ...DEFAULT_MASTER_USER_IDS,
+        ...splitEnvIds(process.env.VORTEX_MASTER_USER_IDS),
+        ...splitEnvIds(process.env.MASTER_USER_IDS),
+        ...splitEnvIds(process.env.AUTHORIZED_USER_IDS),
+    ]);
+}
+
+function getMemberUserId(member) {
+    return String(member?.id || member?.user?.id || member?.userId || '').trim();
+}
+
+function isMasterUserId(userId) {
+    const id = String(userId || '').trim();
+    return Boolean(id && getMasterUserIds().includes(id));
+}
+
+function hasMasterAccess(member, userId = '') {
+    return isMasterUserId(userId)
+        || isMasterUserId(getMemberUserId(member))
+        || memberHasAnyRole(member, MASTER_ROLE_IDS);
 }
 
 function getAllVortexRoleIds() {
@@ -43,20 +83,20 @@ function isPanelPrivateModeEnabled() {
 }
 
 function hasAnyVortexRole(member) {
-    if (member?.roles?.cache && MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
+    if (hasMasterAccess(member)) return true;
     return memberHasAnyRole(member, getAllVortexRoleIds());
 }
 
 function hasVortexAccess(member, levels = []) {
+    if (hasMasterAccess(member)) return true;
     if (!member?.roles?.cache) return false;
-    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     if (!Array.isArray(levels) || levels.length === 0) return false;
     return memberHasAnyRole(member, getVortexRoleIds(levels));
 }
 
 function hasCommandRole(member, commandName) {
+    if (hasMasterAccess(member)) return true;
     if (!member?.roles?.cache || !commandName) return false;
-    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     const panelConfig = getPanelConfig();
     const permissions = panelConfig.COMMAND_ROLE_PERMISSIONS || {};
     const roleIds = normalizeIds(permissions[commandName] || []);
@@ -64,8 +104,8 @@ function hasCommandRole(member, commandName) {
 }
 
 function hasPanelAccess(member) {
+    if (hasMasterAccess(member)) return true;
     if (!member?.roles?.cache) return false;
-    if (MASTER_ROLE_IDS.some(roleId => member.roles.cache.has(roleId))) return true;
     if (!isPanelPrivateModeEnabled()) {
         return hasAnyVortexRole(member);
     }
@@ -76,12 +116,12 @@ function hasPanelAccess(member) {
 
 function isRegisteredUser(interaction) {
     if (!interaction || !interaction.user) return false;
-    return hasAnyVortexRole(interaction.member) || hasVortexAccess(interaction.member, []);
+    return hasMasterAccess(interaction.member, interaction.user.id) || hasAnyVortexRole(interaction.member) || hasVortexAccess(interaction.member, []);
 }
 
 function isGerencia(interaction) {
     if (!interaction || !interaction.user) return false;
-    return hasVortexAccess(interaction.member, ['admin', 'medio']);
+    return hasMasterAccess(interaction.member, interaction.user.id) || hasVortexAccess(interaction.member, ['admin', 'medio']);
 }
 
 async function denyNotRegistered(interaction) {
@@ -98,6 +138,11 @@ module.exports = {
     hasVortexAccess,
     hasCommandRole,
     hasPanelAccess,
+    hasMasterAccess,
+    isMasterUserId,
     isPanelPrivateModeEnabled,
+    getMasterRoleIds,
+    getMasterUserIds,
+    getVortexRoleIds,
     denyNotRegistered
 };

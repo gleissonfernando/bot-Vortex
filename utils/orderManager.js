@@ -3,6 +3,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   EmbedBuilder,
   LabelBuilder,
   ModalBuilder,
@@ -14,7 +15,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const { buildThemedPanelPayload } = require('./panelTheme');
-const { hasAnyVortexRole, hasCommandRole, hasVortexAccess } = require('./permissions');
+const { getMasterRoleIds, getMasterUserIds, getVortexRoleIds, hasAnyVortexRole, hasCommandRole, hasVortexAccess } = require('./permissions');
 const {
   safeDeferReply,
   safeEdit,
@@ -27,6 +28,8 @@ const ORDER_NUMBER_OFFSET = 3846;
 const ORDER_DASHBOARD_URL = String(process.env.PUBLIC_DASHBOARD_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://bot-vortex.shardweb.app').replace(/\/+$/, '');
 const ORDER_PANEL_EMOJI = '\u{1F4E6}';
 const FAVORITE_EMOJI = '\u{2B50}';
+const ORDER_LOG_CATEGORY_ID = '1497684838352949319';
+const ORDER_LOG_CHANNEL_NAME = 'logs-encomendas';
 const ORDER_TICKET_MODAL_ID = 'modal_order_ticket';
 const ORDER_TICKET_FAMILY_FIELD = 'order_ticket_family';
 const ORDER_TICKET_SUBJECT_FIELD = 'order_ticket_subject';
@@ -611,6 +614,183 @@ async function getSettings(guildId) {
   return getCollection('order_settings').findOne({ guild_id: guildId });
 }
 
+function getOrderAdminRoleIds(guild) {
+  const configured = [
+    ...getMasterRoleIds(),
+    ...getVortexRoleIds(['admin']),
+  ].map(String);
+  return [...new Set(configured)]
+    .filter((roleId) => /^\d{15,25}$/.test(roleId))
+    .filter((roleId) => guild?.roles?.cache?.has(roleId));
+}
+
+function buildOrderLogOverwrites(guild) {
+  const adminRoleIds = getOrderAdminRoleIds(guild);
+  const masterUserIds = getMasterUserIds();
+  return [
+    {
+      id: guild.id,
+      deny: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+      ],
+    },
+    {
+      id: guild.client.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageChannels,
+      ],
+    },
+    ...adminRoleIds.map((roleId) => ({
+      id: roleId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    })),
+    ...masterUserIds.map((userId) => ({
+      id: userId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageChannels,
+      ],
+    })),
+  ];
+}
+
+async function ensureOrderLogChannel(client, guildId, settings = null) {
+  const guild = client?.guilds?.cache?.get(guildId) || await client?.guilds?.fetch?.(guildId).catch(() => null);
+  if (!guild) throw new Error('Servidor nao encontrado para criar logs de encomendas.');
+
+  await guild.roles.fetch().catch(() => null);
+  const category = await guild.channels.fetch(ORDER_LOG_CATEGORY_ID).catch(() => null);
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    throw new Error(`Categoria obrigatoria de logs de encomendas <#${ORDER_LOG_CATEGORY_ID}> nao encontrada.`);
+  }
+
+  const channels = await guild.channels.fetch().catch(() => null);
+  const configuredChannelId = settings?.order_log_channel_id || settings?.orderLogChannelId || '';
+  const configuredChannel = configuredChannelId
+    ? await guild.channels.fetch(configuredChannelId).catch(() => null)
+    : null;
+  let channel = configuredChannel?.type === ChannelType.GuildText
+    ? configuredChannel
+    : channels?.find((item) => (
+      item?.type === ChannelType.GuildText
+      && String(item.parentId || '') === ORDER_LOG_CATEGORY_ID
+      && String(item.name || '').toLowerCase() === ORDER_LOG_CHANNEL_NAME
+    ));
+
+  const permissionOverwrites = buildOrderLogOverwrites(guild);
+  if (!channel) {
+    channel = await guild.channels.create({
+      name: ORDER_LOG_CHANNEL_NAME,
+      type: ChannelType.GuildText,
+      parent: category.id,
+      topic: 'Logs obrigatorios do Sistema de Encomendas Vortex.',
+      permissionOverwrites,
+      reason: 'Canal obrigatorio de logs de encomendas Vortex',
+    });
+  } else {
+    await channel.permissionOverwrites.set(permissionOverwrites, 'Sincronizar logs obrigatorios de encomendas').catch(() => null);
+    if (String(channel.parentId || '') !== ORDER_LOG_CATEGORY_ID) {
+      await channel.setParent(category.id, { lockPermissions: false, reason: 'Mover logs de encomendas para categoria obrigatoria' }).catch(() => null);
+    }
+  }
+
+  await getCollection('order_settings').updateOne(
+    { guild_id: guildId },
+    {
+      $set: {
+        order_log_channel_id: channel.id,
+        order_log_category_id: ORDER_LOG_CATEGORY_ID,
+        updated_at: new Date(),
+      },
+      $setOnInsert: {
+        guild_id: guildId,
+        created_at: new Date(),
+      },
+    },
+    { upsert: true },
+  );
+
+  return channel;
+}
+
+function orderLogActionLabel(action) {
+  return {
+    order_created: 'Nova venda/encomenda',
+    order_cancelled: 'Pedido nao entregue',
+    status_delivered: 'Pedido entregue',
+    status_transport: 'Pedido em transporte',
+    status_separating: 'Pedido aprovado',
+    favorite_saved: 'Modelo salvo',
+    family_created: 'Familia cadastrada',
+    family_updated: 'Familia atualizada',
+    family_deleted: 'Familia removida',
+    item_added: 'Item adicionado',
+  }[action] || String(action || 'Log');
+}
+
+function formatLogMoney(value, currency = 'BRL') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value || '0');
+  return formatOrderMoney(cents(number), currency);
+}
+
+function formatOrderLogDetails(details = {}) {
+  const lines = [];
+  const currency = resolveCurrency(details.currency);
+  if (details.totalValue !== undefined) lines.push(`Valor: **${formatLogMoney(details.totalValue, currency)}**`);
+  if (details.subtotalValue !== undefined) lines.push(`Valor bruto: **${formatLogMoney(details.subtotalValue, currency)}**`);
+  if (details.discountValue !== undefined) lines.push(`Desconto: **${formatLogMoney(details.discountValue, currency)}**`);
+  if (details.items !== undefined) lines.push(`Itens: **${details.items}**`);
+  if (details.item) lines.push(`Item: **${details.item}**`);
+  if (details.quantity !== undefined) lines.push(`Quantidade: **${details.quantity}**`);
+  if (details.status) lines.push(`Status: **${details.status}**`);
+  if (details.reason) lines.push(`Motivo: **${String(details.reason).slice(0, 500)}**`);
+  if (details.coupon) lines.push(`Cupom: **${details.coupon}**`);
+  if (details.discountSource) lines.push(`Origem do desconto: **${details.discountSource}**`);
+  return lines;
+}
+
+function buildOrderLogPayload(log) {
+  const details = log.details && typeof log.details === 'object' ? log.details : {};
+  const description = [
+    log.order_number ? `Pedido: **#${log.order_number}**` : null,
+    log.family_name ? `Familia: **${log.family_name}**` : null,
+    log.actor_name ? `Responsavel: **${log.actor_name}**` : null,
+    ...formatOrderLogDetails(details),
+    `Data: <t:${Math.floor(new Date(log.created_at || Date.now()).getTime() / 1000)}:F>`,
+  ].filter(Boolean).join('\n');
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(log.action === 'order_cancelled' ? '#EF4444' : log.action === 'status_delivered' ? '#22C55E' : '#0EA5E9')
+      .setTitle(`Logs de Encomendas | ${orderLogActionLabel(log.action)}`)
+      .setDescription(description.slice(0, 4000))
+      .setTimestamp(log.created_at || new Date())],
+    allowedMentions: { parse: [] },
+  };
+}
+
+async function sendOrderLogToDiscord(log, settings = null, context = null) {
+  const client = context?.client || context?.client?.client || null;
+  if (!client) return null;
+  const channel = await ensureOrderLogChannel(client, String(log.guild_id || ''), settings);
+  return channel.send(buildOrderLogPayload(log));
+}
+
+async function ensureMandatoryOrderLogging(interaction, settings = null) {
+  if (!interaction?.client) return null;
+  return ensureOrderLogChannel(interaction.client, getGuildId(interaction), settings);
+}
+
 async function nextOrderNumber(guildId) {
   const result = await getCollection('order_counters').findOneAndUpdate(
     { guild_id: guildId, key: 'orders' },
@@ -620,8 +800,9 @@ async function nextOrderNumber(guildId) {
   return ORDER_NUMBER_OFFSET + Number(result?.seq || 1);
 }
 
-async function insertOrderLog(log, family = null, settings = null) {
+async function insertOrderLog(log, family = null, settings = null, context = null) {
   await getCollection('order_logs').insertOne(log);
+  await sendOrderLogToDiscord(log, settings, context);
   const webhookUrl = family?.log_webhook_url || settings?.default_logs_webhook_url || '';
   if (webhookUrl) {
     await fetch(webhookUrl, {
@@ -701,7 +882,7 @@ function buildOrderApprovalPayload(order) {
     components: [
       row(
         button(`order_approve_${String(order._id)}`, 'Aprovar', ButtonStyle.Success, { disabled: order.status !== 'pending' }),
-        button(`order_cancel_${String(order._id)}`, 'Recusar', ButtonStyle.Danger, { disabled: ['cancelled', 'delivered'].includes(order.status) }),
+        button(`order_cancel_${String(order._id)}`, 'Nao Entregue', ButtonStyle.Danger, { disabled: ['cancelled', 'delivered'].includes(order.status) }),
         button(`order_transport_${String(order._id)}`, 'Em Transporte', ButtonStyle.Primary, { disabled: !['pending', 'separating'].includes(order.status) }),
         button(`order_delivered_${String(order._id)}`, 'Entregue', ButtonStyle.Success, { disabled: ['delivered', 'cancelled'].includes(order.status) }),
       ),
@@ -724,6 +905,16 @@ async function editApprovalMessage(interaction, order) {
   if (!channel?.isTextBased?.()) return;
   const message = await channel.messages.fetch(order.approval_message_id).catch(() => null);
   if (message?.editable) await message.edit(buildOrderApprovalPayload(order)).catch(() => null);
+}
+
+function scheduleFinalizedOrderChannelDelete(interaction, order) {
+  const channel = interaction.channel;
+  if (!channel?.delete || !order?.approval_channel_id) return;
+  if (String(channel.id) !== String(order.approval_channel_id)) return;
+
+  setTimeout(() => {
+    channel.delete('Encomenda finalizada pelo Sistema Vortex.').catch(() => null);
+  }, 15000);
 }
 
 function getSession(interaction) {
@@ -1472,12 +1663,12 @@ function buildFamilyModal(mode, family = null) {
 function buildCancelModal(orderId) {
   return new ModalBuilder()
     .setCustomId(`modal_order_cancel_${orderId}`)
-    .setTitle('Recusar encomenda')
+    .setTitle('Pedido Nao Entregue')
     .addComponents(
       row(new TextInputBuilder()
         .setCustomId('reason')
         .setLabel('Motivo')
-        .setPlaceholder('Ex: Falta de estoque')
+        .setPlaceholder('Ex: Pagamento nao realizado, sem estoque ou pedido cancelado')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(600)),
@@ -1563,7 +1754,7 @@ async function saveFavorite(interaction) {
     actor_name: actor.name,
     details: { name: doc.name, items: doc.items.length },
     created_at: now,
-  }, family, await getSettings(session.guildId));
+  }, family, await getSettings(session.guildId), interaction);
   return safeReply(interaction, { content: `${FAVORITE_EMOJI} Modelo salvo para ${family.name}.`, ephemeral: true });
 }
 
@@ -1612,6 +1803,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
   const actor = getActor(interaction);
   const now = new Date();
   const settings = await getSettings(session.guildId);
+  await ensureMandatoryOrderLogging(interaction, settings);
   const orderId = new mongoose.Types.ObjectId();
   const order = {
     _id: orderId,
@@ -1697,7 +1889,7 @@ async function finalizeGroupedOrder(interaction, useEditReply = false) {
       totalValue: moneyFromCents(totals.final),
     },
     created_at: now,
-  }, family, settings);
+  }, family, settings, interaction);
 
   orderSessions.delete(sessionKey(interaction));
   const payload = buildPayload('orders', new EmbedBuilder()
@@ -1754,6 +1946,7 @@ async function finalizeOrder(interaction) {
     const actor = getActor(interaction);
     const now = new Date();
     const settings = await getSettings(session.guildId);
+    await ensureMandatoryOrderLogging(interaction, settings);
     const orderId = new mongoose.Types.ObjectId();
     const order = {
       _id: orderId,
@@ -1834,7 +2027,7 @@ async function finalizeOrder(interaction) {
         totalValue: moneyFromCents(final),
       },
       created_at: now,
-    }, family, settings);
+    }, family, settings, interaction);
 
     orderSessions.delete(sessionKey(interaction));
     return respondPanel(interaction, buildPayload('orders', new EmbedBuilder()
@@ -1880,6 +2073,7 @@ async function finalizeOrder(interaction) {
   const actor = getActor(interaction);
   const now = new Date();
   const settings = await getSettings(session.guildId);
+  await ensureMandatoryOrderLogging(interaction, settings);
   const orderId = new mongoose.Types.ObjectId();
   const order = {
     _id: orderId,
@@ -1925,9 +2119,9 @@ async function finalizeOrder(interaction) {
     action: 'order_created',
     actor_id: actor.id,
     actor_name: actor.name,
-    details: { source: 'discord', items: order.items.length, totalValue: moneyFromCents(order.total_value_cents) },
+    details: { source: 'discord', currency: order.currency || 'BRL', items: order.items.length, totalValue: moneyFromCents(order.total_value_cents) },
     created_at: now,
-  }, family, settings);
+  }, family, settings, interaction);
 
   for (const item of order.items) {
     await insertOrderLog({
@@ -1941,7 +2135,7 @@ async function finalizeOrder(interaction) {
       actor_name: actor.name,
       details: { item: item.name, quantity: item.quantity },
       created_at: now,
-    }, family, settings);
+    }, family, settings, interaction);
   }
 
   orderSessions.delete(sessionKey(interaction));
@@ -2031,7 +2225,7 @@ async function removeSelectedFamily(interaction) {
     actor_id: actor.id,
     actor_name: actor.name,
     created_at: new Date(),
-  }, family, await getSettings(getGuildId(interaction)));
+  }, family, await getSettings(getGuildId(interaction)), interaction);
   familySelections.delete(sessionKey(interaction));
   return showFamilyManager(interaction);
 }
@@ -2112,6 +2306,9 @@ async function updateOrderStatus(interaction, orderId, status, reason = '') {
     return { ok: false, message: 'Pedido ja esta finalizado.' };
   }
 
+  const settings = await getSettings(guildId);
+  await ensureMandatoryOrderLogging(interaction, settings);
+
   const actor = getActor(interaction);
   const now = new Date();
   const update = {
@@ -2148,7 +2345,6 @@ async function updateOrderStatus(interaction, orderId, status, reason = '') {
   const family = objectId(result.family_id)
     ? await getCollection('order_families').findOne({ _id: objectId(result.family_id), guild_id: guildId })
     : null;
-  const settings = await getSettings(guildId);
   await editApprovalMessage(interaction, result);
   await insertOrderLog({
     guild_id: guildId,
@@ -2159,9 +2355,14 @@ async function updateOrderStatus(interaction, orderId, status, reason = '') {
     action: status === 'cancelled' ? 'order_cancelled' : `status_${status}`,
     actor_id: actor.id,
     actor_name: actor.name,
-    details: { status: statusLabel(status), reason: reason || null },
+    details: {
+      status: statusLabel(status),
+      reason: reason || null,
+      currency: result.currency || 'BRL',
+      totalValue: moneyFromCents(result.final_value_cents ?? result.total_value_cents ?? 0),
+    },
     created_at: now,
-  }, family, settings);
+  }, family, settings, interaction);
 
   return { ok: true, order: result };
 }
@@ -2328,6 +2529,7 @@ async function handleOrderButton(interaction) {
   if (deliveredId) {
     await safeDeferReply(interaction, { ephemeral: true });
     const result = await updateOrderStatus(interaction, deliveredId, 'delivered');
+    if (result.ok) scheduleFinalizedOrderChannelDelete(interaction, result.order);
     return safeEdit(interaction, { content: result.ok ? `Pedido #${result.order.order_number} entregue.` : result.message });
   }
 
@@ -2735,7 +2937,7 @@ async function handleOrderModal(interaction) {
         actor_name: actor.name,
         details: { source: 'discord', munitionPrices: Object.keys(munitionUnitPrices).length, defaultDiscount },
         created_at: now,
-      }, result, await getSettings(guildId));
+      }, result, await getSettings(guildId), interaction);
       return safeEdit(interaction, { content: `Familia ${result.name} atualizada.` });
     }
 
@@ -2769,7 +2971,7 @@ async function handleOrderModal(interaction) {
       actor_name: actor.name,
       details: { source: 'discord', munitionPrices: Object.keys(munitionUnitPrices).length, defaultDiscount },
       created_at: now,
-    }, doc, await getSettings(guildId));
+    }, doc, await getSettings(guildId), interaction);
     return safeEdit(interaction, { content: `Familia ${doc.name} criada.` });
   }
 
@@ -2779,7 +2981,8 @@ async function handleOrderModal(interaction) {
     await safeDeferReply(interaction, { ephemeral: true });
     const reason = interaction.fields.getTextInputValue('reason').trim();
     const result = await updateOrderStatus(interaction, cancelId, 'cancelled', reason);
-    return safeEdit(interaction, { content: result.ok ? `Pedido #${result.order.order_number} recusado/cancelado.` : result.message });
+    if (result.ok) scheduleFinalizedOrderChannelDelete(interaction, result.order);
+    return safeEdit(interaction, { content: result.ok ? `Pedido #${result.order.order_number} marcado como nao entregue.` : result.message });
   }
 
   return safeReply(interaction, { content: 'Formulario de encomenda invalido.', ephemeral: true });

@@ -11,6 +11,7 @@ const {
 const { logger } = require('./logger');
 const { isPrimaryGuild, isPrimaryGuildChannel } = require('./guildScope');
 const { formatDate: formatRealDate } = require('./dateTime');
+const { getMasterUserIds } = require('./permissions');
 
 const AUSENCIAS_PATH = path.join(__dirname, '..', 'commands', 'ausencias.json');
 const CONFIG_PATH = path.join(__dirname, '..', 'commands', 'config.json');
@@ -211,6 +212,10 @@ async function createAbsenceRequestChannel(interaction, absence) {
       ...getAbsenceManagementRoleIds().map((roleId) => ({
         id: roleId,
         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      })),
+      ...getMasterUserIds().map((userId) => ({
+        id: userId,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory],
       })),
     ],
     reason: `Solicitação de ausência de ${absence.userId}`,
