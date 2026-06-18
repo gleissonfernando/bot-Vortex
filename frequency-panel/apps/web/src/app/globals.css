@@ -239,6 +239,261 @@ a:active {
   background: linear-gradient(90deg, #3b82f6, #22d3ee);
 }
 
+.vortex-action-hero {
+  position: relative;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid rgba(248, 113, 113, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(3, 7, 18, 0.98) 0%, rgba(20, 10, 16, 0.92) 48%, rgba(127, 29, 29, 0.28) 100%),
+    url("/vortex-logo.png");
+  background-position: center, right 24% center;
+  background-repeat: no-repeat;
+  background-size: cover, 48% auto;
+  padding: 28px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34), 0 0 40px rgba(239, 68, 68, 0.1);
+}
+
+.vortex-action-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, #ef4444, #991b1b);
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.6);
+}
+
+.vortex-action-menu,
+.vortex-card {
+  border: 1px solid rgba(148, 163, 184, 0.065);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(17, 24, 39, 0.82), rgba(8, 13, 25, 0.88)),
+    rgba(15, 23, 42, 0.72);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(20px);
+}
+
+.vortex-action-menu,
+.vortex-card {
+  padding: 16px;
+}
+
+.vortex-card.compact {
+  padding: 14px;
+}
+
+.vortex-action-menu {
+  position: relative;
+  overflow: hidden;
+}
+
+.vortex-action-menu::before,
+.vortex-card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.72), rgba(248, 113, 113, 0.28), transparent);
+}
+
+.vortex-action-item,
+.vortex-tab,
+.vortex-btn,
+.vortex-upload,
+.vortex-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 8px;
+  font-weight: 800;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.vortex-action-item {
+  justify-content: space-between;
+  min-height: 42px;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.78rem;
+}
+
+.vortex-action-item:hover,
+.vortex-action-item.is-active {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fff;
+}
+
+.vortex-tab {
+  min-height: 38px;
+  padding: 0.55rem 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.vortex-tab:hover,
+.vortex-tab.is-active {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(239, 68, 68, 0.13);
+  color: white;
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.12);
+}
+
+.vortex-btn {
+  min-height: 40px;
+  padding: 0.6rem 0.9rem;
+  color: white;
+  font-size: 0.82rem;
+}
+
+.vortex-btn.green {
+  border-color: rgba(52, 211, 153, 0.22);
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.vortex-btn.red {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(239, 68, 68, 0.24);
+}
+
+.vortex-btn.gray {
+  border-color: rgba(148, 163, 184, 0.12);
+  background: rgba(100, 116, 139, 0.18);
+}
+
+.vortex-btn.blue {
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(59, 130, 246, 0.22);
+}
+
+.vortex-btn:hover:not(:disabled) {
+  box-shadow: 0 0 26px rgba(248, 113, 113, 0.16);
+  filter: brightness(1.08);
+}
+
+.vortex-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.vortex-icon-btn {
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+}
+
+.vortex-icon-btn:hover {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(239, 68, 68, 0.13);
+  color: #fff;
+}
+
+.vortex-icon-btn.danger:hover {
+  color: #fecaca;
+}
+
+.vortex-upload {
+  min-height: 38px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+}
+
+.vortex-detail {
+  border: 1px solid rgba(148, 163, 184, 0.07);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.36);
+  padding: 12px;
+}
+
+.vortex-detail span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.vortex-detail strong {
+  display: block;
+  margin-top: 6px;
+  color: white;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.vortex-badge,
+.vortex-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 0.22rem 0.52rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.vortex-badge {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.78);
+  color: #cbd5e1;
+}
+
+.vortex-status.green {
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  background: rgba(16, 185, 129, 0.14);
+  color: #bbf7d0;
+}
+
+.vortex-status.red {
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+}
+
+.vortex-status.blue {
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+}
+
+.vortex-status.gray {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(100, 116, 139, 0.14);
+  color: #e2e8f0;
+}
+
+.vortex-person {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.065);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 0.55rem 0.7rem;
+  color: #e2e8f0;
+  font-size: 0.84rem;
+}
+
+.vortex-person span:last-child {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 table thead {
   background: rgba(30, 41, 59, 0.34) !important;
 }

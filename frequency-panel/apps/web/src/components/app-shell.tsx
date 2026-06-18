@@ -7,6 +7,7 @@ import {
   CalendarOff,
   Clock3,
   Command,
+  Crosshair,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -42,6 +43,7 @@ const navGroups = [
     label: 'Operacao',
     items: [
       { href: '/dashboard/absences', label: 'Ausencias', icon: CalendarOff },
+      { href: '/dashboard/actions', label: 'Acoes', icon: Crosshair },
       { href: '/dashboard/bau', label: 'Bau', icon: PackageOpen },
       { href: '/dashboard/orders', label: 'Encomendas', icon: ShoppingCart },
       { href: '/dashboard/reports', label: 'Relatorios', icon: FileText },
@@ -65,6 +67,7 @@ type NavItem = typeof nav[number];
 
 const routeMeta = [
   { match: '/dashboard/anti-abuse', title: 'Seguranca', description: 'Protecoes, punicoes e limites de abuso.' },
+  { match: '/dashboard/actions', title: 'Sistema de Acao', description: 'Cadastro, participacao, gerencia e relatorios das acoes.' },
   { match: '/dashboard/bot-vortex', title: 'Bot Vortex', description: 'Configuracao e operacao do bot em tempo real.' },
   { match: '/dashboard/site-users', title: 'Acessos', description: 'Usuarios autorizados e niveis do painel.' },
   { match: '/dashboard/members', title: 'Membros', description: 'Frequencia, perfis e atividade da comunidade.' },

@@ -2,6 +2,7 @@ import { StrictMode, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import LoginPage from './app/page';
 import AbsencesPage from './app/dashboard/absences/page';
+import ActionsPage from './app/dashboard/actions/page';
 import AntiAbusePage from './app/dashboard/anti-abuse/page';
 import BauPage from './app/dashboard/bau/page';
 import BotVortexPage from './app/dashboard/bot-vortex/page';
@@ -20,6 +21,7 @@ const routes: Array<[RegExp, () => ReactElement]> = [
   [/^\/dashboard\/members\/[^/]+$/, () => <MemberProfilePage />],
   [/^\/dashboard\/members\/?$/, () => <MembersPage />],
   [/^\/dashboard\/absences\/?$/, () => <AbsencesPage />],
+  [/^\/dashboard\/actions\/?$/, () => <ActionsPage />],
   [/^\/dashboard\/anti-abuse\/?$/, () => <AntiAbusePage />],
   [/^\/dashboard\/bau\/?$/, () => <BauPage />],
   [/^\/dashboard\/bot-vortex\/?$/, () => <BotVortexPage />],
