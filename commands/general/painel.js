@@ -2180,7 +2180,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         '### Sistema de Ação Vortex',
         '',
         'Selecione uma ação cadastrada para **Iniciar** ou **Finalizar ação**.',
-        'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
+        'Ao iniciar, o painel público será enviado neste canal e ficará atualizando a mesma mensagem.',
         '',
         `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
         '',

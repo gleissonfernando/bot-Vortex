@@ -446,7 +446,7 @@ async function buildActionAdminPanelPayload(interaction) {
       '### Sistema de Ação Vortex',
       '',
       'Selecione uma ação cadastrada para **Iniciar** ou **Finalizar ação**.',
-      'Ao iniciar, o painel público será enviado no canal configurado e ficará atualizando a mesma mensagem.',
+      'Ao iniciar, o painel público será enviado neste canal e ficará atualizando a mesma mensagem.',
       '',
       `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
       '',
@@ -502,10 +502,9 @@ async function refreshPublicPanel(client, action) {
 }
 
 async function startAction(interaction, action) {
-  const channelId = action.canalId || interaction.channelId;
-  const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
+  const channel = interaction.channel || await interaction.client.channels.fetch(interaction.channelId).catch(() => null);
   if (!channel?.isTextBased?.()) {
-    return safeReply(interaction, { content: 'Canal configurado para o painel e invalido ou nao foi encontrado.', ephemeral: true });
+    return safeReply(interaction, { content: 'Nao consegui encontrar este canal para enviar o painel da ação.', ephemeral: true });
   }
   action.status = action.status === 'Aberta' ? 'Aberta' : normalizeStatus(action.status);
   action.finalizada = false;
