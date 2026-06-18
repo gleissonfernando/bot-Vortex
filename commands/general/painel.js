@@ -2163,7 +2163,9 @@ async function renderDashboard(interaction, tab, edit = false) {
   } else if (tab === 'tab_actions') {
     const actions = await listActions(guild.id);
     const selected = actions[0] || null;
-    const activeCount = actions.filter((action) => !action.finalizada).length;
+    const activeCount = actions.filter((action) => !action.finalizada && action.status === 'Em andamento' && action.mensagemId).length;
+    const availableStartCount = actions.filter((action) => !action.finalizada && action.status !== 'Cancelada' && action.status !== 'Finalizada' && action.status !== 'Em andamento' && !action.mensagemId).length;
+    const selectedActive = Boolean(selected && !selected.finalizada && selected.status === 'Em andamento' && selected.mensagemId);
     const selectedText = selected
       ? [
           `Selecionada: **${selected.nome}**`,
@@ -2183,6 +2185,7 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Ao iniciar, o painel público será enviado neste canal e ficará atualizando a mesma mensagem.',
         '',
         `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
+        `Disponiveis para iniciar: **${availableStartCount}**`,
         '',
         selectedText,
       ].join('\n'));
@@ -2193,13 +2196,13 @@ async function renderDashboard(interaction, tab, edit = false) {
         .setLabel('Iniciar ação')
         .setEmoji('🚀')
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(!selected),
+        .setDisabled(!availableStartCount),
       new ButtonBuilder()
         .setCustomId('vortex_action_finish')
         .setLabel('Finalizar ação')
         .setEmoji('🏁')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(!selected)
+        .setDisabled(!selectedActive)
     );
 
     extraRows = [

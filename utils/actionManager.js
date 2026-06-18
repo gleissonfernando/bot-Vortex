@@ -6,6 +6,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
+  LabelBuilder,
   MessageFlags,
   ModalBuilder,
   SectionBuilder,
@@ -23,6 +24,7 @@ const { formatLocalDate } = require('./dateTime');
 
 const ACTIONS_PATH = path.join(__dirname, '..', 'commands', 'vortexActions.json');
 const DEFAULT_REPORT_CHANNEL_ID = '1503862826262073474';
+const START_ACTION_SELECT_ID = 'vortex_action_start_select';
 const selectedActions = new Map();
 
 const STATUS_OPTIONS = ['Aberta', 'Em andamento', 'Finalizada', 'Cancelada'];
@@ -203,6 +205,18 @@ function hasActionManagerPermission(member, userId = '') {
 
 function hasActionUserPermission(member) {
   return hasAnyVortexRole(member) || hasActionManagerPermission(member);
+}
+
+function isActionActive(action) {
+  return Boolean(action && !action.finalizada && action.status === 'Em andamento' && action.mensagemId);
+}
+
+function isActionAvailableToStart(action) {
+  if (!action || action.finalizada) return false;
+  if (action.status === 'Cancelada' || action.status === 'Finalizada') return false;
+  if (action.status === 'Em andamento') return false;
+  if (action.mensagemId) return false;
+  return true;
 }
 
 function money(value) {
@@ -398,7 +412,8 @@ async function buildActionAdminPanelPayload(interaction) {
   const selectedId = getSelectedActionId(interaction) || actions[0]?.id || '';
   if (selectedId && !getSelectedActionId(interaction)) setSelectedActionId(interaction, selectedId);
   const selected = actions.find((action) => action.id === selectedId) || actions[0] || null;
-  const activeCount = actions.filter((action) => !action.finalizada).length;
+  const activeCount = actions.filter(isActionActive).length;
+  const availableStartCount = actions.filter(isActionAvailableToStart).length;
   const selectedText = selected
     ? [
         `Selecionada: **${selected.nome}**`,
@@ -430,13 +445,13 @@ async function buildActionAdminPanelPayload(interaction) {
       .setLabel('Iniciar ação')
       .setEmoji('🚀')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(!selected),
+      .setDisabled(!availableStartCount),
     new ButtonBuilder()
       .setCustomId('vortex_action_finish')
       .setLabel('Finalizar ação')
       .setEmoji('🏁')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(!selected),
+      .setDisabled(!isActionActive(selected)),
   ));
 
   return buildThemedPanelPayload('painel', {
@@ -449,6 +464,7 @@ async function buildActionAdminPanelPayload(interaction) {
       'Ao iniciar, o painel público será enviado neste canal e ficará atualizando a mesma mensagem.',
       '',
       `Ações cadastradas: **${actions.length}** | Ativas: **${activeCount}**`,
+      `Disponiveis para iniciar: **${availableStartCount}**`,
       '',
       selectedText,
     ].join('\n'),
@@ -486,6 +502,37 @@ function buildActionModal(mode, action = null) {
   return modal;
 }
 
+async function buildStartActionModal(interaction) {
+  const actions = (await listActions(interaction.guildId)).filter(isActionAvailableToStart);
+  if (!actions.length) return null;
+
+  const modal = new ModalBuilder()
+    .setCustomId('modal_vortex_action_start')
+    .setTitle('Iniciar Ação');
+
+  modal.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent('Selecione qual ação cadastrada deseja iniciar neste canal.')
+  );
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel('Selecione a ação')
+      .setStringSelectMenuComponent(
+        new StringSelectMenuBuilder()
+          .setCustomId(START_ACTION_SELECT_ID)
+          .setPlaceholder('Escolha uma ação para iniciar')
+          .setMinValues(1)
+          .setMaxValues(1)
+          .addOptions(actions.slice(0, 25).map((action) => ({
+            label: action.nome.slice(0, 100),
+            value: action.id,
+            description: `ID ${action.id} • Limite ${action.limite}`.slice(0, 100),
+          })))
+      )
+  );
+
+  return modal;
+}
+
 function getSelectedOrLatest(interaction) {
   const selected = getSelectedActionId(interaction);
   return selected ? getAction(interaction.guildId, selected) : getLatestAction(interaction.guildId);
@@ -506,7 +553,7 @@ async function startAction(interaction, action) {
   if (!channel?.isTextBased?.()) {
     return safeReply(interaction, { content: 'Nao consegui encontrar este canal para enviar o painel da ação.', ephemeral: true });
   }
-  action.status = action.status === 'Aberta' ? 'Aberta' : normalizeStatus(action.status);
+  action.status = 'Em andamento';
   action.finalizada = false;
   action.iniciadaEm = new Date().toISOString();
   action.data = formatLocalDate(action.iniciadaEm);
@@ -663,6 +710,20 @@ async function handleActionButton(interaction) {
     return safeUpdate(interaction, await buildActionAdminPanelPayload(interaction));
   }
 
+  if (customId === 'vortex_action_start') {
+    if (!hasActionManagerPermission(interaction.member, interaction.user.id)) {
+      return safeReply(interaction, { content: 'Voce nao tem permissao para iniciar ações.', ephemeral: true });
+    }
+    const modal = await buildStartActionModal(interaction);
+    if (!modal) {
+      return safeReply(interaction, {
+        content: 'Nao tem ação disponivel para iniciar. Ações ja ativas/finalizadas nao aparecem nessa lista.',
+        ephemeral: true,
+      });
+    }
+    return safeShowModal(interaction, modal);
+  }
+
   if (['vortex_action_edit', 'vortex_action_delete', 'vortex_action_start', 'vortex_action_finish', 'vortex_action_report'].includes(customId)) {
     if (!hasActionManagerPermission(interaction.member, interaction.user.id)) {
       return safeReply(interaction, { content: 'Voce nao tem permissao para gerenciar ações.', ephemeral: true });
@@ -675,8 +736,13 @@ async function handleActionButton(interaction) {
       selectedActions.delete(getSelectionKey(interaction));
       return safeUpdate(interaction, await buildActionAdminPanelPayload(interaction));
     }
-    if (customId === 'vortex_action_start') return startAction(interaction, action);
     if (customId === 'vortex_action_finish') {
+      if (!isActionActive(action)) {
+        return safeReply(interaction, {
+          content: 'Selecione uma ação ativa/em andamento para finalizar.',
+          ephemeral: true,
+        });
+      }
       return safeShowModal(interaction, buildFinalizeModal(action));
     }
     if (customId === 'vortex_action_report') {
@@ -833,6 +899,25 @@ async function handleActionSelect(interaction) {
 
 async function handleActionModal(interaction) {
   const customId = String(interaction.customId || '');
+  if (customId === 'modal_vortex_action_start') {
+    if (!hasActionManagerPermission(interaction.member, interaction.user.id)) {
+      return safeReply(interaction, { content: 'Voce nao tem permissao para iniciar ações.', ephemeral: true });
+    }
+    const actionId = String(interaction.fields.getStringSelectValues(START_ACTION_SELECT_ID)?.[0] || '');
+    const action = await getAction(interaction.guildId, actionId);
+    if (!action) {
+      return safeReply(interaction, { content: 'Ação selecionada nao encontrada.', ephemeral: true });
+    }
+    if (!isActionAvailableToStart(action)) {
+      return safeReply(interaction, {
+        content: 'Essa ação ja esta ativa, finalizada ou indisponivel para iniciar.',
+        ephemeral: true,
+      });
+    }
+    setSelectedActionId(interaction, action.id);
+    return startAction(interaction, action);
+  }
+
   if (customId === 'modal_vortex_action_create' || customId.startsWith('modal_vortex_action_edit_')) {
     if (!hasActionManagerPermission(interaction.member, interaction.user.id)) {
       return safeReply(interaction, { content: 'Voce nao tem permissao para salvar ações.', ephemeral: true });
@@ -916,6 +1001,12 @@ async function startActionById(interaction, actionId = '') {
   }
   const action = actionId ? await getAction(interaction.guildId, actionId) : await getLatestAction(interaction.guildId);
   if (!action) return safeReply(interaction, { content: 'Nenhuma ação encontrada.', ephemeral: true });
+  if (!isActionAvailableToStart(action)) {
+    return safeReply(interaction, {
+      content: 'Essa ação ja esta ativa, finalizada ou indisponivel para iniciar.',
+      ephemeral: true,
+    });
+  }
   setSelectedActionId(interaction, action.id);
   return startAction(interaction, action);
 }
