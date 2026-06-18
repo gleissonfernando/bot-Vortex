@@ -59,6 +59,7 @@ const ORDER_MUNITION_NAME_FIELD = 'order_munition_name';
 const ORDER_MUNITION_IDENTIFIER_FIELD = 'order_munition_identifier';
 const ORDER_MUNITION_ORDER_FIELD = 'order_munition_order';
 const ORDER_MUNITION_ACTIVE_FIELD = 'order_munition_active';
+const ORDER_MUNITION_DEFAULT_PRICE_FIELD = 'order_munition_default_price';
 const MODAL_FIELD_PAGE_SIZE = 5;
 const ORDER_TICKET_MUNITION_FIELDS = [
   { key: 'hk_mag', customId: 'hk_mag_quantidade', label: 'HK/MAG', placeholder: 'Digite a quantidade', description: 'Quantidade' },
@@ -2113,7 +2114,7 @@ function buildDefaultDiscountModal(settings = null) {
 
 function buildMunitionModal(mode, munition = null) {
   const identifier = String(munition?.key || munition?.identificador || '');
-  return new ModalBuilder()
+  const modal = new ModalBuilder()
     .setCustomId(mode === 'edit' ? `${ORDER_MUNITION_MODAL_ID}_edit_${String(munition?.id || '')}` : `${ORDER_MUNITION_MODAL_ID}_create`)
     .setTitle(mode === 'edit' ? 'Editar Municao' : 'Adicionar Municao')
     .addComponents(
@@ -2150,6 +2151,18 @@ function buildMunitionModal(mode, munition = null) {
         .setRequired(false)
         .setMaxLength(5)),
     );
+
+  if (mode !== 'edit') {
+    modal.addComponents(row(new TextInputBuilder()
+      .setCustomId(ORDER_MUNITION_DEFAULT_PRICE_FIELD)
+      .setLabel('Valor Padrao da Municao')
+      .setPlaceholder('Ex: 500')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(18)));
+  }
+
+  return modal;
 }
 
 function buildCancelModal(orderId) {
@@ -2832,6 +2845,21 @@ async function removeSelectedMunition(interaction) {
     created_at: now,
   }, null, await getSettings(guildId), interaction);
   return showMunitionManager(interaction);
+}
+
+async function applyDefaultMunitionPriceToFamilies(guildId, munitionKey, valueCents, now = new Date()) {
+  const key = String(munitionKey || '').trim();
+  const price = Math.max(0, Math.round(Number(valueCents || 0)));
+  if (!key || price <= 0) return { matchedCount: 0, modifiedCount: 0 };
+  return getCollection('order_families').updateMany(
+    { guild_id: guildId },
+    {
+      $set: {
+        [`munition_unit_prices.${key}`]: price,
+        updated_at: now,
+      },
+    },
+  );
 }
 
 async function showFamilyMembers(interaction) {
@@ -3867,6 +3895,11 @@ async function handleOrderModal(interaction) {
       return safeEdit(interaction, { content: `Municao ${name} atualizada.` });
     }
 
+    const defaultPrice = parseRequiredMoneyInput(modalTextValue(interaction.fields, ORDER_MUNITION_DEFAULT_PRICE_FIELD));
+    if (!defaultPrice.ok) {
+      return safeEdit(interaction, { content: 'Informe o valor padrao da municao maior que zero.' });
+    }
+
     const doc = {
       _id: new mongoose.Types.ObjectId(),
       guild_id: guildId,
@@ -3878,16 +3911,27 @@ async function handleOrderModal(interaction) {
       updated_at: now,
     };
     await getCollection('munitions').insertOne(doc);
+    const priceResult = await applyDefaultMunitionPriceToFamilies(guildId, identifier, defaultPrice.valueCents, now);
     munitionSelections.set(sessionKey(interaction), String(doc._id));
     await insertOrderLog({
       guild_id: guildId,
       action: 'munition_created',
       actor_id: getActor(interaction).id,
       actor_name: getActor(interaction).name,
-      details: { source: 'discord', munition: name, identificador: identifier, ordem: order, ativo: active },
+      details: {
+        source: 'discord',
+        munition: name,
+        identificador: identifier,
+        ordem: order,
+        ativo: active,
+        valorPadrao: moneyFromCents(defaultPrice.valueCents),
+        familiasAtualizadas: priceResult.modifiedCount || 0,
+      },
       created_at: now,
     }, null, await getSettings(guildId), interaction);
-    return safeEdit(interaction, { content: `Municao ${name} cadastrada.` });
+    return safeEdit(interaction, {
+      content: `Municao ${name} cadastrada com valor padrao ${formatOrderMoney(defaultPrice.valueCents)} em ${priceResult.modifiedCount || 0} familia(s).`,
+    });
   }
 
   if (String(interaction.customId || '').startsWith(`${FAMILY_VALUES_MODAL_ID}_`)) {
