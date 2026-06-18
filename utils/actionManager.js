@@ -5,14 +5,21 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
+  MessageFlags,
   ModalBuilder,
+  SectionBuilder,
+  SeparatorBuilder,
   StringSelectMenuBuilder,
+  TextDisplayBuilder,
+  ThumbnailBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
 const { buildThemedPanelPayload } = require('./panelTheme');
 const { hasAnyVortexRole, hasVortexAccess, hasCommandRole, hasMasterAccess } = require('./permissions');
 const { safeReply, safeShowModal, safeUpdate } = require('./safeReply');
+const { formatLocalDate } = require('./dateTime');
 
 const ACTIONS_PATH = path.join(__dirname, '..', 'commands', 'vortexActions.json');
 const DEFAULT_REPORT_CHANNEL_ID = '1503862826262073474';
@@ -96,6 +103,7 @@ function normalizeAction(action = {}) {
     mensagemId: String(action.mensagemId || action.messageId || ''),
     criadoPor: String(action.criadoPor || action.createdBy || ''),
     criadoEm: action.criadoEm || action.createdAt || new Date().toISOString(),
+    iniciadaEm: action.iniciadaEm || action.iniciada_em || action.startedAt || '',
     finalizada: Boolean(action.finalizada || action.finished || FINAL_STATUSES.has(status)),
   };
 }
@@ -109,6 +117,7 @@ function serializeForMongo(action) {
     mensagem_id: action.mensagemId,
     criado_por: action.criadoPor,
     criado_em: action.criadoEm,
+    iniciada_em: action.iniciadaEm,
     updatedAt: new Date(),
   };
 }
@@ -243,54 +252,107 @@ function parseActionChannels(value) {
 
 function buildActionPanelPayload(action, interactionOrGuild = null) {
   const guild = interactionOrGuild?.guild || interactionOrGuild;
-  const iconUrl = guild?.iconURL?.() || null;
+  const iconUrl = guild?.iconURL?.({ size: 256 }) || interactionOrGuild?.client?.user?.displayAvatarURL?.({ size: 256 }) || null;
   const blocked = action.finalizada || action.status === 'Cancelada';
-  const description = [
+  const container = new ContainerBuilder().setAccentColor(0xEF4444);
+  const title = new TextDisplayBuilder().setContent([
+    '### 🔫 Sistema de Ação — Vortex',
+    '',
     '❔ Acompanhe a ação e gerencie sua participação.',
-    '',
-    '📋 **Detalhes**',
-    `🔫 **Ação:** ${action.nome}`,
-    `📅 **Data:** ${action.data || 'Nao informada'}`,
-    `👥 **Limite:** ${action.limite}`,
-    `➤ **Status:** \`${action.status}\``,
-    `🧾 **ID:** \`${action.id}\``,
-    '',
-    '✅ **Confirmados**',
-    formatParticipantList(action.confirmados, 'Nenhum confirmado.'),
-    '',
-    '🕘 **Reservas**',
-    formatParticipantList(action.reservas, 'Nenhum.'),
-    '',
-    '🚀 **Participar da ação**',
-    blocked ? 'Participação bloqueada para ação finalizada/cancelada.' : 'Entra como Titular ou Reserva se lotar.',
-    '',
-    '🚪 **Sair da ação**',
-    'Sai da ação e atualiza a fila automaticamente.',
-  ].join('\n');
+  ].join('\n'));
 
-  const rows = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`vortex_action_join_${action.id}`)
-        .setEmoji('✅')
-        .setLabel('Participar')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(blocked),
-      new ButtonBuilder()
-        .setCustomId(`vortex_action_leave_${action.id}`)
-        .setEmoji('🚪')
-        .setLabel('Sair')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(blocked)
-    ),
-  ];
+  if (iconUrl) {
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(title)
+        .setThumbnailAccessory(
+          new ThumbnailBuilder()
+            .setURL(iconUrl)
+            .setDescription('Logo Vortex')
+        )
+    );
+  } else {
+    container.addTextDisplayComponents(title);
+  }
 
-  return buildThemedPanelPayload('painel', {
-    color: '#E11D48',
-    author: { name: '🔫 Sistema de Ação — Vortex', iconURL: iconUrl },
-    description,
-    footer: { text: 'Vortex — Sistema de Ação' },
-  }, { components: rows });
+  container
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(false))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '📋 **Detalhes**',
+      `🔫 **Ação:** ${action.nome}`,
+      `📅 **Data:** ${action.data || 'Nao informada'}`,
+      `👥 **Limite:** ${action.limite}`,
+      `➤ **Status:** \`${action.status}\``,
+      '@everyone',
+      '',
+      `🧾 **ID:** \`${action.id}\``,
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '✅ **Confirmados**',
+      formatParticipantList(action.confirmados, 'Nenhum confirmado.'),
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '🕘 **Reservas**',
+      formatParticipantList(action.reservas, 'Nenhum.'),
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          '🚀 **Participar da ação**',
+          blocked ? 'Participação bloqueada para ação finalizada/cancelada.' : 'Entra como **Titular** (ou **Reserva** se lotar).',
+        ].join('\n')))
+        .setButtonAccessory(
+          new ButtonBuilder()
+            .setCustomId(`vortex_action_join_${action.id}`)
+            .setEmoji('✅')
+            .setLabel('Participar')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(blocked)
+        )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          '🚪 **Sair da ação**',
+          'Sai da ação e atualiza a fila automaticamente.',
+        ].join('\n')))
+        .setButtonAccessory(
+          new ButtonBuilder()
+            .setCustomId(`vortex_action_leave_${action.id}`)
+            .setEmoji('🚪')
+            .setLabel('Sair')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(blocked)
+        )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+          '🚀 **Gerência**',
+          'Acesso restrito. Abre um **painel exclusivo** com ferramentas de gerente.',
+        ].join('\n')))
+        .setButtonAccessory(
+          new ButtonBuilder()
+            .setCustomId(`vortex_action_manager_${action.id}`)
+            .setEmoji('🚀')
+            .setLabel('Painel do Gerente')
+            .setStyle(ButtonStyle.Secondary)
+        )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('-# Vortex — Todos os direitos reservados'));
+
+  return {
+    components: [container],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+    embeds: [],
+  };
 }
 
 function buildActionReportPayload(action, interactionOrGuild = null) {
@@ -447,6 +509,8 @@ async function startAction(interaction, action) {
   }
   action.status = action.status === 'Aberta' ? 'Aberta' : normalizeStatus(action.status);
   action.finalizada = false;
+  action.iniciadaEm = new Date().toISOString();
+  action.data = formatLocalDate(action.iniciadaEm);
   action.canalId = channel.id;
 
   if (action.mensagemId) {
