@@ -1527,6 +1527,7 @@ function getAntiAbuse(config: BotConfig | null) {
       : raw.shieldedDisconnect === true,
     protections,
     whitelist: {
+      users: Array.isArray(raw.whitelist?.users) ? raw.whitelist.users.map(String) : [],
       roles: Array.isArray(raw.whitelist?.roles) ? raw.whitelist.roles.map(String) : []
     },
     thresholds: {

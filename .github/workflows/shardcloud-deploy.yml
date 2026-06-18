@@ -1,4 +1,4 @@
-name: Deploy Vortex to Shard Cloud
+name: Deploy ShardCloud
 
 on:
   push:
@@ -8,110 +8,91 @@ on:
 
 jobs:
   deploy:
+    name: Validate and deploy
     runs-on: ubuntu-latest
-    env:
-      SHARDCLOUD_API_TOKEN: ${{ secrets.SHARD_CLOUD_API_KEY || secrets.SHARDCLOUD_API_TOKEN }}
-      SHARDCLOUD_PUBLIC_URL: ${{ vars.SHARDCLOUD_PUBLIC_URL || 'https://bot-vortex.shardweb.app' }}
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Validate ShardCloud credentials
-        run: |
-          test -n "$SHARDCLOUD_API_TOKEN" || (echo "::error::Missing SHARD_CLOUD_API_KEY secret. Create it with an API key from Shard Cloud Dashboard > Config > Integrations." && exit 1)
-          grep -Eq '^APPID=[0-9a-fA-F-]{36}$' .shardcloud || (echo "::error::.shardcloud must contain the target APPID so commit/restart always use the same ShardCloud app." && exit 1)
-
-      - name: Read ShardCloud app id
-        id: shardcloud
-        run: |
-          app_id="$(grep -E '^APPID=' .shardcloud | cut -d= -f2)"
-          echo "app_id=$app_id" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frequency-panel/package-lock.json
 
       - name: Install dependencies
-        run: npm install --include=dev --no-audit --no-fund
+        run: npm ci
 
-      - name: ShardCloud preflight
+      - name: Validate deploy package
         run: npm run deploy:check
 
-      - name: Remove CI-only files before deploy
+      - name: Build runtime artifacts
+        run: npm run build
+
+      - name: Read ShardCloud app id
+        id: shardcloud
+        shell: bash
         run: |
+          set -euo pipefail
+          grep -Eq '^APPID=' .shardcloud
+          app_id="$(grep -E '^APPID=' .shardcloud | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+          if [ -z "$app_id" ]; then
+            echo "APPID vazio em .shardcloud" >&2
+            exit 1
+          fi
+          echo "app_id=$app_id" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare ShardCloud package
+        shell: bash
+        run: |
+          set -euo pipefail
           rm -rf node_modules
           rm -rf frequency-panel/node_modules
           rm -rf frequency-panel/apps/api/node_modules
           rm -rf frequency-panel/apps/bot/node_modules
           rm -rf frequency-panel/apps/web/node_modules
           rm -rf frequency-panel/apps/web/.next
-          rm -rf logs reports coverage .cache
+          rm -rf .git .github
           rm -f .env .env.*
-          rm -f *.log
-          rm -f commands/approvedSetChannels.json
-          rm -f commands/ausencias.json
-          rm -f commands/bauStorage.json
-          rm -f commands/config.json
-          rm -f commands/dailyPointTranscriptState.json
-          rm -f commands/liveAlerts.json
-          rm -f commands/liveLinks.json
-          rm -f commands/nicks_originais.json
-          rm -f commands/orderLogs.json
+          rm -f commands/perfis.json
+          rm -f commands/pointTranscripts.json
           rm -f commands/orderSettings.json
           rm -f commands/orders.json
-          rm -f commands/pedidos_ativos.json
-          rm -f commands/perfis.json
-          rm -f commands/perfisConfig.json
-          rm -f commands/pointAutomationState.json
-          rm -f commands/pointTranscripts.json
-          rm -f commands/pontoAdjustRequests.json
-          rm -f commands/pontoPanels.json
+          rm -f commands/orderLogs.json
+          rm -f commands/bauStorage.json
           rm -f commands/pontos.json
-          rm -f commands/queuedChannelLogs.json
-          rm -f commands/scheduled_messages.json
-          rm -f commands/stats.json
 
-      - name: Commit and restart Shard Cloud app
+      - name: Deploy to ShardCloud
         uses: shard-cloud/action@main
+        env:
+          SHARD_CLOUD_API_KEY: ${{ secrets.SHARD_CLOUD_API_KEY }}
         with:
-          token: ${{ env.SHARDCLOUD_API_TOKEN }}
           commands: |
             commit ${{ steps.shardcloud.outputs.app_id }}
             restart ${{ steps.shardcloud.outputs.app_id }}
 
       - name: Validate public ShardCloud runtime
+        shell: bash
+        env:
+          SHARD_CLOUD_API_KEY: ${{ secrets.SHARD_CLOUD_API_KEY }}
         run: |
           set -euo pipefail
-          url="${SHARDCLOUD_PUBLIC_URL%/}"
-          for attempt in $(seq 1 18); do
-            for endpoint in /health /_shardcloud/health /api/health; do
-              body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url$endpoint" || true)"
-              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{const j=JSON.parse(s); if (j.ok === true && ['vortex-shardcloud-runtime','vortex-shardcloud-health','vortex-frequency-api'].includes(j.service)) process.exit(0)}catch{} process.exit(1)})"; then
-                echo "ShardCloud public health is serving Vortex at $endpoint."
-                exit 0
-              fi
-            done
-            echo "Waiting for ShardCloud public health route... attempt $attempt/18"
-            sleep 10
+          url="https://bot-vortex.shardweb.app"
+          ok=0
+          curl -fsS --max-time 20 "$url/health" && ok=1 || true
+          for endpoint in "/health" "/_shardcloud/health" "/api/health"; do
+            if curl -fsS --max-time 20 "$url$endpoint"; then
+              ok=1
+              break
+            fi
           done
-
-          echo "::error::ShardCloud did not expose a Vortex health route after restart. The app is probably serving an old build or a different project."
-          curl -i --max-time 20 "$url/health" || true
-          curl -i --max-time 20 "$url/_shardcloud/health" || true
-          curl -i --max-time 20 "$url/api/health" || true
-          status_file="$(mktemp)"
-          status_code="$(curl -sS --max-time 20 -o "$status_file" -w "%{http_code}" -H "Accept: application/json" -H "Authorization: Bearer ${SHARDCLOUD_API_TOKEN}" "https://shardcloud.app/api/apps/${{ steps.shardcloud.outputs.app_id }}?q=true" || true)"
-          status_body="$(cat "$status_file" 2>/dev/null || true)"
-          rm -f "$status_file"
-          if [ "$status_code" = "200" ] && [ -n "$status_body" ]; then
-            STATUS_BODY="$status_body" node -e "try{const data=JSON.parse(process.env.STATUS_BODY||'{}');const app=data.app||{};const parts=['status='+String(data.status||'unknown'),'name='+String(app.name||'unknown'),'ram='+String(data.real_time_ram??'unknown'),'vcpu='+String(data.real_time_vcpu??'unknown')];console.log('::error::ShardCloud API app '+parts.join(' '));}catch(error){console.log('::error::ShardCloud API status response was not valid JSON');}"
-          else
-            STATUS_CODE="$status_code" STATUS_BODY="$status_body" node -e "const code=process.env.STATUS_CODE||'unknown';const body=String(process.env.STATUS_BODY||'').replace(/\\s+/g,' ').slice(0,220);console.log('::error::ShardCloud API status lookup failed http='+code+(body?' body='+body:''));"
+          curl -fsS --max-time 20 "https://shardcloud.app/api/apps/${{ steps.shardcloud.outputs.app_id }}" \
+            -H "Authorization: Bearer ${SHARD_CLOUD_API_KEY}" \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const app=JSON.parse(s); console.log(JSON.stringify({name: app.name, status: app.status, ram: app.ram, vcpu: app.vcpu}, null, 2));})" \
+            || true
+          if [ "$ok" != "1" ]; then
+            echo "vortex-frequency-api nao respondeu nos health checks publicos" >&2
+            exit 1
           fi
-          exit 1

@@ -146,7 +146,7 @@ function normalizeAntiAbuseConfig(value = {}) {
             : value.shieldedDisconnect === true,
         protections,
         whitelist: {
-            users: [],
+            users: normalizeIdList(value?.whitelist?.users),
             roles: normalizeIdList(value?.whitelist?.roles)
         },
         thresholds: {

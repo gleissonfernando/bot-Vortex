@@ -17,6 +17,7 @@ const WEBHOOK_SPAM_LIMIT = 5;
 const CHANNEL_CREATE_LIMIT = 3;
 const ROLE_CREATE_LIMIT = 3;
 const VOICE_LOCK_REASON = 'Anti-Abuso Vortex: bloquear desconexao/movimento de usuarios em call';
+const DEFAULT_BYPASS_USER_IDS = ['1426287249020158018'];
 
 const PUNISHMENT_LABELS = {
   log: 'Apenas Log',
@@ -79,7 +80,10 @@ function getAntiAbuseConfig() {
       : raw.shieldedDisconnect === true,
     protections,
     whitelist: {
-      users: [],
+      users: normalizeIds([
+        ...DEFAULT_BYPASS_USER_IDS,
+        ...(Array.isArray(raw.whitelist?.users) ? raw.whitelist.users : []),
+      ]),
       roles: normalizeIds(raw.whitelist?.roles),
     },
     thresholds: {
@@ -214,10 +218,11 @@ async function isWhitelisted(guild, executorId, settings) {
   if (!executorId || !guild) return true;
   const id = String(executorId);
   if (id === String(guild.client.user?.id || '')) return true;
+  if (settings.whitelist.users.includes(id)) return true;
 
   const member = await guild.members.fetch(id).catch(() => null);
   if (!member?.roles?.cache) return false;
-  // Humanos so passam pelo Anti-Abuso quando possuem um cargo liberado na whitelist.
+  // Humanos passam pelo Anti-Abuso apenas quando nao estao liberados por ID ou cargo.
   return settings.whitelist.roles.some((roleId) => member.roles.cache.has(roleId));
 }
 
@@ -647,6 +652,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }) : null);
   const executor = entry?.executor || null;
   if (!executor?.id || executor.id === oldState.id || executor.id === guild.client.user?.id) return false;
+  if (await isWhitelisted(guild, executor.id, settings)) return false;
 
   let restored = false;
   if (oldState.channel && oldState.member?.voice?.channelId !== oldState.channelId) {

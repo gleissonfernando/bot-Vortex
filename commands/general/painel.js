@@ -2124,36 +2124,37 @@ async function renderDashboard(interaction, tab, edit = false) {
       .setDescription([
         '### Sistema de Encomendas Vortex',
         '',
-        'Gerencie familias, crie pedidos em etapas, acompanhe historico e abra o painel web completo.',
+        'Escolha uma acao para gerenciar as encomendas.',
         '',
-        '**Fluxo do pedido**',
-        '1. Selecionar familia',
-        '2. Selecionar tipo do pedido',
-        '3. Adicionar itens ao carrinho',
-        '4. Finalizar e enviar para aprovacao',
-        '',
-        '**Gerenciar Familias**',
-        'Criar, editar, remover, visualizar membros e consultar historico da familia.',
+        '**Acoes**',
+        '- Familias: cria ou edita facs.',
+        '- Municoes: adiciona ou edita tipos de muni do modal.',
+        '- Valores Muni: cadastra os valores das municoes por fac.',
+        '- Desconto: define a porcentagem usada quando a encomenda tiver desconto.',
+        '- Historico: gera relatorio por fac.',
       ].join('\n'));
 
     actionRow.addComponents(
       new ButtonBuilder()
-        .setCustomId('order_start')
-        .setLabel('Fazer Pedido')
-        .setEmoji('\u{1F4E6}')
+        .setCustomId('order_family_manage')
+        .setLabel('Familias')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('order_munition_manage')
+        .setLabel('Municoes')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('order_family_values')
+        .setLabel('Valores Muni')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
-        .setCustomId('order_family_manage')
-        .setLabel('Gerenciar Familias')
+        .setCustomId('order_discount_manage')
+        .setLabel('Desconto')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('order_history')
         .setLabel('Historico')
         .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setLabel('Painel Web')
-        .setURL('https://bot-vortex.shardweb.app/dashboard/orders')
-        .setStyle(ButtonStyle.Link)
     );
   } else if (tab === 'tab_manutencao') {
     const since = conf.MAINTENANCE_SINCE ? `<t:${Math.floor(conf.MAINTENANCE_SINCE / 1000)}:R>` : 'N/A';
@@ -2693,8 +2694,3 @@ async function renderDashboard(interaction, tab, edit = false) {
     });
   }
 }
-
-
-
-
-
