@@ -33,7 +33,7 @@ const {
   parseTestPeriod,
   registerManualProfile,
   readProfileConfig,
-  toggleProfileBilling,
+  setProfileBillingEnabled,
   toggleProfileUpdateNotifications,
   addBillingExemptUserId,
   deleteUserProfile,
@@ -1306,6 +1306,11 @@ module.exports = {
     }
 
     if (customId === 'profile_test') {
+        return safeReply(interaction, {
+            content: 'Sistema de cobranca de perfil desativado. Nenhum aviso sera enviado por DM ou canal pessoal.',
+            ephemeral: true
+        });
+
         const modal = new ModalBuilder()
             .setCustomId('modal_profile_test')
             .setTitle('Teste de Perfil');
@@ -1454,11 +1459,11 @@ module.exports = {
     }
 
     if (customId === 'profile_toggle_billing') {
-        const next = toggleProfileBilling();
+        setProfileBillingEnabled(false);
         sendVortexLog(interaction.client, {
-            title: 'Cobranca de Perfil Alterada',
-            description: `Cobrança por DM do perfil foi **${next.billingDmEnabled ? 'LIGADA' : 'DESLIGADA'}** por <@${interaction.user.id}>.\nData/hora real: ${formatDate(new Date())}`,
-            color: next.billingDmEnabled ? '#57F287' : '#FFA500',
+            title: 'Cobranca de Perfil Desativada',
+            description: `Cobranca por DM/canal pessoal do perfil permanece **DESLIGADA** por <@${interaction.user.id}>.\nData/hora real: ${formatDate(new Date())}`,
+            color: '#FFA500',
             type: 'PERFIL',
             userId: interaction.user.id
         }).catch(() => {});
@@ -2687,8 +2692,8 @@ async function renderDashboard(interaction, tab, edit = false) {
         'Acompanhe usuários aprovados no `/set` e cadastros manuais.',
         'Perfis devem ser atualizados pelo `/perfil` com mídia e nível em game.',
         `Cadastrados: **${profileList.length}** | aprovados no /set: **${setProfileCount}** | manuais: **${manualProfileCount}**`,
-        `Cobrança por DM: **${profileConfig.billingDmEnabled ? 'ligada' : 'desligada'}**`,
-        'Cobrança de perfil: **toda segunda-feira a partir das 19:00**.',
+        'Cobranca por DM/canal pessoal: **desativada**',
+        'Avisos automaticos de perfil nao sao enviados para usuarios.',
         `Notificação de atualização: **${profileConfig.profileUpdateNotificationsEnabled ? 'ligada' : 'desligada'}**`,
         `Usuários sem cobrança: **${Array.isArray(profileConfig.billingExemptUserIds) ? profileConfig.billingExemptUserIds.length : 0}**`,
         '',
@@ -2703,9 +2708,9 @@ async function renderDashboard(interaction, tab, edit = false) {
 
     actionRow.addComponents(
       new ButtonBuilder().setCustomId('profile_register').setLabel('Cadastrar perfil').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('profile_test').setLabel('Testar cobrança').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('profile_test').setLabel('Cobranca desativada').setStyle(ButtonStyle.Secondary).setDisabled(true),
       new ButtonBuilder().setCustomId('profile_delete_no_billing').setLabel('Apagar cadastro').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel(profileConfig.billingDmEnabled ? 'Desligar cobrança' : 'Ligar cobrança').setStyle(profileConfig.billingDmEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      new ButtonBuilder().setCustomId('profile_toggle_billing').setLabel('Cobranca desligada').setStyle(ButtonStyle.Secondary).setDisabled(true)
     );
     extraRows = [
       new ActionRowBuilder().addComponents(

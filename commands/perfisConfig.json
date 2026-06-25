@@ -1,5 +1,5 @@
 {
-  "billingDmEnabled": true,
+  "billingDmEnabled": false,
   "profileUpdateNotificationsEnabled": true,
   "billingExemptUserIds": [
     "260830031289384960"

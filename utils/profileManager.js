@@ -106,17 +106,17 @@ function readApprovedSetChannels() {
 
 function readProfileConfig() {
   if (!fs.existsSync(PROFILE_CONFIG_PATH)) {
-    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: true, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] }, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(PROFILE_CONFIG_PATH, `${JSON.stringify({ billingDmEnabled: false, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] }, null, 2)}\n`, 'utf8');
   }
   try {
     return {
-      billingDmEnabled: true,
+      billingDmEnabled: false,
       profileUpdateNotificationsEnabled: true,
       billingExemptUserIds: [],
       ...(JSON.parse(fs.readFileSync(PROFILE_CONFIG_PATH, 'utf8') || '{}')),
     };
   } catch {
-    return { billingDmEnabled: true, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] };
+    return { billingDmEnabled: false, profileUpdateNotificationsEnabled: true, billingExemptUserIds: [] };
   }
 }
 
@@ -661,46 +661,7 @@ async function sendProfileReminder(client, guild, profile, thresholdMs = PROFILE
     return { sent: false, reason: 'already_reminded_this_monday' };
   }
 
-  const user = await client.users.fetch(profile.userId).catch(() => null);
-  if (!user) return { sent: false, reason: 'missing_user' };
-
-  const embed = new EmbedBuilder()
-    .setColor('#FEE75C')
-    .setTitle('Perfil precisa ser atualizado')
-    .setDescription([
-      `O usuário <@${profile.userId}> precisa atualizar o perfil do /set.`,
-      '',
-      `**Última atualização:** ${formatDate(profile.lastProfileUpdateAt)}`,
-      `**Tempo sem atualizar:** ${formatDuration(now - lastUpdateMs)}`,
-      `**Horário do aviso:** ${formatDate(new Date())}`,
-      '**Cobrança automática:** toda segunda-feira a partir das 19:00',
-      '',
-      'Use `/perfil link:<link da mídia>` para atualizar.',
-      'O prazo para atualizar o perfil apos o /set e de 1 semana.',
-    ].join('\n'))
-    .setTimestamp();
-
-  await user.send({ embeds: [embed] }).catch(() => null);
-
-  if (profile.callChannelId) {
-    const userChannel = await client.channels.fetch(profile.callChannelId).catch(() => null);
-    if (isPrimaryGuildChannel(userChannel) && userChannel?.isTextBased?.()) {
-      await userChannel.send({
-        content: `<@${profile.userId}> atualize seu /perfil com foto.`,
-        embeds: [embed],
-        allowedMentions: { users: [profile.userId] },
-      }).catch(() => null);
-    }
-  }
-
-  const data = readProfiles();
-  if (data[profile.guildId]?.[profile.userId]) {
-    data[profile.guildId][profile.userId].lastReminderAt = new Date().toISOString();
-    data[profile.guildId][profile.userId].updatedAt = new Date().toISOString();
-    writeProfiles(data);
-  }
-
-  return { sent: true };
+  return { sent: false, reason: 'profile_billing_notifications_disabled' };
 }
 
 async function sendProfileManagementSummary(client, guild, dueProfiles) {
@@ -1095,4 +1056,3 @@ module.exports = {
   ensureAllProfileChannelAccess,
   initProfileManager,
 };
-
